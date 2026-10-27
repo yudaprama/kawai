@@ -246,6 +246,7 @@ describe("parseAuditOffer", () => {
         riskReward: null,
         sl: { price: 95000, method: "chandelier_exit", distancePct: 3.06 },
         locked: false,
+        profitStop: false,
         tighten: null,
         tp: {
           symbol: "BTCUSDT",
@@ -270,6 +271,7 @@ describe("parseAuditOffer", () => {
         sl: null,
         tighten: null,
         locked: false,
+        profitStop: false,
         tp: {
           symbol: "SOLUSDT",
           long: false,
@@ -352,6 +354,10 @@ describe("parseAuditOffer", () => {
     expect(offer?.tightens).toHaveLength(0);
     expect(offer?.rows).toHaveLength(1);
     expect(offer?.rows[0].locked).toBe(true);
+    // A locked row has no actionable side (nothing to place, nothing to
+    // move), so it is NOT part of the "lock in profit" approval set even
+    // though its resting stop already locks profit.
+    expect(offer?.rows[0].profitStop).toBe(false);
     expect(offer?.rows[0].sl).toBeNull();
     expect(offer?.rows[0].tighten).toBeNull();
   });
@@ -385,11 +391,107 @@ describe("parseAuditOffer", () => {
     const offer = parseAuditOffer(out);
     expect(offer?.tightens).toHaveLength(1);
     expect(offer?.rows[0].locked).toBe(false);
+    expect(offer?.rows[0].profitStop).toBe(false);
     expect(offer?.rows[0].tighten).toEqual({
       from: 2800,
       to: 2880,
       method: "breakeven_lock",
     });
+  });
+
+  it("flags the offers whose placement would lock in profit", () => {
+    // The "lock in profit" selection reads `profitStop`: an actionable side
+    // (a stop to place, or a stop move) whose destination sits at/beyond
+    // entry — sign-aware, so a SHORT locks when its stop moves DOWN to or
+    // below entry. Derived from the LEVEL, never the method name: the engine
+    // recommends a structural level above entry just as validly as
+    // `breakeven_lock`. No entry known → false, never an assumed grade.
+    const out = JSON.stringify({
+      summary: { usdmPositions: 5, graded: 5, withStopLoss: 2, naked: 3, nakedNotional: 1, withTakeProfit: 0 },
+      positions: [
+        {
+          // Long, naked, recommended ABOVE entry → placing locks profit.
+          symbol: "BTCUSDT",
+          positionAmt: 1.5,
+          entryPrice: 95000,
+          markPrice: 98000,
+          restingStops: 0,
+          restingTps: 0,
+          advice: {
+            verdict: "missing",
+            recommended: { price: 95500, method: "breakeven_lock", distancePct: 2.55 },
+          },
+        },
+        {
+          // Long, naked, recommended BELOW entry — the position is in profit
+          // under 1×ATR, and the policy places the stop in the red on purpose.
+          symbol: "ETHUSDT",
+          positionAmt: 2,
+          entryPrice: 3000,
+          markPrice: 3050,
+          restingStops: 0,
+          restingTps: 0,
+          advice: {
+            verdict: "missing",
+            recommended: { price: 2960, method: "chandelier_exit", distancePct: 2.95 },
+          },
+        },
+        {
+          // Short, stop move DOWN to 99 with entry 100 → locks profit.
+          symbol: "SOLUSDT",
+          positionAmt: -10,
+          entryPrice: 100,
+          markPrice: 104,
+          restingStops: 1,
+          restingTps: 0,
+          stopLoss: { present: true, price: 110, distancePct: 5.77 },
+          advice: {
+            verdict: "tighten",
+            recommended: { price: 99, method: "breakeven_lock", distancePct: 4.81 },
+          },
+        },
+        {
+          // Short, stop move DOWN to 105 — tighter than 110 but still a loss
+          // against entry 100 → a move, never a profit lock.
+          symbol: "XRPUSDT",
+          positionAmt: -100,
+          entryPrice: 100,
+          markPrice: 104,
+          restingStops: 1,
+          restingTps: 0,
+          stopLoss: { present: true, price: 110, distancePct: 5.77 },
+          advice: {
+            verdict: "tighten",
+            recommended: { price: 105, method: "swing_structure", distancePct: 0.96 },
+          },
+        },
+        {
+          // Naked long at a structural level above entry (not breakeven_lock):
+          // still a profit lock — the derivation must not read the method name.
+          symbol: "ADAUSDT",
+          positionAmt: 1000,
+          entryPrice: 1.0,
+          markPrice: 1.2,
+          restingStops: 0,
+          restingTps: 0,
+          advice: {
+            verdict: "missing",
+            recommended: { price: 1.08, method: "keltner_10_2", distancePct: 10 },
+          },
+        },
+      ],
+    });
+    const offer = parseAuditOffer(out);
+    // Order note: the merge touches the `stops` rows (naked) before the
+    // `tightens` rows, so the two naked symbols come first — position order
+    // within each side, sides in stops/tps/tightens sequence.
+    expect(offer?.rows.map((r) => [r.symbol, r.profitStop])).toEqual([
+      ["BTCUSDT", true],
+      ["ETHUSDT", false],
+      ["ADAUSDT", true],
+      ["SOLUSDT", true],
+      ["XRPUSDT", false],
+    ]);
   });
 
   it("carries the comparable notional and the engine's R:R on every row", () => {

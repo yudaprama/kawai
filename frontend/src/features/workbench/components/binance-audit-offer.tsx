@@ -144,6 +144,13 @@ export interface OfferRow {
    * read as "already tight" and the operator could not tell that the only
    * remaining move here is to TRAIL it — never to loosen it. */
   locked: boolean;
+  /** The action this row offers would place/move the stop at or beyond entry,
+   * so approving it locks in profit: the trade can no longer turn into a loss.
+   * Sign-aware and derived from the engine's own recommended level, never from
+   * the method name (a structural level can sit above entry too). False for a
+   * naked position below the 1×ATR threshold (whose stop is deliberately
+   * placed in the red) and for a `tighten` whose destination is still a loss. */
+  profitStop: boolean;
 }
 
 /** What the placement offer needs from the audit matrix: the portfolio
@@ -363,6 +370,7 @@ export function parseAuditOffer(output: string | null | undefined, venue: AuditV
         tighten: null,
         tp: null,
         locked: false,
+        profitStop: false,
       };
       bySymbol.set(symbol, r);
     }
@@ -377,6 +385,15 @@ export function parseAuditOffer(output: string | null | undefined, venue: AuditV
   // Last, so a position that ALSO needs a take-profit keeps both sides: this
   // only fills the flag, never claims the row.
   for (const l of locked) touch(l.symbol, l.long, l.size, l.mark).locked = true;
+
+  // The profit-lock scope: the action already offered here would land the stop
+  // at/beyond entry. Unknown entry (unreadable row) cannot be graded, so it
+  // never claims the scope.
+  for (const r of bySymbol.values()) {
+    const atProfit = (price: number | null | undefined) =>
+      r.entry > 0 && price != null && (r.long ? price >= r.entry : price <= r.entry);
+    r.profitStop = atProfit(r.sl?.price) || atProfit(r.tighten?.to);
+  }
 
   return {
     naked,
@@ -576,6 +593,10 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
   // The scroll viewport is ~8 rows; the selection can be 183. Without this the
   // user arms a whole-book placement against a viewport showing 4% of it.
   const selectedNotional = selectedRows.reduce((sum, r) => sum + r.notional, 0);
+  // The break-even population: rows whose offered action lands the stop at or
+  // beyond entry. Whole-book, like every other count here — a filter narrows
+  // only the view, so the shortcut below must not derive from `matching`.
+  const profitLocks = offer.rows.filter((r) => r.profitStop);
 
   /** Visible rows: symbol search + missing-protection scope + winners-only.
    * Filtering narrows the VIEW only — the selection and the counts beside the
@@ -690,6 +711,9 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
         {PLACEMENT_OPS[venue].tighten != null && (
           <span className="text-success rounded border px-1.5 py-0.5">{offer.tightens.length} stop to lock in</span>
         )}
+        {profitLocks.length > 0 && (
+          <span className="text-success rounded border px-1.5 py-0.5">{profitLocks.length} can lock profit</span>
+        )}
       </div>
       <p className="text-muted-foreground text-xs">
         Approve the rows you want protected — one, a subset, or all.
@@ -749,13 +773,30 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
           </button>
           <MatchCount filtered={filtered} matchCount={matching.length} total={offer.rows.length} unit="positions" />
         </div>
-        {filtered && (
-          <SelectMatchingButton
-            disabled={busy || selectedInView === matching.length}
-            matchCount={matching.length}
-            onClick={selectMatching}
-            selectedInView={selectedInView}
-          />
+        {(filtered || profitLocks.length > 0) && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {filtered && (
+              <SelectMatchingButton
+                disabled={busy || selectedInView === matching.length}
+                matchCount={matching.length}
+                onClick={selectMatching}
+                selectedInView={selectedInView}
+              />
+            )}
+            {/* One click behind the arm step, never a placement on its own. It
+                selects the same rows the table lists, so the approved set is
+                always visible before the confirm click. */}
+            {profitLocks.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelected(new Set(profitLocks.map((r) => r.symbol)))}
+                disabled={busy || profitLocks.every((r) => selected.has(r.symbol))}
+                className="text-success hover:text-foreground text-xs underline disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Select the {profitLocks.length} that lock in profit
+              </button>
+            )}
+          </div>
         )}
         <div className="border-border/60 max-h-96 overflow-y-auto rounded-md border">
           <table className="w-full border-collapse font-mono text-[0.6875rem]">
@@ -856,6 +897,14 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
                             · {human(r.sl.method)}
                             {r.sl.distancePct != null && ` (${fmtPct(r.sl.distancePct)}%)`}
                           </span>
+                          {r.profitStop && (
+                            <span
+                              className="text-success ml-1 text-[10px]"
+                              title="Approving places this stop at or beyond entry — the trade can no longer turn into a loss."
+                            >
+                              · locks profit
+                            </span>
+                          )}
                         </>
                       ) : r.tighten != null ? (
                         // A resting stop the engine wants TIGHTER. Both levels
@@ -866,6 +915,14 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
                           <span className="text-muted-foreground line-through">{fmtPrice(r.tighten.from)}</span>{" "}
                           <span className="text-foreground">→ {fmtPrice(r.tighten.to)}</span>{" "}
                           <span className="text-success">· {human(r.tighten.method)}</span>
+                          {r.profitStop && (
+                            <span
+                              className="text-success ml-1 text-[10px]"
+                              title="This move lands the stop at or beyond entry — the trade can no longer turn into a loss."
+                            >
+                              · locks profit
+                            </span>
+                          )}
                         </>
                       ) : (
                         // A resting stop at/beyond entry grades `ok` and has no

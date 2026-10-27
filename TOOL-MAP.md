@@ -401,6 +401,15 @@ in profit by ≥1×ATR, and from that moment the stop advice's own verdict turns
 - **Each move spends TWO order calls**, which is why it rides
   `Budget::Batch` (120/min) rather than the 10/min single-order budget; the
   two batches above are unchanged.
+- **The offer panel surfaces the break-even population as a SELECTION, not a
+  new action.** `parseAuditOffer` derives `profitStop` per row — the level the
+  offered action would place or move TO sits at/beyond entry, sign-aware,
+  only when the entry is known — and the panel renders a `N can lock profit`
+  chip plus a `Select the N that lock in profit` shortcut that pre-selects
+  exactly those rows; the confirm click then runs the same protect/tighten
+  batches above, so no op, level or policy changes. Deliberately excluded:
+  a row whose resting stop already locks profit (verdict `ok`, no side to
+  act on) — approving it would place nothing.
 
 ### 5.4 `crypto_futures_trade_stats` / `mexc_futures_fill_sync` — the venue fill history
 

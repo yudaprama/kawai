@@ -555,17 +555,11 @@ jobs:
           DYLD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
         run: cargo run --release --example laya_smoke --features laya -- ${{ github.workspace }}/laya-fixture
 
-      # ── Smoke 2 + 3: hybrid cloud tier. The zai key comes from the compiled
+      # ── Smoke 2: hybrid cloud tier. The zai key comes from the compiled
       #    kawai-vault constants (cargo git dep — authenticated via the PAT
       #    rewrite above), so no extra secrets. Data goes to /tmp.
-      - name: remote_smoke (cloud streaming + usage)
-        working-directory: src-tauri
-        env:
-          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
-          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
-          LLVM_PROFILE_FILE: /dev/null
-        run: cargo run --example remote_smoke --features litert
-
+      #    remote_smoke runs in linux-smokes — the OS-independent smokes are
+      #    partitioned across the two jobs so neither carries them all.
       - name: draft_smoke (cloud → docx artifact + receipt)
         working-directory: src-tauri
         env:
@@ -597,17 +591,9 @@ jobs:
 
       
 
-      # ── Smoke 4 (macOS): keyless Binance market data + TA. Geo-blocked hosts
-      #    SKIP (exit 0), not fail — see the example header.
-      - name: binance_smoke (keyless market data + TA)
-        working-directory: src-tauri
-        env:
-          KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
-        run: cargo run --example binance_smoke --features binance
-
       # ── Smoke (offline): analytics agent tools — csv + the xlsx bridge
-      #    (typed conversion, sidecar cache) through the office store, on
-      #    every OS. No network, no model.
+      #    (typed conversion, sidecar cache) through the office store.
+      #    No network, no model. (binance_smoke runs in linux-smokes.)
       - name: analytics_smoke (data_schema/data_query + xlsx bridge)
         run: cargo run --example analytics_smoke
         working-directory: src-tauri
@@ -739,20 +725,21 @@ jobs:
       # same model, CPU inference, OS-independent quality signal. Running the
       # battery per-OS tripled eval cost for no extra signal.
 
-  # ── Linux smokes: platform gate + monad (no macos-smoke duplication) ────
+  # ── Linux smokes: platform gate + half the OS-independent partition ─────
   # Separate job so neither half of the old 47-minute linux-smoke crosses the
   # hosted-runner reclaim window. local_llm_smoke validates THIS platform's
-  # bazel-built dylib + engine; monad_wallet_smoke runs only here. The
-  # OS-independent smokes (remote, draft, binance, analytics, planner, laya)
-  # live in macos-smoke exclusively — duplicating them here burned the job
-  # budget (run 40443508677, 2026-10-27). Dylibs come from linux-build's
-  # save-always cache.
+  # bazel-built dylib + engine. The OS-independent smokes are split 5/4 with
+  # macos-smoke (here: remote, binance, monad_wallet; macos: laya, draft,
+  # planner, analytics) — the old duplicated set burned the job budget (run
+  # 40443508677, 2026-10-27). Dylibs come from linux-build's save-always
+  # cache.
   linux-smokes:
     needs: linux-build
     runs-on: ubuntu-22.04
-    # The old 6-smoke set exceeded the old 30-min cap on a slow runner (run
-    # 40443508677, 2026-10-27); the trimmed two-smoke set leaves ample
-    # headroom — kept generous because the model download alone is 3.5 GB.
+    # The old 6-smoke duplicated set exceeded the old 30-min cap on a slow
+    # runner (run 40443508677, 2026-10-27); the partitioned four-smoke set
+    # leaves ample headroom — kept generous because the model download
+    # alone is 3.5 GB.
     timeout-minutes: 45
     env:
       CARGO_PROFILE_DEV_DEBUG: "0"
@@ -792,7 +779,7 @@ jobs:
           key: litert-lib-linux-x86_64-${{ steps.litert-lib-key.outputs.sha }}-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/prebuilt/linux_x86_64/*.so') }}
 
       # Same link/bindgen toolchain as linux-build — the smoke binaries link
-      # the kawai lib (litert + monad features).
+      # the kawai lib (litert + binance + monad features).
       - name: Install system deps
         run: |
           set -euo pipefail
@@ -834,14 +821,31 @@ jobs:
           KAWAI_LLM_MAX_TOKENS: "4096"
         run: cargo run --example local_llm_smoke --features litert -- ${{ github.workspace }}/smoke-model/gemma-4-E4B-it.litertlm
 
-      # remote_smoke / draft_smoke / binance_smoke / analytics_smoke run in
-      # macos-smoke only — they are OS-independent (cloud HTTP, pure-Rust
-      # engines) and duplicating them here burned the job budget (the
-      # 2026-10-27 timeout kill). Linux keeps the platform-specific gate
-      # (local_llm above) and the one smoke macos-smoke does not have:
-      # ── Smoke 2 (Linux): Monad wallet — read-only chain probes ──────
-      #    Public-RPC reads only (no keychain, no tx); the example's
-      #    --with-wallet / --self-transfer flags stay local-only.
+      # The OS-independent smokes are PARTITIONED across macos-smoke and this
+      # job (each runs exactly once per push): this job carries remote +
+      # binance + monad_wallet; macos-smoke carries laya + draft + planner +
+      # analytics. Duplicating all of them here burned the job budget (the
+      # 2026-10-27 timeout kill).
+      - name: remote_smoke (cloud streaming + usage)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+        run: cargo run --example remote_smoke --features litert
+
+      # Keyless Binance market data + TA. Geo-blocked hosts SKIP (exit 0),
+      # not fail — see the example header.
+      - name: binance_smoke (keyless market data + TA)
+        working-directory: src-tauri
+        env:
+          KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
+        run: cargo run --example binance_smoke --features binance
+
+      # Monad wallet — read-only chain probes: public-RPC reads only (no
+      # keychain, no tx); the example's --with-wallet / --self-transfer
+      # flags stay local-only.
       - name: monad_wallet_smoke (read-only Monad chain probes)
         working-directory: src-tauri
         run: cargo run --example monad_wallet_smoke --features monad
