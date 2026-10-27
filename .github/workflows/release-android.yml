@@ -271,11 +271,19 @@ jobs:
       # must strictly increase per app — run_number is monotonic per repo
       # and independent of the desktop version bump (which can be resumed
       # and re-run at the same tag).
+      # versionCode = 10000 + run_number (monotonic per workflow run — a
+      # dispatch re-run of the same tag gets a FRESH code, unlike the CLI
+      # default major*1e6 + minor*1e3 + patch, which repeats per tag and
+      # collides with Play's "version code already used" on a committed
+      # retry). It rides a `tauri --config` merge on the build commands
+      # below: writing gen/android/app/tauri.properties directly here is
+      # CLOBBERED — the CLI regenerates that file on every build from its
+      # own config (v0.3.36/37 shipped versionCode 3037, the 0.3.37
+      # default, with this step's 10045 silently discarded).
       - name: Set Android version
         run: |
-          cat > src-tauri/gen/android/app/tauri.properties <<EOF
-          tauri.android.versionCode=$(( 10000 + ${{ github.run_number }} ))
-          tauri.android.versionName=${{ steps.tag.outputs.version }}
+          cat > "$RUNNER_TEMP/tauri-android-version.json" <<EOF
+          {"tauri": {"android": {"versionCode": $(( 10000 + ${{ github.run_number }} ))}}}
           EOF
 
       - name: Build signed AAB
@@ -283,12 +291,12 @@ jobs:
           # Read at compile time (option_env!) — this is how a release APK
           # under test opts into INFO; a phone has no shell to export into.
           KAWAI_LOKI_LEVEL: ${{ inputs.loki_level || 'warn' }}
-        run: bun tauri android build --target aarch64 --features litert,tts,binance,accounting,mexc
+        run: bun tauri android build --target aarch64 --features litert,tts,binance,accounting,mexc --config "$RUNNER_TEMP/tauri-android-version.json"
 
       - name: Build universal APK (sideload)
         env:
           KAWAI_LOKI_LEVEL: ${{ inputs.loki_level || 'warn' }}
-        run: bun tauri android build --target aarch64 --features litert,tts,binance,accounting,mexc --apk
+        run: bun tauri android build --target aarch64 --features litert,tts,binance,accounting,mexc --apk --config "$RUNNER_TEMP/tauri-android-version.json"
 
       # Native libraries are stored UNCOMPRESSED in an APK (extractNativeLibs
       # =false) and AGP passes prebuilt jniLibs through untouched, so the Rust
@@ -451,16 +459,105 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # Direct Play Developer API upload. Replaces r0adkll/upload-google-play:
+      # v0.3.36/37 (2026-10-26) failed its resumable upload twice with a bare
+      # "Validation of uploaded file failed." while the SAME AAB uploaded
+      # cleanly through this simple media-upload path (verified against the
+      # Play API 2026-10-27) — and the action swallowed the API's error
+      # detail, making the failure undebuggable. Nothing reaches the track
+      # until the final edit.commit; every failure path deletes the edit.
       - name: Upload AAB to Play Store (internal track)
         if: ${{ steps.signing.outputs.signed == 'true' && vars.PLAY_UPLOAD_ENABLED == 'true' }}
-        uses: r0adkll/upload-google-play@v1
-        with:
-          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: pro.kawai.app
-          releaseFiles: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/*.aab
-          debugSymbols: ${{ steps.native_symbols.outputs.zip }}
-          track: internal
-          status: completed
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          AAB_PATH: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
+          DEBUG_SYMBOLS_ZIP: ${{ steps.native_symbols.outputs.zip }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          # venv, not pip --user: ubuntu-24.04 runners enforce PEP 668 and
+          # refuse a bare pip install into the system interpreter.
+          python3 -m venv "$RUNNER_TEMP/playenv"
+          "$RUNNER_TEMP/playenv/bin/pip" install --quiet --disable-pip-version-check google-auth requests
+          "$RUNNER_TEMP/playenv/bin/python" <<'PY'
+          import json, os, urllib.error, urllib.request
+
+          from google.auth.transport.requests import Request
+          from google.oauth2 import service_account
+
+          HOST = "https://androidpublisher.googleapis.com"
+          PKG = "pro.kawai.app"
+
+          creds = service_account.Credentials.from_service_account_info(
+              json.loads(os.environ["PLAY_SERVICE_ACCOUNT_JSON"]),
+              scopes=["https://www.googleapis.com/auth/androidpublisher"],
+          )
+          creds.refresh(Request())
+
+          def api(method, path, data=None, ctype="application/json"):
+              req = urllib.request.Request(
+                  f"{HOST}{path}", data=data, method=method,
+                  headers={"Authorization": f"Bearer {creds.token}",
+                           "Content-Type": ctype})
+              try:
+                  resp = urllib.request.urlopen(req, timeout=900)
+                  return resp.status, resp.read().decode()
+              except urllib.error.HTTPError as e:
+                  # Print the FULL API error — the reason the action is gone:
+                  # its generic message hid exactly these details.
+                  print(e.read().decode())
+                  raise
+
+          _, body = api("POST", f"/androidpublisher/v3/applications/{PKG}/edits", b"{}")
+          edit_id = json.loads(body)["id"]
+          try:
+              aab = open(os.environ["AAB_PATH"], "rb").read()
+              _, body = api(
+                  "POST",
+                  f"/upload/androidpublisher/v3/applications/{PKG}/edits/{edit_id}"
+                  f"/bundles?uploadType=media",
+                  aab, "application/octet-stream")
+              version_code = json.loads(body)["versionCode"]
+              print(f"bundle uploaded: versionCode {version_code}")
+
+              symbols = os.environ.get("DEBUG_SYMBOLS_ZIP", "")
+              if symbols and os.path.isfile(symbols):
+                  try:
+                      _, _body = api(
+                          "POST",
+                          f"/upload/androidpublisher/v3/applications/{PKG}/edits/{edit_id}"
+                          f"/apks/{version_code}/deobfuscationFiles/nativeCode?uploadType=media",
+                          open(symbols, "rb").read(), "application/octet-stream")
+                      print("native debug symbols uploaded")
+                  except urllib.error.HTTPError as e:
+                      # Best-effort: the deobfuscationfiles API rejects this
+                      # app's symbols zip even trimmed below the 1.6 GB
+                      # guidance (v0.3.37: 2.8 GB FULL DWARF, then a 113 MB
+                      # SYMBOL_TABLE variant — both "Validation of uploaded
+                      # file failed.", identical under r0adkll). A diagnostic
+                      # file must never block the release: warn and ship.
+                      # The symbols zip stays a run artifact for a manual
+                      # Play Console upload (App bundle explorer).
+                      print(f"::warning::native debug symbols rejected by Play "
+                            f"(HTTP {e.code}); release continues without them")
+              else:
+                  print("no native debug symbols to upload")
+
+              release = {"versionCodes": [str(version_code)], "status": "completed"}
+              tag = os.environ.get("RELEASE_TAG", "")
+              if tag:
+                  release["name"] = tag
+              _, _body = api(
+                  "PUT",
+                  f"/androidpublisher/v3/applications/{PKG}/edits/{edit_id}/tracks/internal",
+                  json.dumps({"track": "internal", "releases": [release]}).encode())
+              print("track internal updated")
+          except Exception:
+              # Discard the partial edit; it would expire on its own anyway.
+              api("DELETE", f"/androidpublisher/v3/applications/{PKG}/edits/{edit_id}")
+              raise
+          api("POST", f"/androidpublisher/v3/applications/{PKG}/edits/{edit_id}:commit")
+          print(f"committed to the internal track: versionCode {version_code}")
+          PY
 
       - name: Warn when the upload was skipped
         if: ${{ !(steps.signing.outputs.signed == 'true' && vars.PLAY_UPLOAD_ENABLED == 'true') }}
