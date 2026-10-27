@@ -504,13 +504,9 @@ jobs:
       # ── Smoke 1: on-device streaming (Roadmap MVP 3). The PRODUCTION model:
       #    gemma-4-E4B-it (litert-community, public) — the same weights the
       #    desktop bundles and evals.yml ship.
-      # The 3.5 GB fixture downloads per run, NOT cached: the repo's 10 GB
-      # Actions-cache quota was thrashing (~12 GB demanded), which evicted the
-      # litert dylibs within hours — linux-build rebuilt bazel nearly every
-      # run and this job re-downloaded the model anyway (run 40443508677).
-      # Freeing 3.5 GB lets the small high-value caches (dylibs, bazel, rust)
-      # survive; the HuggingFace download costs ~2-3 min against a 45-min
-      # budget.
+      # Same quota rationale as linux-smokes: no model cache — the 3.5 GB
+      # entry was the largest eviction driver in the repo's 10 GB
+      # Actions-cache quota; the HuggingFace download costs ~2-3 min.
       - name: Download smoke model fixture
         run: |
           mkdir -p smoke-model
@@ -740,17 +736,20 @@ jobs:
       # same model, CPU inference, OS-independent quality signal. Running the
       # battery per-OS tripled eval cost for no extra signal.
 
-  # ── Linux smokes: model download + all smoke binaries ───────────────────
+  # ── Linux smokes: platform gate + monad (no macos-smoke duplication) ────
   # Separate job so neither half of the old 47-minute linux-smoke crosses the
-  # hosted-runner reclaim window. Everything expensive comes from cache
-  # (dylibs from linux-build's save-always cache; model cached with
-  # save-always so a killed smoke never re-downloads 3.5 GB).
+  # hosted-runner reclaim window. local_llm_smoke validates THIS platform's
+  # bazel-built dylib + engine; monad_wallet_smoke runs only here. The
+  # OS-independent smokes (remote, draft, binance, analytics, planner, laya)
+  # live in macos-smoke exclusively — duplicating them here burned the job
+  # budget (run 40443508677, 2026-10-27). Dylibs come from linux-build's
+  # save-always cache.
   linux-smokes:
     needs: linux-build
     runs-on: ubuntu-22.04
-    # Observed band 22–30+ min (setup + compile of four smoke binaries +
-    # the 3.5 GB model run); 30 killed the job mid-binance_smoke on a slow
-    # runner (run 40443508677, 2026-10-27). 45 = ~50% headroom over the band.
+    # The old 6-smoke set exceeded the old 30-min cap on a slow runner (run
+    # 40443508677, 2026-10-27); the trimmed two-smoke set leaves ample
+    # headroom — kept generous because the model download alone is 3.5 GB.
     timeout-minutes: 45
     env:
       CARGO_PROFILE_DEV_DEBUG: "0"
@@ -790,7 +789,7 @@ jobs:
           key: litert-lib-linux-x86_64-${{ steps.litert-lib-key.outputs.sha }}-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/prebuilt/linux_x86_64/*.so') }}
 
       # Same link/bindgen toolchain as linux-build — the smoke binaries link
-      # the kawai lib (litert + office + binance features).
+      # the kawai lib (litert + monad features).
       - name: Install system deps
         run: |
           set -euo pipefail
@@ -804,9 +803,13 @@ jobs:
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 1000
 
       # ── Smoke 1: on-device streaming ──
-      # Same quota rationale as linux-smokes: no model cache — the download
-      # is ~2-3 min and the 3.5 GB entry was the largest eviction driver in
-      # the repo's 10 GB Actions-cache quota.
+      # The 3.5 GB fixture downloads per run, NOT cached: the repo's 10 GB
+      # Actions-cache quota was thrashing (~12 GB demanded), which evicted the
+      # litert dylibs within hours — linux-build rebuilt bazel nearly every
+      # run and this job re-downloaded the model anyway (run 40443508677).
+      # Freeing 3.5 GB lets the small high-value caches (dylibs, bazel, rust)
+      # survive; the HuggingFace download costs ~2-3 min against a 45-min
+      # budget.
       - name: Download smoke model fixture
         run: |
           mkdir -p smoke-model
@@ -828,45 +831,17 @@ jobs:
           KAWAI_LLM_MAX_TOKENS: "4096"
         run: cargo run --example local_llm_smoke --features litert -- ${{ github.workspace }}/smoke-model/gemma-4-E4B-it.litertlm
 
-      # ── Smoke 2 + 3: hybrid cloud tier ──
-      - name: remote_smoke (cloud streaming + usage)
-        working-directory: src-tauri
-        env:
-          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
-          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
-          LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
-          LLVM_PROFILE_FILE: /dev/null
-        run: cargo run --example remote_smoke --features litert
-
-      - name: draft_smoke (cloud → docx artifact + receipt)
-        working-directory: src-tauri
-        env:
-          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
-          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
-          LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
-          LLVM_PROFILE_FILE: /dev/null
-        run: cargo run --example draft_smoke --features litert
-
-      # ── Smoke 4 (Linux): keyless Binance market data + TA ──
-      - name: binance_smoke (keyless market data + TA)
-        working-directory: src-tauri
-        env:
-          KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
-        run: cargo run --example binance_smoke --features binance
-
-      # ── Smoke 4b (Linux): Monad wallet — read-only chain probes ──────
+      # remote_smoke / draft_smoke / binance_smoke / analytics_smoke run in
+      # macos-smoke only — they are OS-independent (cloud HTTP, pure-Rust
+      # engines) and duplicating them here burned the job budget (the
+      # 2026-10-27 timeout kill). Linux keeps the platform-specific gate
+      # (local_llm above) and the one smoke macos-smoke does not have:
+      # ── Smoke 2 (Linux): Monad wallet — read-only chain probes ──────
       #    Public-RPC reads only (no keychain, no tx); the example's
       #    --with-wallet / --self-transfer flags stay local-only.
       - name: monad_wallet_smoke (read-only Monad chain probes)
         working-directory: src-tauri
         run: cargo run --example monad_wallet_smoke --features monad
-
-      # ── Smoke (offline): analytics agent tools — csv + the xlsx bridge
-      #    (typed conversion, sidecar cache) through the office store, on
-      #    every OS. No network, no model.
-      - name: analytics_smoke (data_schema/data_query + xlsx bridge)
-        run: cargo run --example analytics_smoke
-        working-directory: src-tauri
 
   # Hosted-runner reclaims killed linux-smoke twice in two days (~47min in,
   # "The runner has received a shutdown signal" — community discussion 209375;
