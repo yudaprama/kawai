@@ -6926,7 +6926,13 @@ mod tests {
     /// the honest-failure (no revision) fixture.
     fn failing_registry() -> ToolRegistry {
         let dispatch: ToolDispatch = Arc::new(|call: ToolCall| {
-            Box::pin(async move { Err(format!("{} exploded", call.step.id)) })
+            let id = call.step.id.clone();
+            Box::pin(async move {
+                Err(kawai_router::RouterError::Dispatch(
+                    id.clone(),
+                    format!("{id} exploded"),
+                ))
+            })
         });
         let mut registry = ToolRegistry::new(dispatch);
         registry.register(ToolMeta {
