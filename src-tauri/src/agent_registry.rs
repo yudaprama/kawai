@@ -749,6 +749,7 @@ mod tests {
                 ENTERTAINMENT_AGENT_ID,
                 MONAD_AGENT_ID,
                 ACCOUNTING_AGENT_ID,
+                SECURITY_AGENT_ID,
             ]
         );
     }
