@@ -66,7 +66,8 @@ bun run build          # tsc -b && vite build → dist/
 bun run typecheck      # tsc -b --force
 
 # Desktop (Tauri) — the `tauri` npm script is wrapped by scripts/tauri.sh.
-# `dev` = on-device LLM stack: litert + binance + accounting features +
+# `dev` = on-device LLM stack: litert + binance + accounting + security
+# features +
 # native/ rpath + dev-bypass auth + profraw off (needs the Bazel-built
 # dylibs; run bundle:litert once).
 # `build` and everything else pass through unchanged.
@@ -614,6 +615,9 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
     hostile-output rule composed with `lonkero::ai::system_prompt::
     methodology_prompt` (one methodology source for both hosts).
     `cargo run -p security-tools --example security_smoke` proves the loop
-    end-to-end against a local vulnerable server. Deferred: session-pinned
-    scope registry (`lonkero::scope` extraction exists), scan-progress
-    streaming, persisted reports, Android.
+    end-to-end against a local vulnerable server. Ships in the desktop release
+    feature set (`release.yml` macOS/Linux/Windows: `security` rides
+    `litert,tts,binance,accounting,mexc,headless-chrome`) and in `bun tauri
+    dev`; Android deliberately defers (phone-class CPU for active scanning +
+    the .so weight). Deferred: session-pinned scope registry (`lonkero::scope`
+    extraction exists), scan-progress streaming, persisted reports, Android.
