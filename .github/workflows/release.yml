@@ -306,7 +306,7 @@ jobs:
       - name: Build .app (with litert + office)
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
           # Minisign key for the updater artifacts (.sig) + latest.json —
@@ -441,7 +441,7 @@ jobs:
       - name: Build .deb/.AppImage (with litert + office)
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
           # Minisign key for the updater artifacts (.sig) + latest.json —
@@ -577,7 +577,7 @@ jobs:
       - name: Build .msi/.exe (with litert + office)
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
           # Minisign key for the updater artifacts (.sig) + latest.json —
@@ -647,6 +647,10 @@ jobs:
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
+          # PAT, not GITHUB_TOKEN — release creation with the auto token
+          # 403'd ("Resource not accessible by integration") on the v0.3.38
+          # run; every other write in this workflow already uses the PAT.
+          token: ${{ secrets.RELEASE_TOKEN }}
           tag_name: v${{ needs.bump.outputs.version }}
           draft: true
           files: src-tauri/target/release/kawai-web
