@@ -283,7 +283,7 @@ jobs:
       - name: Set Android version
         run: |
           cat > "$RUNNER_TEMP/tauri-android-version.json" <<EOF
-          {"tauri": {"android": {"versionCode": $(( 10000 + ${{ github.run_number }} ))}}}
+          {"bundle": {"android": {"versionCode": $(( 10000 + ${{ github.run_number }} ))}}}
           EOF
 
       - name: Build signed AAB
