@@ -82,7 +82,7 @@ jobs:
           key: litert-lib-windows-x86_64-${{ steps.litert-lib-key.outputs.sha }}
 
       # Bazel is only needed on a dylib-cache miss. Mounted after the
-      # submodule init so the MODULE.bazel hash in the key resolves
+      # submodule init so the WORKSPACE hash in the key resolves
       # (pre-init it hashed an empty tree → constant key).
       - name: Mount bazel cache
         if: steps.litert-lib.outputs.cache-hit != 'true'
@@ -91,7 +91,7 @@ jobs:
           path: |
             ~/.cache/bazel
             C:\_b
-          key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
           restore-keys: bazel-windows-x86_64-
 
       - name: Install bazelisk
@@ -181,15 +181,9 @@ jobs:
         run: cargo test --lib
 
       # ── Smoke 1: on-device streaming ──
-      - name: Cache smoke model fixture
-        id: model
-        uses: actions/cache@v4
-        with:
-          path: smoke-model
-          key: gemma4-e4b-it-litertlm
-
+      # NOT cached: the repo's 10 GB Actions-cache quota was thrashing and
+      # evicting the litert dylibs between linux-build runs.
       - name: Download smoke model fixture
-        if: steps.model.outputs.cache-hit != 'true'
         shell: bash
         run: |
           mkdir -p smoke-model

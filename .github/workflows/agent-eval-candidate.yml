@@ -91,7 +91,7 @@ jobs:
 
       # Bazel is only needed on a dylib-cache miss — skip the multi-GB
       # restore and the build together on a hit. Mounted after the submodule
-      # init so the MODULE.bazel hash in the key resolves (pre-init it
+      # init so the WORKSPACE hash in the key resolves (pre-init it
       # hashed an empty tree → constant key disjoint from ci.yml).
       - name: Mount bazel cache
         if: steps.litert-lib.outputs.cache-hit != 'true'
@@ -100,7 +100,7 @@ jobs:
           path: |
             ~/.cache/bazel
             /private/var/tmp/_bazel_runner
-          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
           restore-keys: bazel-macos26-arm64-
 
       - name: Build litert-lm dylib

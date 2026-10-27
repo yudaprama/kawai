@@ -66,7 +66,7 @@ jobs:
       - name: Init submodules
         run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
 
-      # Mounted after the submodule init so the MODULE.bazel hash in the key
+      # Mounted after the submodule init so the WORKSPACE hash in the key
       # resolves (pre-init it hashed an empty tree → constant key).
       - name: Mount bazel cache
         uses: actions/cache@v4
@@ -74,7 +74,7 @@ jobs:
           path: |
             ~/.cache/bazel
             /private/var/tmp/_bazel_runner
-          key: bazel-macos26-android_arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          key: bazel-macos26-android_arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
           restore-keys: bazel-macos26-android_arm64-
 
       # The macos runner image ships the SDK (cmdline-tools, emulator,
@@ -162,16 +162,9 @@ jobs:
       # Production model, same as desktop releases and the phone app: Gemma 4
       # E4B (litert-community, public). 3.5 GB per cache miss; the smoke
       # proves the PRODUCTION model streams on the Android engine, not just
-      # a small fixture.
-      - name: Cache smoke model fixture
-        id: model
-        uses: actions/cache@v4
-        with:
-          path: smoke-model
-          key: gemma4-e4b-it-litertlm
-
+      # a small fixture. NOT cached: the repo's 10 GB Actions-cache quota was
+      # thrashing and evicting the litert dylibs between linux-build runs.
       - name: Download smoke model fixture
-        if: steps.model.outputs.cache-hit != 'true'
         run: |
           mkdir -p smoke-model
           curl -fL --retry 3 -o smoke-model/gemma-4-E4B-it.litertlm \

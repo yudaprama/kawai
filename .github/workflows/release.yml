@@ -252,7 +252,7 @@ jobs:
 
       # Bazel is only needed on a dylib-cache miss — skip the multi-GB
       # restore and the build together on a hit. Mounted after the submodule
-      # init so the MODULE.bazel hash in the key resolves (pre-init it
+      # init so the WORKSPACE hash in the key resolves (pre-init it
       # hashed an empty tree → constant key disjoint from ci.yml).
       # Per-runner-generation caveat: objects built against an older Xcode's
       # libc++ headers must not be reused after a toolchain jump.
@@ -263,7 +263,7 @@ jobs:
           path: |
             ~/.cache/bazel
             /private/var/tmp/_bazel_runner
-          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
           restore-keys: bazel-macos26-arm64-
 
       - name: Build litert-lm dylib
@@ -383,14 +383,14 @@ jobs:
           key: litert-lib-linux24-x86_64-${{ steps.litert-lib-key.outputs.sha }}
 
       # Bazel is only needed on a dylib-cache miss. Mounted after the
-      # submodule init so the MODULE.bazel hash in the key resolves
+      # submodule init so the WORKSPACE hash in the key resolves
       # (pre-init it hashed an empty tree → constant key).
       - name: Mount bazel cache
         if: steps.litert-lib.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: ~/.cache/bazel
-          key: bazel-linux24-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          key: bazel-linux24-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
           restore-keys: bazel-linux24-x86_64-
 
       # LiteRT-LM's .bazelrc pins CC=clang (action_env). ubuntu-24.04 ships
@@ -492,7 +492,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/bazel
-          key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
           restore-keys: bazel-windows-x86_64-
 
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)

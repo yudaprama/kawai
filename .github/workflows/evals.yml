@@ -48,6 +48,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # One shared cache for the three eval jobs — same workspace, so the
+          # per-job default keys saved three ~1 GB copies of the same tree,
+          # and that churn pushed the repo over the 10 GB Actions-cache quota
+          # which evicted linux-build's litert dylibs between runs (the
+          # rebuild-litert-every-time loop, 2026-10-26/27).
+          shared-key: eval-suites
           cache-on-failure: true
 
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
@@ -71,7 +77,7 @@ jobs:
 
       # Bazel is only needed on a dylib-cache miss — skip the multi-GB
       # restore and the build together on a hit. Mounted after the submodule
-      # init so the MODULE.bazel hash in the key resolves (pre-init it
+      # init so the WORKSPACE hash in the key resolves (pre-init it
       # hashed an empty tree → constant key disjoint from ci.yml).
       - name: Mount bazel cache
         if: steps.litert-lib.outputs.cache-hit != 'true'
@@ -80,7 +86,7 @@ jobs:
           path: |
             ~/.cache/bazel
             /private/var/tmp/_bazel_runner
-          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
           restore-keys: bazel-macos26-arm64-
 
       - name: Build litert-lm dylib
@@ -147,6 +153,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # One shared cache for the three eval jobs — same workspace, so the
+          # per-job default keys saved three ~1 GB copies of the same tree,
+          # and that churn pushed the repo over the 10 GB Actions-cache quota
+          # which evicted linux-build's litert dylibs between runs (the
+          # rebuild-litert-every-time loop, 2026-10-26/27).
+          shared-key: eval-suites
           cache-on-failure: true
 
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
@@ -170,7 +182,7 @@ jobs:
 
       # Bazel is only needed on a dylib-cache miss — skip the multi-GB
       # restore and the build together on a hit. Mounted after the submodule
-      # init so the MODULE.bazel hash in the key resolves (pre-init it
+      # init so the WORKSPACE hash in the key resolves (pre-init it
       # hashed an empty tree → constant key disjoint from ci.yml).
       - name: Mount bazel cache
         if: steps.litert-lib.outputs.cache-hit != 'true'
@@ -179,7 +191,7 @@ jobs:
           path: |
             ~/.cache/bazel
             /private/var/tmp/_bazel_runner
-          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
           restore-keys: bazel-macos26-arm64-
 
       - name: Build litert-lm dylib
@@ -267,6 +279,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # One shared cache for the three eval jobs — same workspace, so the
+          # per-job default keys saved three ~1 GB copies of the same tree,
+          # and that churn pushed the repo over the 10 GB Actions-cache quota
+          # which evicted linux-build's litert dylibs between runs (the
+          # rebuild-litert-every-time loop, 2026-10-26/27).
+          shared-key: eval-suites
           cache-on-failure: true
 
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
@@ -290,7 +308,7 @@ jobs:
 
       # Bazel is only needed on a dylib-cache miss — skip the multi-GB
       # restore and the build together on a hit. Mounted after the submodule
-      # init so the MODULE.bazel hash in the key resolves (pre-init it
+      # init so the WORKSPACE hash in the key resolves (pre-init it
       # hashed an empty tree → constant key disjoint from ci.yml).
       - name: Mount bazel cache
         if: steps.litert-lib.outputs.cache-hit != 'true'
@@ -299,7 +317,7 @@ jobs:
           path: |
             ~/.cache/bazel
             /private/var/tmp/_bazel_runner
-          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
           restore-keys: bazel-macos26-arm64-
 
       - name: Build litert-lm dylib

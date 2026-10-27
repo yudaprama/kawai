@@ -455,7 +455,7 @@ jobs:
 
       # Bazel is only needed on a dylib-cache miss — skip the multi-GB cache
       # restore and the build together on a hit. Mounted below the submodule
-      # init so the MODULE.bazel hash in the key actually resolves (the old
+      # init so the WORKSPACE hash in the key actually resolves (the old
       # pre-init position hashed an empty tree → constant key). Same
       # per-runner-generation caveat as release.yml build-macos: objects built
       # against an older Xcode's libc++ headers must not be reused after a
@@ -467,7 +467,7 @@ jobs:
           path: |
             ~/.cache/bazel
             /private/var/tmp/_bazel_runner
-          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
           restore-keys: bazel-macos26-arm64-
 
       - name: Build litert-lm dylib
@@ -503,16 +503,15 @@ jobs:
 
       # ── Smoke 1: on-device streaming (Roadmap MVP 3). The PRODUCTION model:
       #    gemma-4-E4B-it (litert-community, public) — the same weights the
-      #    desktop bundles and evals.yml ship. 3.5 GB, cached between runs.
-      - name: Cache smoke model fixture
-        id: model
-        uses: actions/cache@v4
-        with:
-          path: smoke-model
-          key: gemma4-e4b-it-litertlm
-
+      #    desktop bundles and evals.yml ship.
+      # The 3.5 GB fixture downloads per run, NOT cached: the repo's 10 GB
+      # Actions-cache quota was thrashing (~12 GB demanded), which evicted the
+      # litert dylibs within hours — linux-build rebuilt bazel nearly every
+      # run and this job re-downloaded the model anyway (run 40443508677).
+      # Freeing 3.5 GB lets the small high-value caches (dylibs, bazel, rust)
+      # survive; the HuggingFace download costs ~2-3 min against a 45-min
+      # budget.
       - name: Download smoke model fixture
-        if: steps.model.outputs.cache-hit != 'true'
         run: |
           mkdir -p smoke-model
           curl -fL --retry 3 -o smoke-model/gemma-4-E4B-it.litertlm \
@@ -679,14 +678,14 @@ jobs:
 
       # Bazel is only needed on a dylib-cache miss — skip the bazel cache
       # restore and the build together on a hit. Mounted below the submodule
-      # init so the MODULE.bazel hash in the key actually resolves (the old
+      # init so the WORKSPACE hash in the key actually resolves (the old
       # pre-init position hashed an empty tree → constant key).
       - name: Mount bazel cache
         if: steps.litert-lib.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: ~/.cache/bazel
-          key: bazel-linux-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          key: bazel-linux-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
           restore-keys: bazel-linux-x86_64-
 
       # Tauri needs GTK/webkit headers; bindgen + bazel need clang-18.
@@ -749,7 +748,10 @@ jobs:
   linux-smokes:
     needs: linux-build
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    # Observed band 22–30+ min (setup + compile of four smoke binaries +
+    # the 3.5 GB model run); 30 killed the job mid-binance_smoke on a slow
+    # runner (run 40443508677, 2026-10-27). 45 = ~50% headroom over the band.
+    timeout-minutes: 45
     env:
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_PROFILE_TEST_DEBUG: "0"
@@ -802,18 +804,10 @@ jobs:
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 1000
 
       # ── Smoke 1: on-device streaming ──
-      - name: Cache smoke model fixture
-        id: model
-        uses: actions/cache@v4
-        with:
-          path: smoke-model
-          # If the smoke is killed mid-stream, the 3.5 GB fixture must survive
-          # or every retry re-downloads it and re-enters the reclaim window.
-          save-always: true
-          key: gemma4-e4b-it-litertlm
-
+      # Same quota rationale as linux-smokes: no model cache — the download
+      # is ~2-3 min and the 3.5 GB entry was the largest eviction driver in
+      # the repo's 10 GB Actions-cache quota.
       - name: Download smoke model fixture
-        if: steps.model.outputs.cache-hit != 'true'
         run: |
           mkdir -p smoke-model
           curl -fL --retry 3 -o smoke-model/gemma-4-E4B-it.litertlm \

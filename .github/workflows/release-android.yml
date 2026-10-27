@@ -208,7 +208,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/bazel
-          key: bazel-linux-android_arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          key: bazel-linux-android_arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
           restore-keys: bazel-linux-android_arm64-
 
       - name: Install bazelisk
