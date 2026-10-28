@@ -127,13 +127,15 @@ bun run bundle:litert
 # kawai-web binary into a draft GitHub release. A final `publish` job (needs:
 # all build jobs) flips the draft to published + latest once every platform
 # build is green (3 retry attempts for transient gh/API failures). Failures
-# self-heal: the bot's own `chore(release): vX` ci re-run re-enters release;
-# the guard skips only if vX is already published, and otherwise RESUMES the
-# draft (rebuild missing assets, republish) — exactly one automatic retry.
-# Needs RELEASE_TOKEN (PAT with
-# contents:write) as a repo secret so the bump push doesn't trigger recursive
-# runs (GITHUB_TOKEN pushes create no push event — intentional). The same PAT
-# authenticates ALL github.com git traffic in the build jobs (insteadOf rewrite)
+# self-heal via workflow_dispatch: dispatching on a `chore(release): vX` HEAD
+# re-enters release; the guard skips if vX is already published and otherwise
+# RESUMES the draft (rebuild missing assets, republish). The bump COMMIT is
+# pushed with GITHUB_TOKEN — a GITHUB_TOKEN push creates no push event, so
+# ci/evals/windows-smoke/release never re-fire on a one-field version bump.
+# The TAG is then pushed with RELEASE_TOKEN (PAT with contents:write) — a PAT
+# event DOES trigger workflows, which is exactly what wakes release-android +
+# bloat. The same PAT authenticates ALL github.com git traffic in the build
+# jobs (insteadOf rewrite)
 # — private submodules (cognee-litert-lm, nested LiteRT-LM fork)
 # and private cargo git deps work without workflow changes. The frontend builds
 # inside tauri-action via beforeBuildCommand ("bun run build"); setup-bun +

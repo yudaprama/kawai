@@ -36,17 +36,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           # Full history so the version bump commit from a previous run is
-          # visible; token so we can push the bump back to main. The ref pins
-          # the commit that was actually smoked (the bump is rebased onto the
-          # tip of main below if main moved in the meantime).
+          # visible; PAT token for the TAG claim (a PAT event is what wakes
+          # release-android + bloat — the commit push itself uses GITHUB_TOKEN
+          # and triggers nothing). The ref pins the commit that was actually
+          # smoked (the bump is rebased onto the tip of main below if main
+          # moved in the meantime).
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN }}
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-      # Recursion guard: the bot lands its bump commit with a PAT, which DOES
-      # trigger `ci` again — and a green ci re-enters THIS workflow. (workflow_run has no
-      # head_commit payload, so the subject is read from the checked-out
-      # commit; the job-level gate above can't do this.)
+      # Guard for runs that still land on a bump commit. The bot's own bump
+      # commit is pushed with GITHUB_TOKEN — NO push event, so no workflow
+      # fires on it — so on the `workflow_run` path this only triggers for a
+      # hand-pushed chore(release) commit or a stale green ci. (workflow_run
+      # has no head_commit payload, so the subject is read from the
+      # checked-out commit; the job-level gate above can't do this.)
       # On a bump commit the run is either the loop terminator (the release
       # for that version is already published — skip) or the ONE automatic
       # retry for a failed release run (the release is still a draft — resume
@@ -94,6 +98,12 @@ jobs:
       - name: Bump patch version
         id: bump
         if: steps.guard.outputs.skipped == 'false'
+        env:
+          # Commit push only. GITHUB_TOKEN pushes create NO push event, so
+          # ci/evals/windows-smoke/release never fire on a one-field version
+          # bump. The tag push below uses the checkout's RELEASE_TOKEN
+          # credentials — a PAT event, which is what wakes release-android.
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           # ── Resume path ── the guard detected a still-draft release for the
@@ -163,14 +173,17 @@ jobs:
           git commit -m "chore(release): v$NEW"
 
           # Land the bump commit on main BEFORE claiming the tag, so the tag
-          # always points at a commit reachable from main. On a non-FF
-          # rejection (another push raced us), rebase the one-file change and
-          # retry; failing that, go red loudly rather than orphaning a tag.
-          if ! git push origin HEAD:main; then
+          # always points at a commit reachable from main. Pushed with
+          # GITHUB_TOKEN (= no push event → no workflow re-triggers). On a
+          # non-FF rejection (another push raced us), rebase the one-file
+          # change and retry; failing that, go red loudly rather than
+          # orphaning a tag.
+          PUSH_URL="https://x-access-token:${GH_TOKEN}@github.com/yudaprama/kawai.git"
+          if ! git push "$PUSH_URL" HEAD:main; then
             echo "Push rejected (remote moved) — rebasing the bump commit."
             git fetch origin main
             git rebase origin/main
-            git push origin HEAD:main
+            git push "$PUSH_URL" HEAD:main
           fi
 
           # The bump commit is on main — now create and claim the tag.
