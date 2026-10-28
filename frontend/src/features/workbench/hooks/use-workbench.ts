@@ -131,7 +131,7 @@ export interface WorkbenchRun {
   /** Plan key — lets the journal read this run's full step reports from
    *  supervisor_step_results even after the supervisor moved on. */
   planKey?: string | null;
-  /** Source video of a YouTube Summary run — the canvas embeds the player
+  /** Source video of a YouTube Video Analysis run — the canvas embeds the player
    *  from it. Copied from supervisor state at terminal, restored from the
    *  persisted plan record on reopen. */
   videoId?: string | null;
@@ -813,7 +813,7 @@ export function useWorkbench() {
     [supervisor, preflightRun, beginRun],
   );
 
-  /** YouTube Summary (PLAN-youtube-summary): one link in, the FIXED
+  /** YouTube Video Analysis (PLAN-youtube-video-analysis): one link in, the FIXED
    *  pipeline out. Same client mechanics as `runDesk` — balance gate
    *  (fail-closed), lazy session — but no planner, no review gate: the
    *  backend fetches the transcript and builds the plan, then streams the
@@ -831,10 +831,10 @@ export function useWorkbench() {
       const link = url.trim();
       if (!link) return;
       // Balance gate + lazy session — the shared fail-closed pre-flight.
-      const sid = await preflightRun(`YouTube: ${link}`.slice(0, 80), "Couldn't start the summary");
+      const sid = await preflightRun(`YouTube: ${link}`.slice(0, 80), "Couldn't start the analysis");
       // All gates passed — consume the follow-up/quote arming after them so
       // a blocked submit leaves both intact for the retry.
-      const goal = `YouTube summary — ${link}`.slice(0, 140);
+      const goal = `YouTube video analysis — ${link}`.slice(0, 140);
       beginRun(goal, false);
       opts?.onStart?.();
       void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});

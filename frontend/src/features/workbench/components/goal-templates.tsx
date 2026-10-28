@@ -17,7 +17,7 @@ const GOAL_TEMPLATES: { id: GoalTemplateId; label: string }[] = [
   { id: "crypto", label: "Crypto Research" },
   { id: "commodity", label: "Commodity Research" },
   { id: "forex", label: "Forex Research" },
-  { id: "youtube", label: "YouTube Summary" },
+  { id: "youtube", label: "YouTube Video Analysis" },
   { id: "binanceAudit", label: "Futures Risk Audit" },
   { id: "cryptoScreener", label: "Crypto Screener" },
   { id: "bookClose", label: "Monthly Close" },
@@ -31,8 +31,8 @@ const GOAL_TEMPLATES: { id: GoalTemplateId; label: string }[] = [
 const DESK_TEMPLATES: readonly GoalTemplateId[] = ["stock", "crypto", "commodity", "forex"];
 export const templateOpensDesk = (t: GoalTemplateId | null): boolean => t != null && DESK_TEMPLATES.includes(t);
 
-/** Templates whose workflow is the fixed-pipeline YouTube Summary (a link in,
- *  a five-section summary out — no planning round). Discloses its URL form
+/** Templates whose workflow is the fixed-pipeline YouTube Video Analysis (a link in,
+ *  a seven-section brief out — no planning round). Discloses its URL form
  *  the same way research templates disclose the desk panel. */
 const YOUTUBE_TEMPLATES: readonly GoalTemplateId[] = ["youtube"];
 
@@ -92,7 +92,7 @@ const DOCS_FOR_TEMPLATE: Record<GoalTemplateId, string> = {
   crypto: "https://kawai.pro/workflows/research/",
   commodity: "https://kawai.pro/workflows/research/",
   forex: "https://kawai.pro/workflows/research/",
-  youtube: "https://kawai.pro/workflows/youtube-summary/",
+  youtube: "https://kawai.pro/workflows/youtube-video-analysis/",
   binanceAudit: "https://kawai.pro/workflows/futures-risk-audit/",
   cryptoScreener: "https://kawai.pro/workflows/",
   bookClose: "https://kawai.pro/workflows/",

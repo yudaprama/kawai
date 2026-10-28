@@ -179,7 +179,7 @@ export interface PersistedPlan {
    *  that stays partial means the run never reached a terminal event (app
    *  quit / crash) — history renders it as an interrupted run. */
   partial?: boolean;
-  /** Source video of a YouTube Summary run — the deliverable canvas embeds
+  /** Source video of a YouTube Video Analysis run — the deliverable canvas embeds
    *  the player from it after a session reopen. Absent on every other run. */
   videoId?: string | null;
 }
@@ -349,7 +349,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
 
   /** Shared stream body for EVERY supervisor client: the planner-driven
    *  execute_supervisor_plan, the Stock Research's run_stock_research, and
-   *  the YouTube Summary's run_youtube_summary.
+   *  the YouTube Video Analysis op run_youtube_analysis.
    *  Same SupervisorEvent pipeline, persistence, and terminal handling. */
   const startStream = useCallback(
     (payload: Record<string, unknown>, sessionId: number, op = "execute_supervisor_plan") => {
@@ -585,7 +585,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     [startStream],
   );
 
-  /** YouTube Summary (PLAN-youtube-summary): execute the FIXED summarization
+  /** YouTube Video Analysis (PLAN-youtube-video-analysis): execute the FIXED analysis
    *  pipeline — no planner, no review gate. Streams the same SupervisorEvent
    *  lifecycle as runPlan, so the Workbench rail/deliverable/reports render
    *  it unchanged. The caller has already persisted the user message and
@@ -601,7 +601,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           language: navigator.language,
         },
         sessionId,
-        "run_youtube_summary",
+        "run_youtube_analysis",
       );
     },
     [startStream],

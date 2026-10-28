@@ -29,7 +29,7 @@ import {
 } from "./goal-templates";
 import type { GoalTemplateId } from "./goal-templates";
 import { ProgressRail, RunHistoryRail } from "./progress-rail";
-import { YoutubeSummaryForm } from "./youtube-summary-form";
+import { YoutubeAnalysisForm } from "./youtube-analysis-form";
 import { BinanceAuditForm, type AuditVenue } from "./binance-audit-form";
 import { CryptoScreenerForm } from "./crypto-screener-form";
 import { BookCloseForm } from "./book-close-form";
@@ -392,7 +392,7 @@ export function WorkbenchPage({
     [beginPipelineRun, workbench.runDesk],
   );
 
-  /** YouTube Summary submit (PLAN-youtube-summary): one link in, the FIXED
+  /** YouTube Video Analysis submit (PLAN-youtube-video-analysis): one link in, the FIXED
    *  pipeline out. Same canvas handoff as a desk submit — the run streams the
    *  same SupervisorEvent lifecycle, so the rail, deliverable viewer, and
    *  AGENT REPORTS render it unchanged. */
@@ -645,7 +645,7 @@ export function WorkbenchPage({
               )}
               {templateOpensYoutube(template) && (
                 <div className="mt-3">
-                  <YoutubeSummaryForm disabled={composerStatus === "submitted"} onSubmit={submitYoutube} />
+                  <YoutubeAnalysisForm disabled={composerStatus === "submitted"} onSubmit={submitYoutube} />
                 </div>
               )}
               {templateOpensAudit(template) && (

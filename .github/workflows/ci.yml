@@ -27,10 +27,11 @@ name: ci
 # set on its single ABI (aarch64): the tts chain (supertonic → ocr-rs MNN
 # prebuilt, static-linked), the litert chain (cognee-litert-lm bindgen over
 # the nested LiteRT-LM C headers), binance, accounting, mexc — check-only, no
-# APK. The Android RUNTIME gate lives in android-smoke.yml (separate
-# workflow: nightly + dispatched + after green ci, the windows-smoke
-# pattern — it adds a second bazel graph, a full aarch64 cross-compile and
-# an emulator boot, too heavy for this push cadence). armeabi-v7a is not
+# APK. The Android RUNTIME gate lives in android-smoke.yml (separate,
+# manually dispatched on a self-hosted runner — an emulator on HVF-capable
+# Apple Silicon or a physical arm64 device; it adds a second bazel graph, a
+# full aarch64 cross-compile and a boot, too heavy for this push cadence).
+# armeabi-v7a is not
 # built: the LiteRT-LM C library exists for android_arm64 only, and a
 # GB-scale model does not fit a 32-bit address space.
 
@@ -382,10 +383,11 @@ jobs:
         run: cargo ndk -t arm64-v8a -P 24 check --features litert,tts,binance,accounting,mexc
 
   # ── Android on-device smoke ───────────────────────────────────────────────
-  # Lives in android-smoke.yml (nightly + after green ci + dispatched, the
-  # windows-smoke pattern): it adds a second bazel graph (android_arm64), a
-  # full aarch64 cross-compile and an emulator boot — too heavy for the push
-  # cadence. android-check above stays the every-push Android gate.
+  # Lives in android-smoke.yml (manual dispatch on a self-hosted runner): it
+  # adds a second bazel graph (android_arm64), a full aarch64 cross-compile
+  # and an emulator/device boot — too heavy for the push cadence, and hosted
+  # macOS runners cannot boot the AVD (no nested virtualization).
+  # android-check above stays the every-push Android gate.
   #
   # ── Full gate: unit tests + on-device smoke + hybrid cloud smokes ─────────
   macos-smoke:

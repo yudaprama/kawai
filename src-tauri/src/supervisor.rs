@@ -642,16 +642,16 @@ fn static_reply_text(
         }
         kawai_router::StaticIntent::Greeting => {
             if indonesian {
-                "Halo! 👋 Senang bertemu Anda. Saya Kawai, asisten kerja Anda — saya bisa membantu analisis saham & crypto, audit portofolio futures, rangkum video YouTube, tutup buku akunting, dan olah dokumen/PDF. Mau mulai dari mana?".into()
+                "Halo! 👋 Senang bertemu Anda. Saya Kawai, asisten kerja Anda — saya bisa membantu analisis saham & crypto, audit portofolio futures, analisis video YouTube, tutup buku akunting, dan olah dokumen/PDF. Mau mulai dari mana?".into()
             } else {
-                "Hi! 👋 Great to meet you. I'm Kawai, your work assistant — I can analyze stocks & crypto, audit your futures portfolio, summarize YouTube videos, close your books, and work on documents/PDFs. Where would you like to start?".into()
+                "Hi! 👋 Great to meet you. I'm Kawai, your work assistant — I can analyze stocks & crypto, audit your futures portfolio, analyze YouTube videos, close your books, and work on documents/PDFs. Where would you like to start?".into()
             }
         }
         kawai_router::StaticIntent::Identity => {
             if indonesian {
-                "Saya Kawai — asisten kerja Anda di aplikasi Kawai. Saya bisa membantu: analisis saham & crypto (research desk, screener), audit & performa trading, rangkuman YouTube, akunting (tutup buku, laporan keuangan), serta pengolahan dokumen & PDF. Tulis saja tujuan Anda di composer — saya yang menyusun langkah-langkahnya.".into()
+                "Saya Kawai — asisten kerja Anda di aplikasi Kawai. Saya bisa membantu: analisis saham & crypto (research desk, screener), audit & performa trading, analisis video YouTube, akunting (tutup buku, laporan keuangan), serta pengolahan dokumen & PDF. Tulis saja tujuan Anda di composer — saya yang menyusun langkah-langkahnya.".into()
             } else {
-                "I'm Kawai — your work assistant in the Kawai app. I can help with: stock & crypto analysis (research desk, screener), portfolio audit & trading performance, YouTube summaries, accounting (book close, financial reports), and document & PDF work. Just type your goal in the composer and I'll plan the steps.".into()
+                "I'm Kawai — your work assistant in the Kawai app. I can help with: stock & crypto analysis (research desk, screener), portfolio audit & trading performance, YouTube video analysis, accounting (book close, financial reports), and document & PDF work. Just type your goal in the composer and I'll plan the steps.".into()
             }
         }
     }
@@ -2749,7 +2749,7 @@ pub fn plan_key(plan: &kawai_router::TaskPlan) -> String {
 }
 
 /// Resolve the output language for the FIXED pipelines (Analysis Desk,
-/// YouTube Summary) from the transport edge — same edge-resolution invariant
+/// YouTube Video Analysis) from the transport edge — same edge-resolution invariant
 /// as identity (AGENTS.md #8): the frontend never decides prompt semantics,
 /// it only reports the device locale.
 ///
@@ -3185,7 +3185,7 @@ fn venue_symbol_spellings(symbol: &str) -> Vec<(kawai_venue::Venue, &'static str
     out
 }
 
-/// The YouTube Summary execution registry: the merged auto catalog narrowed
+/// The YouTube Video Analysis execution registry: the merged auto catalog narrowed
 /// for dispatch PLUS the one youtube stage tool. Stage steps are never
 /// visible to the planner (never in the Turso tool catalog or
 /// `PLAN_CORE_TOOLS`) — this registry is the dispatch view only.
@@ -3262,7 +3262,7 @@ pub fn append_books_sync_step(
 // ── Fixed-pipeline builders (one per fixed workflow) ─────────────────────
 //
 // Each fixed workflow (Stock Research, risk audits, Trading Performance,
-// Monthly Close, Crypto Screener, YouTube Summary) is built by exactly ONE
+// Monthly Close, Crypto Screener, YouTube Video Analysis) is built by exactly ONE
 // `prepare_*` fn here. The Tauri command (commands.rs) and the Axum SSE
 // handler (web.rs) both call it, so language resolution, preset
 // normalization, read-back-before-goal, the plan, the user goal, the
@@ -3385,9 +3385,10 @@ pub async fn prepare_desk_run(
     Ok(run)
 }
 
-/// YouTube Summary (PLAN-youtube-summary): fetch the transcript, then build
-/// the FIXED map→compose plan. The fetch happens BEFORE any plan exists, so
-/// a bad URL or a transcript-less video rejects the op cleanly.
+/// YouTube Video Analysis (PLAN-youtube-video-analysis): fetch the
+/// transcript, then build the FIXED map→compose→fact-check/analysis plan.
+/// The fetch happens BEFORE any plan exists, so a bad URL or a
+/// transcript-less video rejects the op cleanly.
 #[cfg(feature = "litert")]
 pub async fn prepare_youtube_run(
     user_id: &str,
@@ -3410,7 +3411,7 @@ pub async fn prepare_youtube_run(
         plan,
         user_goal,
         component: "youtube",
-        message: "running youtube summary",
+        message: "running youtube video analysis",
         registry,
         video_id: Some(video.id),
         allow_model_revision: false,
@@ -5769,7 +5770,7 @@ pub fn execute_plan_stream_with_cancel(
     // (it plans, so it reframes) — but the deliverable must answer what the
     // USER asked, so synthesis prefers this over the rewritten goal.
     user_goal: Option<String>,
-    // The source video of a YouTube Summary run, surfaced on `PlanStarted`
+    // The source video of a YouTube Video Analysis run, surfaced on `PlanStarted`
     // so the frontend can embed the player. `None` for every other caller.
     video_id: Option<String>,
     // Billing bearer from the transport edge (AGENTS.md #8) — same contract
@@ -7521,7 +7522,7 @@ mod tests {
         }
     }
 
-    /// The YouTube Summary's source video rides `planStarted` — the frontend
+    /// The YouTube Video Analysis source video rides `planStarted` — the frontend
     /// embeds the player from this field, so a dropped id silently degrades
     /// the canvas to a text-only deliverable.
     #[tokio::test]

@@ -180,7 +180,9 @@ libc = "0.2"
 # Android TLS: reqwest's `rustls` feature verifies against the Android system
 # cert store through rustls-platform-verifier, which panics on first use
 # unless initialized with the app's JNI context (lib.rs setup does this).
-# The Kotlin verifier component lives in gen/android (CertificateVerifier.kt).
+# The Kotlin verifier component comes from the Maven artifact
+# org.rustls:rustls-platform-verifier (gen/android Gradle deps); its version
+# must stay in sync with rustls-platform-verifier-android in Cargo.lock.
 [target.'cfg(target_os = "android")'.dependencies]
 rustls-platform-verifier = "0.7"
 jni = "0.22"

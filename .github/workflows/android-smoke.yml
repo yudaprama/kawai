@@ -1,30 +1,41 @@
 name: android-smoke
+run-name: android-smoke (${{ inputs.target }})
 
-# Android is a deliberately isolated runtime gate (the windows-smoke
-# pattern). It adds a second bazel graph (android_arm64), a full aarch64
-# cross-compile of release-android's feature set and an emulator boot —
-# together too heavy for the push cadence of ci.yml, where android-check
-# remains the every-push Android gate (compile-only). This workflow proves
-# the runtime half: the smoke binary executed under bionic on a headless
-# arm64 emulator — NDK linkage, .so loader chain, arm64 CPU inference.
+# Manual runtime gate for the Android stack. It builds the android_arm64
+# LiteRT-LM engine, cross-compiles `local_llm_smoke` with release-android's
+# exact feature set, then runs it under bionic — NDK linkage, .so loader
+# chain and arm64 CPU inference on the stack Android actually ships.
 #
-# Only local_llm_smoke runs here. The cloud smokes (remote/draft/planner/
-# binance) gain no Android-specific signal beyond this compile, and a
-# headless adb-shell process has no JVM for rustls-platform-verifier's JNI
-# init — every HTTPS call would panic (see AGENTS.md Landmines). They stay
-# on the desktop gates.
+# MANUAL ONLY, and NOT on a GitHub-hosted runner: hosted macOS arm64 images
+# are VMs without nested virtualization, so the arm64 AVD cannot initialize
+# HVF (`HVF error: HV_UNSUPPORTED`) and the emulator never boots. Dispatch
+# this on a machine that has the hardware:
 #
-# macos-26 (arm64) is required, not ubuntu: the arm64 emulator needs
-# hypervisor acceleration (HVF); arm64 AVDs on x86_64 Linux hosts have none.
+#   target=emulator (default) → self-hosted Apple Silicon macOS host (HVF)
+#   target=device             → self-hosted runner with an arm64 phone on adb
+#
+# Every-push Android coverage stays compile-only in ci.yml (`android-check`,
+# `cargo ndk check`). The cloud smokes (remote/draft/planner/binance) gain no
+# Android-specific signal beyond that compile, and a headless adb-shell
+# process has no JVM for rustls-platform-verifier's JNI init — every HTTPS
+# call would panic (see AGENTS.md Landmines). Only local_llm_smoke runs here.
 
 on:
-  schedule:
-    - cron: "41 4 * * *"
   workflow_dispatch:
-  workflow_run:
-    workflows: [ci]
-    types: [completed]
-    branches: [main]
+    inputs:
+      target:
+        description: "Where to run the smoke"
+        type: choice
+        options: [emulator, device]
+        default: emulator
+      runners:
+        description: "JSON array of runner labels for runs-on"
+        type: string
+        default: '["self-hosted","macOS","ARM64"]'
+      adb_serial:
+        description: "device target only: adb serial (blank = auto-detect)"
+        type: string
+        default: ""
 
 concurrency:
   group: android-smoke-${{ github.ref }}
@@ -35,20 +46,77 @@ permissions:
 
 jobs:
   android-smoke:
-    if: >-
-      github.event_name != 'workflow_run' ||
-      github.event.workflow_run.conclusion == 'success'
-    runs-on: macos-26
+    runs-on: ${{ fromJSON(inputs.runners) }}
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Git auth for private dependencies
         run: |
           git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      # A self-hosted host does not get the runner image's ANDROID_HOME/PATH
+      # for free. Fail with a clear message instead of a confusing
+      # "no emulator binary" three steps later.
+      - name: Resolve Android SDK
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_HOME:-}" ]; then
+            for CAND in "$HOME/Library/Android/sdk" "$HOME/Android/Sdk" /usr/local/share/android-sdk /opt/android-sdk; do
+              [ -d "$CAND" ] && { ANDROID_HOME="$CAND"; break; }
+            done
+          fi
+          if [ -z "${ANDROID_HOME:-}" ] || [ ! -d "$ANDROID_HOME" ]; then
+            echo "::error::ANDROID_HOME is not set and no Android SDK was found (add it to the runner's environment)"
+            exit 1
+          fi
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/emulator" >> "$GITHUB_PATH"
+
+      # Fail fast BEFORE the ~30 min bazel build. Hosted macOS runners pass
+      # every other check and then die at emulator boot, which is exactly the
+      # waste this probe exists to prevent.
+      - name: Preflight — hypervisor (emulator)
+        if: inputs.target == 'emulator'
+        run: |
+          set -euo pipefail
+          EMU="$ANDROID_HOME/emulator/emulator"
+          [ -x "$EMU" ] || { echo "::error::no emulator binary at $EMU"; exit 1; }
+          if command -v sysctl > /dev/null; then
+            echo "kern.hv_support=$(sysctl -n kern.hv_support 2>/dev/null || echo n/a)"
+          fi
+          OUTF="$RUNNER_TEMP/accel-check.log"
+          if "$EMU" -accel-check > "$OUTF" 2>&1; then RC=0; else RC=$?; fi
+          cat "$OUTF"
+          if [ "$RC" -ne 0 ] || grep -qiE 'not (supported|installed|usable)|HV_UNSUPPORTED' "$OUTF"; then
+            echo "::error::No usable hypervisor on this host. Hosted macOS arm64 runners are VMs without nested virtualization; use a self-hosted Apple Silicon host, or dispatch target=device."
+            exit 1
+          fi
+
+      - name: Preflight — attached Android device (device)
+        if: inputs.target == 'device'
+        env:
+          ADB_SERIAL_IN: ${{ inputs.adb_serial }}
+        run: |
+          set -euo pipefail
+          adb start-server > /dev/null
+          SERIAL="$ADB_SERIAL_IN"
+          if [ -z "$SERIAL" ]; then
+            SERIAL="$(adb devices | awk '$2 == "device" { print $1; exit }')"
+          fi
+          if [ -z "$SERIAL" ]; then
+            echo "::error::no adb device attached (or none of them is authorized)"
+            adb devices
+            exit 1
+          fi
+          ABI="$(adb -s "$SERIAL" shell getprop ro.product.cpu.abi | tr -d '\r')"
+          echo "device $SERIAL abi=$ABI"
+          [ "$ABI" = "arm64-v8a" ] || { echo "::error::device ABI is '$ABI'; the smoke binary and liblitert-lm.so are arm64 only"; exit 1; }
+          echo "ANDROID_SERIAL=$SERIAL" >> "$GITHUB_ENV"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -74,18 +142,23 @@ jobs:
           path: |
             ~/.cache/bazel
             /private/var/tmp/_bazel_runner
-          key: bazel-macos26-android_arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
-          restore-keys: bazel-macos26-android_arm64-
+          key: bazel-android_arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
+          restore-keys: bazel-android_arm64-
 
-      # The macos runner image ships the SDK (cmdline-tools, emulator,
-      # platform-tools) — install only the pinned NDK 28 (same as
-      # android-check / release-android) and the arm64 system image.
-      - name: Install NDK 28 + arm64 system image
+      # Install only the pinned NDK 28 (same as android-check / release-android)
+      # and, for the emulator target, the arm64 system image. The rest of the
+      # SDK (cmdline-tools, emulator, platform-tools) comes from the host.
+      - name: Install NDK 28 (+ arm64 system image for emulator)
         run: |
           set -euo pipefail
-          SDKM="$(ls -d "$ANDROID_HOME"/cmdline-tools/latest*/bin/sdkmanager | sort -V | tail -n1)"
+          SDKM="$(find "$ANDROID_HOME/cmdline-tools" -maxdepth 3 -name sdkmanager -path '*/bin/*' 2>/dev/null | sort -V | tail -n1)"
+          [ -n "$SDKM" ] || { echo "::error::sdkmanager not found under $ANDROID_HOME/cmdline-tools"; exit 1; }
           yes | "$SDKM" --licenses > /dev/null || true
-          "$SDKM" --install "ndk;28.2.13676358" "system-images;android-34;google_apis_playstore;arm64-v8a"
+          PKGS=("ndk;28.2.13676358")
+          if [ "${{ inputs.target }}" = "emulator" ]; then
+            PKGS+=("system-images;android-34;google_apis_playstore;arm64-v8a")
+          fi
+          "$SDKM" --install "${PKGS[@]}"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
 
@@ -101,11 +174,20 @@ jobs:
         run: cargo install cargo-ndk --locked
 
       # Same recipe as release-android's build job. JAVA_HOME 17 for bazel,
-      # same as macos-smoke's desktop build.
+      # same as macos-smoke's desktop build. `--config=android_arm64` is a
+      # cross-compile config, so this works on any macOS host arch.
       - name: Build litert-lm for Android (arm64)
         run: |
           set -euo pipefail
-          export JAVA_HOME="$JAVA_HOME_17_arm64"
+          # Hosted runners export JAVA_HOME_17_arm64; self-hosted hosts use
+          # the JDK the runner was started with, or java_home's 17.
+          if [ -n "${JAVA_HOME_17_arm64:-}" ]; then
+            export JAVA_HOME="$JAVA_HOME_17_arm64"
+          elif /usr/libexec/java_home -v 17 > /dev/null 2>&1; then
+            JAVA_HOME="$(/usr/libexec/java_home -v 17)"
+            export JAVA_HOME
+          fi
+          echo "JAVA_HOME=${JAVA_HOME:-<unset>}"
           cd cognee-litert-lm/vendor/LiteRT-LM
           # Same link flags as release-android.yml — 16 KB ELF alignment is a
           # Google Play requirement; the smoke must test the shipped binary.
@@ -135,17 +217,29 @@ jobs:
       # serial (emulator-5556) so every later adb call can pin -s. wipe-data
       # is a no-op on a fresh AVD but keeps reruns of a warm job honest.
       - name: Boot headless arm64 emulator
+        if: inputs.target == 'emulator'
         run: |
           set -euo pipefail
-          AVDM="$(ls "$ANDROID_HOME"/cmdline-tools/latest*/bin/avdmanager | sort -V | tail -n1)"
+          AVDM="$(find "$ANDROID_HOME/cmdline-tools" -maxdepth 3 -name avdmanager -path '*/bin/*' 2>/dev/null | sort -V | tail -n1)"
+          [ -n "$AVDM" ] || { echo "::error::avdmanager not found under $ANDROID_HOME/cmdline-tools"; exit 1; }
           echo no | "$AVDM" create avd -n kawai_ci -k "system-images;android-34;google_apis_playstore;arm64-v8a" -d pixel_6 --force
           printf 'hw.ramSize=4096\ndisk.dataPartition.size=12G\n' >> ~/.android/avd/kawai_ci.avd/config.ini
           nohup "$ANDROID_HOME/emulator/emulator" -avd kawai_ci -port 5556 -memory 4096 -wipe-data \
             -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader_indirect \
             > "$RUNNER_TEMP/emu.log" 2>&1 &
-          disown
+          EMU_PID=$!
+          disown || true
           for i in $(seq 1 60); do
             adb devices | grep -q "emulator-5556[[:space:]]device$" && break
+            # A dead emulator never shows up as a device: bail on the boot
+            # failure instead of waiting out the loop.
+            if ! kill -0 "$EMU_PID" 2>/dev/null; then
+              echo "emulator exited during boot:"
+              tail -40 "$RUNNER_TEMP/emu.log"
+              grep -q "HV_UNSUPPORTED" "$RUNNER_TEMP/emu.log" \
+                && echo "::error::Host has no nested virtualization (HVF HV_UNSUPPORTED). Use a self-hosted Apple Silicon host or target=device."
+              exit 1
+            fi
             # The adbd handshake can wedge on a stale adb-server transport
             # while the guest boots fine — bounce the server periodically.
             if [ $((i % 10)) -eq 0 ]; then adb kill-server; adb start-server > /dev/null 2>&1 || true; fi
@@ -159,6 +253,15 @@ jobs:
           done
           echo "boot timeout"; tail -30 "$RUNNER_TEMP/emu.log"; exit 1
 
+      - name: Resolve adb serial
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.target }}" = "emulator" ]; then
+            echo "KAWAI_ADB_SERIAL=emulator-5556" >> "$GITHUB_ENV"
+          else
+            echo "KAWAI_ADB_SERIAL=$ANDROID_SERIAL" >> "$GITHUB_ENV"
+          fi
+
       # Production model, same as desktop releases and the phone app: Gemma 4
       # E4B (litert-community, public). 3.5 GB per cache miss; the smoke
       # proves the PRODUCTION model streams on the Android engine, not just
@@ -170,30 +273,35 @@ jobs:
           curl -fL --retry 3 -o smoke-model/gemma-4-E4B-it.litertlm \
             https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
 
-      - name: Push binary + libs + model to the emulator
+      - name: Push binary + libs + model to the device
         run: |
           set -euo pipefail
-          adb -s emulator-5556 shell mkdir -p /data/local/tmp/kawai-smoke
-          adb -s emulator-5556 push src-tauri/target/aarch64-linux-android/release/examples/local_llm_smoke /data/local/tmp/kawai-smoke/
-          adb -s emulator-5556 push \
+          FREE_KB="$(adb -s "$KAWAI_ADB_SERIAL" shell df -k /data/local/tmp 2>/dev/null | awk 'NR==2{print $4}' | tr -d '\r')"
+          if [ -n "${FREE_KB:-}" ] && [ "$FREE_KB" -lt $((4 * 1024 * 1024)) ]; then
+            echo "::error::/data/local/tmp needs ~4 GB free for the 3.5 GB model (have $((FREE_KB / 1024)) MB)"
+            exit 1
+          fi
+          adb -s "$KAWAI_ADB_SERIAL" shell mkdir -p /data/local/tmp/kawai-smoke
+          adb -s "$KAWAI_ADB_SERIAL" push src-tauri/target/aarch64-linux-android/release/examples/local_llm_smoke /data/local/tmp/kawai-smoke/
+          adb -s "$KAWAI_ADB_SERIAL" push \
             cognee-litert-lm/native/aarch64-linux-android/liblitert-lm.so \
             cognee-litert-lm/native/aarch64-linux-android/libGemmaModelConstraintProvider.so \
             /data/local/tmp/kawai-smoke/
-          adb -s emulator-5556 push smoke-model/gemma-4-E4B-it.litertlm /data/local/tmp/kawai-smoke/
+          adb -s "$KAWAI_ADB_SERIAL" push --sync smoke-model/gemma-4-E4B-it.litertlm /data/local/tmp/kawai-smoke/
 
       # Runs as the shell user under bionic; LD_LIBRARY_PATH resolves the
       # .so chain from the payload dir (the dlopen'd companions load from
       # the same dir). TMPDIR must be a writable dir (there is no /tmp on
       # Android); LLVM_PROFILE_FILE per the bazel-instrumented-dylib
-      # landmine; K/V clamped to 8192 like windows-smoke's E4B eval — the
-      # guest has 4 GB RAM and E4B already needs ~3.5 GB.
+      # landmine; K/V clamped to 8192 — the emulator guest has 4 GB RAM and
+      # E4B already needs ~3.5 GB.
       - name: local_llm_smoke (on-device Android streaming regression)
         run: |
-          adb -s emulator-5556 shell "chmod 755 /data/local/tmp/kawai-smoke/local_llm_smoke \
+          adb -s "$KAWAI_ADB_SERIAL" shell "chmod 755 /data/local/tmp/kawai-smoke/local_llm_smoke \
             && cd /data/local/tmp/kawai-smoke \
             && TMPDIR=/data/local/tmp LD_LIBRARY_PATH=/data/local/tmp/kawai-smoke LLVM_PROFILE_FILE=/dev/null KAWAI_LLM_MAX_TOKENS=8192 \
             ./local_llm_smoke ./gemma-4-E4B-it.litertlm"
 
       - name: Stop emulator
-        if: always()
+        if: always() && inputs.target == 'emulator'
         run: adb -s emulator-5556 emu kill || true

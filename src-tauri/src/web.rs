@@ -2574,7 +2574,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
     .route("/api/plan_task", post(plan_task_handler))
     .route("/api/run_stock_research", post(run_stock_research_handler))
     .route("/api/supervisor_step_output", post(supervisor_step_output_handler))
-    .route("/api/run_youtube_summary", post(run_youtube_summary_handler));
+    .route("/api/run_youtube_analysis", post(run_youtube_analysis_handler));
 
     // Futures Risk Audit (fixed pipeline over the user's open positions) +
     // the other fixed pipelines. Each route carries the SAME feature gate as
@@ -2942,7 +2942,7 @@ fn supervisor_sse(
     user_id: String,
     session_id: i64,
     user_goal: Option<String>,
-    // Source video of a YouTube Summary run — surfaced on `PlanStarted` so
+    // Source video of a YouTube Video Analysis run — surfaced on `PlanStarted` so
     // the frontend can embed the player. `None` for every other handler.
     video_id: Option<String>,
     bearer: &str,
@@ -3032,15 +3032,16 @@ async fn run_stock_research_handler(
     ))
 }
 
-/// YouTube Summary (PLAN-youtube-summary): fetch the transcript, build the
-/// FIXED map→compose plan over it, stream the same `SupervisorEvent`
-/// lifecycle. The transcript fetch happens BEFORE the stream opens, so a bad
-/// URL or a transcript-less video is a 4xx carrying the reason — never a
-/// half-started run. Error body mirrors the Tauri command's `Err(String)`.
+/// YouTube Video Analysis (PLAN-youtube-video-analysis): fetch the
+/// transcript, build the FIXED map→compose→fact-check/analysis plan over it,
+/// stream the same `SupervisorEvent` lifecycle. The transcript fetch happens
+/// BEFORE the stream opens, so a bad URL or a transcript-less video is a 4xx
+/// carrying the reason — never a half-started run. Error body mirrors the
+/// Tauri command's `Err(String)`.
 #[cfg(feature = "litert")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RunYoutubeSummaryRequest {
+struct RunYoutubeAnalysisRequest {
     session_id: i64,
     url: String,
     /// Raw device locale tag (e.g. "id-ID"); falls back to Accept-Language.
@@ -3049,11 +3050,11 @@ struct RunYoutubeSummaryRequest {
 }
 
 #[cfg(feature = "litert")]
-async fn run_youtube_summary_handler(
+async fn run_youtube_analysis_handler(
     Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
     Extension(user_id): Extension<String>,
     headers: HeaderMap,
-    Json(req): Json<RunYoutubeSummaryRequest>,
+    Json(req): Json<RunYoutubeAnalysisRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
     // Billing bearer off the session cookie — the edge middleware already
     // validated it (AGENTS.md #8); fail closed here before the supervisor.
@@ -3086,7 +3087,7 @@ async fn run_youtube_summary_handler(
 
 /// Futures Risk Audit: the FIXED risk-audit pipeline over the user's open
 /// Binance futures positions. Same fixed-plan contract as the desk and the
-/// YouTube summary — the presets are normalized before the plan exists, so a
+/// YouTube video analysis — the presets are normalized before the plan exists, so a
 /// bad value is a 400, never a half-started run.
 #[cfg(all(feature = "litert", feature = "binance"))]
 #[derive(Deserialize)]

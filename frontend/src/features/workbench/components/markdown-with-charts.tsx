@@ -92,7 +92,7 @@ export function MarkdownWithCharts({
   onSeek,
 }: {
   children: string;
-  /** Source video of a YouTube Summary run — enables timestamp-link seeks. */
+  /** Source video of a YouTube Video Analysis run — enables timestamp-link seeks. */
   videoId?: string | null;
   /** The player's seek — wired by the same parent that owns the embed. */
   onSeek?: (seconds: number) => void;

@@ -102,7 +102,7 @@ export interface SupervisorPlanState {
   goal: string | null;
   /** Full plan structure — seeded at planStarted, before any step runs. */
   steps: SupervisorStep[];
-  /** Source video of a YouTube Summary run (`planStarted.videoId`) — the
+  /** Source video of a YouTube Video Analysis run (`planStarted.videoId`) — the
    *  canvas embeds the player from it. `null` for every other run. */
   videoId: string | null;
   /** User-facing "what will the agent do / produce" — from planStarted/planRevised. */
@@ -186,7 +186,7 @@ export interface PersistedPlanRecord {
    *  partial snapshot is the last one that landed). Only the step states
    *  distinguish the two — see [`planRecordInterrupted`]. */
   partial?: boolean;
-  /** Source video of a YouTube Summary run — restored so the canvas embeds
+  /** Source video of a YouTube Video Analysis run — restored so the canvas embeds
    *  the player after a reopen. Absent on every other run. */
   videoId?: string | null;
 }

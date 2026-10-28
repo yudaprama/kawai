@@ -51,8 +51,9 @@ pub fn run() {
             // verifier) needs the app's JNI context before ANY TLS call, or
             // it panics ("Expect rustls-platform-verifier to be
             // initialized") — Loki push, remote LLM, JWKS fetch all die.
-            // The Kotlin CertificateVerifier component is compiled into the
-            // gen/android app (org.rustls.platformverifier).
+            // The Kotlin CertificateVerifier component comes from the
+            // org.rustls:rustls-platform-verifier Maven artifact declared in
+            // gen/android/app/build.gradle.kts (org.rustls.platformverifier).
             #[cfg(target_os = "android")]
             {
                 let ctx = ndk_context::android_context();
@@ -340,7 +341,7 @@ pub fn run() {
         #[cfg(feature = "litert")]
         commands::run_stock_research,
         #[cfg(feature = "litert")]
-        commands::run_youtube_summary,
+        commands::run_youtube_analysis,
         #[cfg(all(feature = "litert", feature = "binance"))]
         commands::run_binance_risk_audit,
         #[cfg(all(feature = "litert", feature = "mexc"))]

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { YoutubeEmbed, linkifyTimestamps, youtubeSeekSeconds, youtubeWatchUrl } from "./youtube-embed";
 
 /**
- * Render-level smoke for the YouTube Summary canvas player. `renderToStaticMarkup`
+ * Render-level smoke for the YouTube Video Analysis canvas player. `renderToStaticMarkup`
  * never fires effects, so what this pins is the two user-visible states: the
  * facade must be a BUTTON (the whole point of click-to-load — no YouTube
  * player JS, no cookies until the user asks), and the srcdoc-free output must

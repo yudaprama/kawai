@@ -225,7 +225,7 @@ function DeliverableBody({
   sessionId?: number | null;
   /** Offer the Copy/Export row (a completed run only). */
   showExport: boolean;
-  /** Source video of a YouTube Summary run — mounts the player above the
+  /** Source video of a YouTube Video Analysis run — mounts the player above the
    *  body and turns the deliverable's `mm:ss` timestamps into seeks. */
   videoId?: string | null;
 }) {

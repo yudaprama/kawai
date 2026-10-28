@@ -109,7 +109,7 @@ planKey: string;
  */
 summary: PlanSummary; 
 /**
- *  The source video of a YouTube Summary run (`run_youtube_summary`) —
+ *  The source video of a YouTube Video Analysis run (`run_youtube_analysis`) —
  *  `None` for every other pipeline and for planner-driven goals. The
  *  frontend embeds the player from this id; the step `arguments` that
  *  also carry it never reach the wire, so this is the only channel.

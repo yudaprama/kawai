@@ -1,6 +1,6 @@
 # Plan: Template Routing
 
-**Goal**: Sabar multi-step goal不再 selalu bayar 1–6 ronde LLM `plan_task`. Pipeline yang bentuknya sudah diketahui (Stock Research, YouTube Summary, Binance audit, Crypto Screener) diekstrak jadi **template data**, dan goal freeform dicocokkan ke template secara internal — user tidak pernah melihat, tidak pernah memilih, tidak ada satu pun perubahan UI yang terlihat.
+**Goal**: Sabar multi-step goal不再 selalu bayar 1–6 ronde LLM `plan_task`. Pipeline yang bentuknya sudah diketahui (Stock Research, YouTube Video Analysis, Binance audit, Crypto Screener) diekstrak jadi **template data**, dan goal freeform dicocokkan ke template secara internal — user tidak pernah melihat, tidak pernah memilih, tidak ada satu pun perubahan UI yang terlihat.
 
 **Status**: Fase 1–5 + 7 **IMPLEMENTED** (template registry, deterministic gate live in `plan_task`, `route_log`, `build_registry_for_plan`). Two deviations from the phasing below, both deliberate: route_log landed BEFORE the gate (observability ships with behavior), and **Fase 6 is IMPLEMENTED as LAYER 2** — the keyword gate stays as the precision fast-path (layer 1), and every `plan` decision it makes is re-validated by one small LLM call (`llm_route_resolve`): forced JSON `{template, ticker}` over the closed menu, company names resolved to symbols by the model, then Rust validates registration + universe membership + build before any claim ships. `direct` decisions skip layer 2. Failures/hedges ⇒ planner. Fase 9 (delete the fixed-pipeline commands/forms) is DEAD — the constraint "no user-visible UI change" keeps the forms as the explicit opt-in path.
 
@@ -24,7 +24,7 @@ Supervisor adalah satu-satunya execution path (`ARCHITECTURE.md:48`). Semua subm
 | Jalur | Bentuk | Biaya |
 |---|---|---|
 | `plan_task` (composer) | LLM menulis plan dari nol | 1–6 ronde LLM; `PLAN-planner-search-loop.md:106` mengukur 14.6k output token ≈ 3–4 menit |
-| `run_stock_research`, `run_youtube_summary`, `run_binance_audit`, `run_crypto_screener` | `TaskPlan` fixed, ditulis di Rust | 0 ronde planning |
+| `run_stock_research`, `run_youtube_analysis`, `run_binance_audit`, `run_crypto_screener` | `TaskPlan` fixed, ditulis di Rust | 0 ronde planning |
 
 Empat pipeline fixed hidup sebagai **command terpisah**, masing-masing dengan command + Axum handler + `build_*_registry` + hook frontend + form (`workbench-page.tsx:556-588`). Consequences:
 

@@ -1,5 +1,5 @@
 /**
- * Canvas player for a YouTube Summary run (PLAN-youtube-summary).
+ * Canvas player for a YouTube Video Analysis run (PLAN-youtube-video-analysis).
  *
  * Pure halves + one component:
  * - [`timestampSeconds`] / [`linkifyTimestamps`] — the deliverable markdown's
@@ -93,7 +93,7 @@ export interface YoutubeEmbedHandle {
 }
 
 /** Click-to-load player: the thumbnail stays a plain image until the user
- *  asks for playback, so reading a summary without the video never loads
+ *  asks for playback, so reading a brief without the video never loads
  *  YouTube's player JS (or its cookies). Offline, the facade degrades to a
  *  placeholder and "YouTube" hands off to the OS browser. */
 export function YoutubeEmbed({

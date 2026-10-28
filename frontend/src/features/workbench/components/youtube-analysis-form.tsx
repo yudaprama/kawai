@@ -2,18 +2,18 @@ import { useState } from "react";
 
 import { Icon } from "@/components/shared/icon";
 
-export interface YoutubeSummaryFormProps {
+export interface YoutubeAnalysisFormProps {
   disabled?: boolean;
   onSubmit: (url: string) => void;
 }
 
-/** YouTube Summary (PLAN-youtube-summary) entry form on the Workbench
- *  landing. A link in — the FIXED pipeline (transcript parts → compose →
- *  five-section summary) runs through the supervisor scheduler. No planning
- *  round: the pipeline shape is the product. The transcript itself is
- *  fetched server-side; a bad link or a transcript-less video fails as an
+/** YouTube Video Analysis (PLAN-youtube-video-analysis) entry form on the
+ *  Workbench landing. A link in — the FIXED pipeline (transcript parts →
+ *  compose → seven-section brief) runs through the supervisor scheduler. No
+ *  planning round: the pipeline shape is the product. The transcript itself
+ *  is fetched server-side; a bad link or a transcript-less video fails as an
  *  ordinary run error. */
-export function YoutubeSummaryForm({ disabled, onSubmit }: YoutubeSummaryFormProps) {
+export function YoutubeAnalysisForm({ disabled, onSubmit }: YoutubeAnalysisFormProps) {
   const [url, setUrl] = useState("");
 
   // Loose host check only — the backend validates the id, the track, and
@@ -29,7 +29,9 @@ export function YoutubeSummaryForm({ disabled, onSubmit }: YoutubeSummaryFormPro
     <div className="border-border/60 w-full rounded-xl border p-4">
       <div className="mb-3 flex items-center gap-2">
         <Icon name="play" className="text-primary size-4" />
-        <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">YouTube Summary</span>
+        <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
+          YouTube Video Analysis
+        </span>
         <span className="text-muted-foreground font-mono text-[0.625rem]">fixed pipeline · no planning round</span>
       </div>
       <div className="flex gap-2">
@@ -51,7 +53,7 @@ export function YoutubeSummaryForm({ disabled, onSubmit }: YoutubeSummaryFormPro
           className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-mono text-xs font-bold tracking-wider uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Icon name="zap" className="size-3.5" />
-          Summarize
+          Analyze
         </button>
       </div>
       {url.trim() && !looksLikeYoutube && (
@@ -60,7 +62,7 @@ export function YoutubeSummaryForm({ disabled, onSubmit }: YoutubeSummaryFormPro
         </p>
       )}
       <p className="text-muted-foreground mt-3 font-mono text-[0.625rem] leading-relaxed">
-        TL;DR · key points · timestamps · quotes · action items — in the video&apos;s language.
+        TL;DR · key points · timestamps · quotes · fact-check · analysis · action items — in the video&apos;s language.
       </p>
     </div>
   );

@@ -2085,7 +2085,7 @@ impl SupervisorStreamCtx {
         plan: kawai_router::TaskPlan,
         tool_registry: kawai_router::ToolRegistry,
         user_goal: Option<String>,
-        // Source video of a YouTube Summary run — surfaced on `PlanStarted`
+        // Source video of a YouTube Video Analysis run — surfaced on `PlanStarted`
         // so the frontend can embed the player. `None` everywhere else.
         video_id: Option<String>,
         stream_id: String,
@@ -2439,14 +2439,15 @@ pub async fn run_crypto_screener(
         .await
 }
 
-/// YouTube Summary (PLAN-youtube-summary): fetch the transcript, build the
-/// FIXED map→compose plan over it, and stream the same `SupervisorEvent`
-/// lifecycle the planner-driven runs emit. The fetch happens BEFORE the
-/// stream opens, so a bad URL or a transcript-less video rejects the op
-/// cleanly — no plan, no steps, no run record.
+/// YouTube Video Analysis (PLAN-youtube-video-analysis): fetch the
+/// transcript, build the FIXED map→compose→fact-check/analysis plan over it,
+/// and stream the same `SupervisorEvent` lifecycle the planner-driven runs
+/// emit. The fetch happens BEFORE the stream opens, so a bad URL or a
+/// transcript-less video rejects the op cleanly — no plan, no steps, no run
+/// record.
 #[cfg(feature = "litert")]
 #[tauri::command]
-pub async fn run_youtube_summary(
+pub async fn run_youtube_analysis(
     session_id: i64,
     url: String,
     // Raw device locale tag (e.g. "id-ID") — resolved into the pipelines'
