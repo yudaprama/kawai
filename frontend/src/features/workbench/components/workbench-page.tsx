@@ -592,7 +592,13 @@ export function WorkbenchPage({
           {onOpenSessions && <SessionsButton onOpen={onOpenSessions} />}
         </div>
         <div className="flex min-h-0 flex-1 flex-col items-center gap-5 overflow-y-auto overscroll-contain p-6 text-center">
-          <div className="my-auto space-y-5">
+          {/* w-full: this wrapper is the only child of the centered scroller
+           * WITHOUT a width cap, so it is fit-content-sized. A `truncate`
+           * row (whitespace-nowrap — recent-runs/goal lines) then drives its
+           * min-content past the viewport: the wrapper overflows both sides
+           * (items-center) and the whole hero crops edge-to-edge on phones.
+           * w-full clamps it like the max-w-2xl/max-w-4xl siblings. */}
+          <div className="my-auto w-full space-y-5">
             <div className="space-y-2">
               <p className="text-foreground inline-flex items-center gap-2 text-lg font-semibold">
                 <Icon name="zap" className="text-primary size-6" />
