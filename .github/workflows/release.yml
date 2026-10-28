@@ -223,6 +223,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # Keep the dependency cache when a build fails — the automatic
+          # resume retry starts warm instead of recompiling the dep graph.
+          cache-on-failure: true
 
       # local-llm's manifest path-deps the crates tools (finance,
       # weather_geo) — those crates compile under the litert feature, so
@@ -245,7 +248,7 @@ jobs:
 
       - name: Restore litert-lm dylibs
         id: litert-lib
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: cognee-litert-lm/native
           key: litert-lib-macos26-arm64-${{ steps.litert-lib-key.outputs.sha }}-${{ hashFiles('scripts/bundle-litert-dylibs.sh') }}
@@ -267,6 +270,7 @@ jobs:
           restore-keys: bazel-macos26-arm64-
 
       - name: Build litert-lm dylib
+        id: litert-build
         if: steps.litert-lib.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
@@ -282,6 +286,18 @@ jobs:
           # Symlink target must resolve from cognee-litert-lm/ (the symlink's
           # own directory), not from the CWD where ln runs.
           ln -sfn vendor/LiteRT-LM/bazel-bin/_solib_darwin_arm64 ../../_solib_darwin_arm64
+
+      # Persist the dylib set even when a LATER step fails (tauri build): a
+      # failed release after a successful bazel rebuild must not cost a full
+      # bazel rerun on the automatic resume retry. NOT saved when the dylib
+      # build itself fails — a partial set under the canonical key would
+      # poison every future hit.
+      - name: Save litert-lm dylibs
+        if: always() && steps.litert-lib.outputs.cache-hit != 'true' && steps.litert-build.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: cognee-litert-lm/native
+          key: litert-lib-macos26-arm64-${{ steps.litert-lib-key.outputs.sha }}-${{ hashFiles('scripts/bundle-litert-dylibs.sh') }}
 
       # Office document ops (read/edit/info + creation) and PDF ops are
       # pure Rust (office_oxide, in-process) — no external engine.
@@ -362,6 +378,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # Keep the dependency cache when a build fails — the automatic
+          # resume retry starts warm instead of recompiling the dep graph.
+          cache-on-failure: true
 
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
         run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
@@ -377,7 +396,7 @@ jobs:
 
       - name: Restore litert-lm shared library
         id: litert-lib
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: cognee-litert-lm/native
           key: litert-lib-linux24-x86_64-${{ steps.litert-lib-key.outputs.sha }}
@@ -397,7 +416,10 @@ jobs:
       # clang-18 in universe — no apt.llvm.org repo needed. clang-18's std lib
       # has the std::source_location C++20 support absl requires (the older
       # runner default clang-14 lacked it).
+      # clang is only wired into bazel (--config=linux_x86_64 pins CC=clang
+      # via action_env) — skip the install entirely on a dylib-cache hit.
       - name: Install clang-18
+        if: steps.litert-lib.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           sudo apt-get update -qq
@@ -424,6 +446,7 @@ jobs:
           echo "LINUXDEPLOY=$(realpath ~/.cache/tauri/linuxdeploy-x86_64.AppImage)" >> "$GITHUB_ENV"
 
       - name: Build litert-lm shared library
+        id: litert-build
         if: steps.litert-lib.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
@@ -437,6 +460,18 @@ jobs:
           mkdir -p ../../native
           cp bazel-bin/c/liblitert-lm.so ../../native/
           cp prebuilt/linux_x86_64/*.so ../../native/
+
+      # Persist the .so set even when a LATER step fails (tauri build): a
+      # failed release after a successful bazel rebuild must not cost a full
+      # bazel rerun on the automatic resume retry. NOT saved when the dylib
+      # build itself fails — a partial set under the canonical key would
+      # poison every future hit.
+      - name: Save litert-lm shared library
+        if: always() && steps.litert-lib.outputs.cache-hit != 'true' && steps.litert-build.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: cognee-litert-lm/native
+          key: litert-lib-linux24-x86_64-${{ steps.litert-lib-key.outputs.sha }}
 
       - name: Build .deb/.AppImage (with litert + office)
         uses: tauri-apps/tauri-action@v0
@@ -487,19 +522,47 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # Keep the dependency cache when a build fails — the automatic
+          # resume retry starts warm instead of recompiling the dep graph.
+          cache-on-failure: true
 
-      - name: Mount bazel cache
-        uses: actions/cache@v4
+      # Cached LiteRT-LM DLL set — same key scheme as windows-smoke.yml (which
+      # keeps the entry warm on its nightly run), so the bazel DLL build only
+      # runs when the engine source moves.
+      - name: LiteRT-LM dylib cache key
+        id: litert-lib-key
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "sha=$(git -C cognee-litert-lm/vendor/LiteRT-LM rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore litert-lm shared library
+        id: litert-lib
+        uses: actions/cache/restore@v4
         with:
-          path: ~/.cache/bazel
-          key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
-          restore-keys: bazel-windows-x86_64-
+          path: cognee-litert-lm/native
+          key: litert-lib-windows-x86_64-${{ steps.litert-lib-key.outputs.sha }}
 
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
         shell: bash
         run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
 
+      # Bazel is only needed on a dylib-cache miss. Mounted after the
+      # submodule init so the WORKSPACE hash in the key resolves (pre-init it
+      # hashed an empty tree → constant key). C:\_b holds the compiled
+      # objects (--output_base); ~/.cache/bazel holds the external repos.
+      - name: Mount bazel cache
+        if: steps.litert-lib.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            C:\_b
+          key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
+          restore-keys: bazel-windows-x86_64-
+
       - name: Install bazelisk
+        if: steps.litert-lib.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           choco install bazelisk --confirm --no-progress
@@ -517,6 +580,8 @@ jobs:
           "TEMP=$newTemp" >> $env:GITHUB_ENV
 
       - name: Build litert-lm shared library
+        id: litert-build
+        if: steps.litert-lib.outputs.cache-hit != 'true'
         shell: bash
         # MSYS (Git Bash) rewrites the leading "//" of the bazel target into
         # a POSIX path ("/c:litert-lm") — invalid package name. Disable arg
@@ -557,10 +622,30 @@ jobs:
           # DLL so runtime loading and the bundle manifest resolve them.
           cp prebuilt/windows_x86_64/*.dll ../../native/
 
+      # Persist the DLL set even when a LATER step fails (tauri build): a
+      # failed release after a successful bazel rebuild must not cost a full
+      # bazel rerun on the automatic resume retry. NOT saved when the dylib
+      # build itself fails — a partial set under the canonical key would
+      # poison every future hit.
+      - name: Save litert-lm shared library
+        if: always() && steps.litert-lib.outputs.cache-hit != 'true' && steps.litert-build.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: cognee-litert-lm/native
+          key: litert-lib-windows-x86_64-${{ steps.litert-lib-key.outputs.sha }}
+
       # ocr-rs `mnn-dynamic` was removed from src-tauri's features (see
       # b3743be); the MNN.dll download below only remains because
       # tauri.windows.conf.json still lists it under bundle.resources.
+      - name: Restore MNN prebuilt cache
+        id: mnn-cache
+        uses: actions/cache@v4
+        with:
+          path: C:\_mnn
+          key: mnn-dev-windows-x86_64
+
       - name: Download MNN prebuilt (dynamic) for ocr-rs mnn-dynamic
+        if: steps.mnn-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $root = "C:\_mnn"
@@ -568,11 +653,15 @@ jobs:
           $zip = "$root\mnn-dev-windows-x86_64.zip"
           Invoke-WebRequest -Uri "https://github.com/zibo-chen/MNN-Prebuilds/releases/download/dev/mnn-dev-windows-x86_64.zip" -OutFile $zip
           Expand-Archive -Force -Path $zip -DestinationPath $root
+
+      - name: Stage MNN env + MNN.dll
+        shell: pwsh
+        run: |
           "MNN_LIB_DIR=C:\_mnn\mnn-dev-windows-x86_64\lib" >> $env:GITHUB_ENV
           "MNN_INCLUDE_DIR=C:\_mnn\mnn-dev-windows-x86_64\include" >> $env:GITHUB_ENV
           $native = Join-Path $env:GITHUB_WORKSPACE "cognee-litert-lm\native"
           New-Item -ItemType Directory -Path $native -Force | Out-Null
-          Copy-Item "$root\mnn-dev-windows-x86_64\lib\MNN.dll" $native -Force
+          Copy-Item "C:\_mnn\mnn-dev-windows-x86_64\lib\MNN.dll" $native -Force
 
       - name: Build .msi/.exe (with litert + office)
         uses: tauri-apps/tauri-action@v0
@@ -631,6 +720,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # Keep the dependency cache when a build fails — the automatic
+          # resume retry starts warm instead of recompiling the dep graph.
+          cache-on-failure: true
       # The kawai lib crate depends on tauri unconditionally (glib-sys et al.
       # need the GTK/webkit dev headers even when building only kawai-web).
       - name: Install Tauri Linux system deps

@@ -15,9 +15,14 @@ name: ci
 #
 # release.yml (app bundles) is gated on this workflow's conclusion via
 # workflow_run — a green run on main is what starts a release.
-# NOTE: every push to main (including the release bot's bump commits) runs
-# here too — the cached litert-lm dylib set makes that cheap: the bazel
-# build only runs when the LiteRT-LM source or its bundling moves.
+# NOTE: every push to main runs here — but the release bot's bump commits
+# (chore(release): vX.Y.Z, a one-field version bump) skip EVERY job via the
+# chore-commit gate on each job below. The run itself still completes GREEN
+# with all jobs skipped, which is load-bearing: release.yml's workflow_run
+# gate needs that completed run to re-enter (loop terminator + the one
+# automatic retry for a failed release). Do NOT replace this with [skip ci]
+# or paths-ignore — both suppress the run entirely and kill that gate
+# ([skip ci] would also skip the v* tag push that fires release-android.yml).
 #
 # agent_smoke (the full local→cloud turn) is intentionally NOT run here: it
 # needs interactive cloud-side state beyond the smokes. Run it manually
@@ -53,6 +58,10 @@ jobs:
   web:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
+    # Bot bump commits (chore(release): vX) only move the version string —
+    # nothing to regress. All jobs skip; the run still completes GREEN so
+    # release.yml's workflow_run gate keeps firing (terminator + retry).
+    if: "github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release): v')"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -120,6 +129,10 @@ jobs:
   # ── Linux desktop gate: litert + the full feature battery compile on Linux ─
   linux-check:
     runs-on: ubuntu-22.04
+    # Bot bump commits (chore(release): vX) only move the version string —
+    # nothing to regress. All jobs skip; the run still completes GREEN so
+    # release.yml's workflow_run gate keeps firing (terminator + retry).
+    if: "github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release): v')"
     # 30m was not enough: the battery of `cargo check --features …` runs plus
     # the agent_eval harness compile reaches ~28m on a cold cache, leaving the
     # `cargo test (agent_eval harness)` build without the time to compile —
@@ -303,6 +316,10 @@ jobs:
   # are a runtime download, not needed for a check.
   android-check:
     runs-on: ubuntu-latest
+    # Bot bump commits (chore(release): vX) only move the version string —
+    # nothing to regress. All jobs skip; the run still completes GREEN so
+    # release.yml's workflow_run gate keeps firing (terminator + retry).
+    if: "github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release): v')"
     # tts (MNN prebuilt) + litert (bindgen over the full LiteRT-LM header tree,
     # the whole local-llm/embedding stack) on a cold aarch64 target dir.
     timeout-minutes: 120
@@ -393,6 +410,10 @@ jobs:
   macos-smoke:
     runs-on: macos-26
     timeout-minutes: 120
+    # Bot bump commits (chore(release): vX) only move the version string —
+    # nothing to regress. All jobs skip; the run still completes GREEN so
+    # release.yml's workflow_run gate keeps firing (terminator + retry).
+    if: "github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release): v')"
     # CI runners are ephemeral: debuginfo and incremental artifacts lengthen
     # cold Rust builds but do not change the test or smoke binaries' behavior.
     # Keep source locations in normal compiler diagnostics; runtime backtraces
@@ -609,6 +630,10 @@ jobs:
   # so the expensive artifact is never rebuilt twice.
   linux-build:
     runs-on: ubuntu-22.04
+    # Bot bump commits (chore(release): vX) only move the version string —
+    # nothing to regress. All jobs skip; the run still completes GREEN so
+    # release.yml's workflow_run gate keeps firing (terminator + retry).
+    if: "github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release): v')"
     # Cold-cache `cargo test (litert + office)` alone ran 117 min on a runner
     # before the old 120-min ceiling killed it mid-compile (run 36127357424,
     # 2026-09-25) — unit-test results were lost and every smoke below skipped.
@@ -738,6 +763,10 @@ jobs:
   linux-smokes:
     needs: linux-build
     runs-on: ubuntu-22.04
+    # Bot bump commits (chore(release): vX) only move the version string —
+    # nothing to regress. All jobs skip; the run still completes GREEN so
+    # release.yml's workflow_run gate keeps firing (terminator + retry).
+    if: "github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release): v')"
     # The old 6-smoke duplicated set exceeded the old 30-min cap on a slow
     # runner (run 40443508677, 2026-10-27); the partitioned four-smoke set
     # leaves ample headroom — kept generous because the model download
