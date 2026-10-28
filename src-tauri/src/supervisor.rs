@@ -1649,7 +1649,8 @@ via the always-available `session_step_results` tool. If the goal depends on det
             }
         }
 
-        // Protocol violation (not JSON, wrong shape, or search after budget).
+        // Protocol violation (still off-protocol AFTER `repair_nested_steps_json`
+        // ran: not JSON, wrong shape, or search after budget).
         // Echo a short excerpt of what was received: the model cannot fix a
         // response shape it cannot see (CI 2026-10-25: three consecutive
         // off-protocol rounds against a generic note burned the whole
@@ -2233,21 +2234,44 @@ fn repair_nested_steps_json(raw: &str) -> Option<String> {
             _ => {}
         }
     }
-    let mut changed = false;
-    let mut fixed = raw.to_string();
+    let mut body = raw.to_string();
     if in_str {
-        fixed.push('"');
-        changed = true;
+        body.push('"');
     }
+    let mut tail = String::new();
     while let Some(closer) = closers.pop() {
-        fixed.push(closer);
-        changed = true;
+        tail.push(closer);
     }
-    // Stage 2 — lift `summary.steps` to the top level. Needs the closed text
-    // to parse; anything broken beyond brace-closure goes back to the note.
+    let closed = !tail.is_empty() || in_str;
+    let mut fixed = format!("{body}{tail}");
+    // A cut mid-generation can land right after a `,` or a `"key":` —
+    // appending closers alone then leaves an invalid tail. Strip the dangling
+    // separator and re-close until the text parses; give up (None → the
+    // protocol note) when nothing is dangling. A cut that strands a bare
+    // `"key"` without a value stays on the note path — not worth the
+    // complexity for a shape never observed in production.
+    loop {
+        if serde_json::from_str::<serde_json::Value>(&fixed).is_ok() {
+            break;
+        }
+        if !closed {
+            return None;
+        }
+        let head = fixed[..fixed.len() - tail.len()].trim_end();
+        let Some(last) = head.chars().last() else {
+            return None;
+        };
+        if !matches!(last, ',' | ':') {
+            return None;
+        }
+        fixed = format!("{}{tail}", &head[..head.len() - last.len_utf8()]);
+    }
+    // Stage 2 — lift `summary.steps` to the top level. The text parses here
+    // (stage 1's loop guarantees it); content quality is the validator's.
     let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&fixed) else {
         return None;
     };
+    let mut repaired = closed;
     if v.get("steps").is_none() {
         if let Some(steps) = v.get("summary").and_then(|s| s.get("steps")).cloned() {
             if let Some(summary) = v.get_mut("summary").and_then(|s| s.as_object_mut()) {
@@ -2257,10 +2281,10 @@ fn repair_nested_steps_json(raw: &str) -> Option<String> {
                 obj.insert("steps".to_string(), steps);
             }
             fixed = v.to_string();
-            changed = true;
+            repaired = true;
         }
     }
-    changed.then_some(fixed)
+    repaired.then_some(fixed)
 }
 
 fn plan_loop_system_prompt(core_tools: &str, cli_block: &str) -> String {
@@ -6957,10 +6981,17 @@ mod tests {
     fn repair_closes_truncated_plan_with_top_level_steps() {
         // Cut mid-string by an output cap: closing the string plus the open
         // braces is enough — no lift needed.
-        let raw = r#"{"goal":"G","steps":[{"id":"s1","tool":"cli_run","task":"t","arguments":{"command":"curl","args":["-s","#;
-        let fixed = repair_nested_steps_json(raw).expect("repair should fire");
+        let mid_string = r#"{"goal":"G","steps":[{"id":"s1","tool":"cli_run","task":"t","arguments":{"command":"curl","args":["-s"#;
+        let fixed = repair_nested_steps_json(mid_string).expect("repair should fire");
         let v: serde_json::Value = serde_json::from_str(&fixed).unwrap();
         assert_eq!(v["goal"], "G");
+        assert_eq!(v["steps"].as_array().unwrap().len(), 1);
+
+        // Cut right after a comma: the dangling separator is stripped before
+        // the closers are appended.
+        let after_comma = r#"{"goal":"G","steps":[{"id":"s1","tool":"cli_run","task":"t","arguments":{"command":"curl","args":["-s","#;
+        let fixed = repair_nested_steps_json(after_comma).expect("repair should fire");
+        let v: serde_json::Value = serde_json::from_str(&fixed).unwrap();
         assert_eq!(v["steps"].as_array().unwrap().len(), 1);
     }
 
