@@ -16,7 +16,6 @@
 //!   static guards run first — do not reorder.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::LazyLock;
 
 use cognee_litert_lm::{build_sequence, calibrated_probabilities, LayaRunner, Question};
 use kawai_paths::{find_laya_model_dir, user_models_dir};

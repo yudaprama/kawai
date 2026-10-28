@@ -1149,7 +1149,7 @@ async fn local_load_model_handler(
 /// Protected RPC: return the current on-device model status.
 #[cfg(feature = "litert")]
 async fn local_model_status_handler(
-    Extension(user_id): Extension<String>,
+    Extension(_user_id): Extension<String>,
 ) -> Result<Json<logic::local_llm::LocalModelStatus>, (StatusCode, String)> {
     Ok(Json(logic::local_model_status()))
 }

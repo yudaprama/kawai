@@ -2916,8 +2916,6 @@ pub async fn build_registry_for_plan(
 
 type UniverseCell = std::sync::RwLock<Option<(std::time::Instant, kawai_router::MarketUniverse)>>;
 
-#[cfg(feature = "binance")]
-use binance::UsdmListing;
 #[cfg(not(feature = "binance"))]
 #[derive(Clone)]
 struct UsdmListing {

@@ -8,6 +8,7 @@
 //! Language is auto-detected per call (whatlang → supertonic lang tag).
 
 use std::path::PathBuf;
+#[cfg(feature = "tts")]
 use std::sync::LazyLock;
 
 #[cfg(feature = "tts")]

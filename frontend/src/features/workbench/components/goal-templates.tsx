@@ -1,4 +1,5 @@
 import { Icon } from "@/components/shared/icon";
+import { platform } from "@/platform";
 import { cn } from "@/lib/utils";
 
 export type GoalTemplateId =
@@ -22,7 +23,12 @@ const GOAL_TEMPLATES: { id: GoalTemplateId; label: string }[] = [
   { id: "cryptoScreener", label: "Crypto Screener" },
   { id: "bookClose", label: "Monthly Close" },
   { id: "tradingPerformance", label: "Trading Performance" },
-  { id: "securityAudit", label: "Security Audit" },
+  // Security Audit rides the `security` cargo feature, which ships in desktop
+  // builds only (Android deliberately defers: phone-class CPU for active
+  // scanning + the lonkero engine weight). The mobile backend registers no
+  // `run_security_audit` command, so the chip must not offer it there —
+  // invoking it fails with "Command run_security_audit not found".
+  ...(platform.target !== "mobile" ? [{ id: "securityAudit" as const, label: "Security Audit" }] : []),
 ];
 
 /** Templates whose workflow includes the fixed-pipeline Stock Research — only
