@@ -1425,14 +1425,45 @@ via the always-available `session_step_results` tool. If the goal depends on det
             }
         }
 
-        let parsed: Option<serde_json::Value> = kawai_router::extract_json_slice(&raw)
+        let mut parsed: Option<serde_json::Value> = kawai_router::extract_json_slice(&raw)
             .ok()
             .and_then(|slice| serde_json::from_str(slice).ok());
+        // Mechanical repair BEFORE the protocol-violation note: the planner
+        // sometimes emits `steps` nested inside `summary` with the root object
+        // left unclosed — one missing `}` makes the whole response
+        // unparseable, the round burns as off-protocol, and the model
+        // repeated that exact shape for six straight rounds against an
+        // explicit corrective note (planner_smoke 2026-10-27). Close the
+        // braces / lift the nested steps, then validate the repaired text
+        // through the NORMAL path — the validator stays the only quality
+        // gate; a repair that yields no plan-shaped object is discarded.
+        let plan_shaped = |v: Option<&serde_json::Value>| {
+            v.is_some_and(|v| v.get("steps").is_some() && v.get("goal").is_some())
+        };
+        let mut parse_raw = raw.clone();
+        if !plan_shaped(parsed.as_ref()) {
+            if let Some(fixed) = repair_nested_steps_json(&raw) {
+                let repaired = kawai_router::extract_json_slice(&fixed)
+                    .ok()
+                    .and_then(|slice| serde_json::from_str::<serde_json::Value>(slice).ok());
+                if plan_shaped(repaired.as_ref()) {
+                    eprintln!(
+                        "[plan_task] mechanical repair: closed unbalanced JSON / lifted nested \
+                         `steps` ({} → {} chars)",
+                        raw.len(),
+                        fixed.len()
+                    );
+                    parse_raw = fixed;
+                    parsed = repaired;
+                }
+            }
+        }
 
         // Final plan?
         if let Some(v) = &parsed {
             if v.get("steps").is_some() && v.get("goal").is_some() {
-                match parse_supervisor_plan_scoped(&raw, registry, PLANNER_FORBIDDEN_TOOLS) {
+                match parse_supervisor_plan_scoped(&parse_raw, registry, PLANNER_FORBIDDEN_TOOLS)
+                {
                     Ok(plan) => {
                         // Lazy prefetch: the planner can write composio steps
                         // WITHOUT a search round — tool names leak in via the
@@ -2160,6 +2191,76 @@ fn planner_response_excerpt(s: &str, max_chars: usize) -> String {
         out.push('…');
     }
     out
+}
+
+/// Mechanical repair of a planner response that is ALMOST a final plan: the
+/// model left braces unclosed (truncation or a nesting slip) and/or nested
+/// `steps` inside `summary` instead of at the top level. One missing `}`
+/// makes the whole response unparseable for `extract_json_slice`, so the
+/// round burns as off-protocol — planner_smoke 2026-10-27 lost six straight
+/// rounds to the identical shape even though the corrective note named the
+/// exact mistake, which is why this lives in code and not in the prompt.
+/// Returns `None` when nothing mechanical is wrong (balanced text without
+/// nested steps) or the text is unparseable even after closing, so the
+/// normal protocol path is untouched. Whatever comes back still goes through
+/// the full plan validator — this rescues the SHAPE only, never the content.
+fn repair_nested_steps_json(raw: &str) -> Option<String> {
+    // Stage 1 — close what is open: string-aware scan from the first `{`,
+    // recording closers in open order; at EOF they are appended in reverse
+    // (an unterminated string is closed first).
+    let start = raw.find('{')?;
+    let mut closers: Vec<char> = Vec::new();
+    let mut in_str = false;
+    let mut escaped = false;
+    for ch in raw[start..].chars() {
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_str = true,
+            '{' => closers.push('}'),
+            '[' => closers.push(']'),
+            '}' | ']' => {
+                closers.pop();
+            }
+            _ => {}
+        }
+    }
+    let mut changed = false;
+    let mut fixed = raw.to_string();
+    if in_str {
+        fixed.push('"');
+        changed = true;
+    }
+    while let Some(closer) = closers.pop() {
+        fixed.push(closer);
+        changed = true;
+    }
+    // Stage 2 — lift `summary.steps` to the top level. Needs the closed text
+    // to parse; anything broken beyond brace-closure goes back to the note.
+    let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&fixed) else {
+        return None;
+    };
+    if v.get("steps").is_none() {
+        if let Some(steps) = v.get("summary").and_then(|s| s.get("steps")).cloned() {
+            if let Some(summary) = v.get_mut("summary").and_then(|s| s.as_object_mut()) {
+                summary.remove("steps");
+            }
+            if let Some(obj) = v.as_object_mut() {
+                obj.insert("steps".to_string(), steps);
+            }
+            fixed = v.to_string();
+            changed = true;
+        }
+    }
+    changed.then_some(fixed)
 }
 
 fn plan_loop_system_prompt(core_tools: &str, cli_block: &str) -> String {
@@ -6827,6 +6928,49 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["goal"], "mine"); // existing goal preserved
         assert_eq!(repair_revised_plan_json("no json at all", "g"), "no json at all");
+    }
+
+    #[test]
+    fn repair_closes_unclosed_root_and_lifts_steps_nested_in_summary() {
+        // The exact planner_smoke 2026-10-27 defect: `steps` nested inside
+        // `summary` and the root object left unclosed (one `}` short at EOF),
+        // which made six consecutive rounds unparseable for
+        // `extract_json_slice`.
+        let raw = r#"{"goal":"Compare BTC and ETH volatility","summary":{"overview":"Fetch and compute","actions":["fetch","compute"],"outputs":["report"],"steps":[{"id":"s1","tool":"cli_run","task":"fetch","arguments":{"command":"curl","args":["-s","u"]}},{"id":"s2","tool":"cli_run","task":"compute","arguments":{"command":"jq","args":["-r","{asset:\"BTCUSDT\",c:[.[]. [4]]} | @json","f.json"]}}]}"#;
+        let fixed = repair_nested_steps_json(raw).expect("repair should fire");
+        let v: serde_json::Value = serde_json::from_str(&fixed).unwrap();
+        assert_eq!(v["goal"], "Compare BTC and ETH volatility");
+        let steps = v["steps"].as_array().expect("steps at TOP LEVEL");
+        assert_eq!(steps.len(), 2);
+        assert_eq!(steps[0]["tool"], "cli_run");
+        assert_eq!(steps[0]["arguments"]["command"], "curl");
+        // The jq program's in-string braces/brackets and escaped quotes must
+        // survive byte-for-byte — the scanner closes STRUCTURE only.
+        assert_eq!(
+            steps[1]["arguments"]["args"][1],
+            r#"{asset:"BTCUSDT",c:[.[]. [4]]} | @json"#
+        );
+        assert!(v["summary"].get("steps").is_none());
+    }
+
+    #[test]
+    fn repair_closes_truncated_plan_with_top_level_steps() {
+        // Cut mid-string by an output cap: closing the string plus the open
+        // braces is enough — no lift needed.
+        let raw = r#"{"goal":"G","steps":[{"id":"s1","tool":"cli_run","task":"t","arguments":{"command":"curl","args":["-s","#;
+        let fixed = repair_nested_steps_json(raw).expect("repair should fire");
+        let v: serde_json::Value = serde_json::from_str(&fixed).unwrap();
+        assert_eq!(v["goal"], "G");
+        assert_eq!(v["steps"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn repair_is_noop_for_balanced_search_and_valid_plan() {
+        assert!(repair_nested_steps_json(r#"{"action":"search","queries":["a"]}"#).is_none());
+        let plan = r#"{"goal":"G","steps":[{"id":"s1","tool":"cli_run","task":"t","arguments":{"command":"ls"}}]}"#;
+        assert!(repair_nested_steps_json(plan).is_none());
+        // Prose with no object at all: left to the protocol note.
+        assert!(repair_nested_steps_json("I will fetch the klines now.").is_none());
     }
 
     fn preview_chars_is_char_boundary_safe_and_capped() {
