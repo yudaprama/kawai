@@ -133,7 +133,7 @@ export function FinancialTableView({ data }: { data: Record<string, unknown> }) 
       <SectionLabel>
         Financial statements {pick<string>(data, "ticker", "symbol") ?? ""} · {freq} data · {statements.length} periods
       </SectionLabel>
-      <div className="overflow-x-auto rounded-lg border">
+      <div className="table-sticky-first overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-muted/50 border-b">

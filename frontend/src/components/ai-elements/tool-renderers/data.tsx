@@ -42,7 +42,7 @@ function RowsTable({ rows }: { rows: Record<string, unknown>[] }) {
   }
   const cols = Object.keys(rows[0] ?? {});
   return (
-    <div className="not-prose overflow-x-auto rounded-md border">
+    <div className="table-sticky-first not-prose overflow-x-auto rounded-md border">
       <table className="w-full text-xs">
         <thead>
           <tr className="bg-muted/60 border-b text-left">
@@ -365,7 +365,7 @@ export function renderDataSchema(output: unknown): ReactNode {
           {str(d.activeSheet) ? ` · active: ${str(d.activeSheet)}` : ""}
         </p>
       )}
-      <div className="overflow-x-auto rounded-md border">
+      <div className="table-sticky-first overflow-x-auto rounded-md border">
         <table className="w-full text-xs">
           <thead>
             <tr className="bg-muted/60 border-b text-left">
@@ -454,7 +454,7 @@ export function renderDataTables(output: unknown): ReactNode {
   return (
     <div className="not-prose space-y-1.5">
       {profile && <p className="text-muted-foreground text-xs">profile {profile}</p>}
-      <div className="overflow-x-auto rounded-md border">
+      <div className="table-sticky-first overflow-x-auto rounded-md border">
         <table className="w-full text-xs">
           <thead>
             <tr className="bg-muted/60 border-b text-left">

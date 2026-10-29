@@ -456,3 +456,20 @@ body {
   padding-right: env(safe-area-inset-right, 0px);
 }
 
+/* Pins a scrollable data table's leading column while the rest scrolls under
+   it (wide tool results on phones: the row label must survive the scroll).
+   Put `table-sticky-first` on the `overflow-x-auto` wrapper. The pinned cells
+   need an opaque background — table cells are transparent by default, so
+   scrolled content would show through — plus a hairline divider marking the
+   scroll boundary. */
+@utility table-sticky-first {
+  & th:first-child,
+  & td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--background);
+    box-shadow: inset -1px 0 0 var(--border);
+  }
+}
+

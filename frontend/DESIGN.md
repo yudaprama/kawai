@@ -380,7 +380,11 @@ hit areas don't collide). Dialogs subtract the safe-area insets from their
 `100dvh` arithmetic (`env(safe-area-inset-*)`) so a phone dialog never runs
 under the status bar, gesture nav strip or a landscape notch, and the
 dialog close affordance is a padded `hit-44` target rather than the bare
-16px glyph. Phone toasts rise above the pinned Workbench composer
-(sonner `mobileOffset`). The phone composer collapses its chrome — session
-row, follow-up chips — while the textarea has focus: with the IME open
-those rows are the difference between a visible deliverable and none.
+16px glyph. Wide tool-result tables scroll horizontally with their label
+column pinned (`table-sticky-first` on the scroll wrapper); generic result
+tables size to their content (`w-max min-w-full`) and scroll instead of
+crushing their columns to the phone's width. Phone toasts rise above the
+pinned Workbench composer (sonner `mobileOffset`). The phone composer
+collapses its chrome — session row, follow-up chips — while the textarea
+has focus: with the IME open those rows are the difference between a
+visible deliverable and none.

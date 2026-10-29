@@ -343,7 +343,9 @@ export const ToolOutput = ({
       </h4>
       <div
         className={cn(
-          "overflow-x-auto rounded-md text-xs [&_table]:w-full",
+          // `w-max min-w-full`, not `w-full`: a wide table must size to its
+          // content and scroll, not crush its columns to fit a phone's width.
+          "overflow-x-auto rounded-md text-xs [&_table]:w-max [&_table]:min-w-full",
           errorText
             ? "bg-destructive/10 text-destructive"
             : "bg-muted/50 text-foreground"
