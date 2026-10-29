@@ -256,7 +256,7 @@ export function SessionHistoryDialog({
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent className="gap-0 p-0 sm:max-w-lg">
-        <DialogHeader className="border-b px-4 py-3">
+        <DialogHeader className="border-b px-4 py-3 pr-14">
           <div className="flex items-center justify-between gap-2">
             <DialogTitle>{t("sessionSwitcher.title")}</DialogTitle>
             <Button
@@ -278,8 +278,7 @@ export function SessionHistoryDialog({
             className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-7 size-3.5 -translate-y-1/2"
           />
           <Input
-            autoFocus
-            className="h-8 pl-8 text-xs"
+            className="h-9 pl-8 text-base md:text-xs"
             onChange={(e) => {
               setQuery(e.target.value);
               setActiveIndex(0);
@@ -292,7 +291,7 @@ export function SessionHistoryDialog({
           {query && (
             <button
               aria-label={t("common.clearSearch")}
-              className="text-muted-foreground hover:text-foreground absolute top-1/2 right-7 -translate-y-1/2"
+              className="text-muted-foreground hover:text-foreground hit-44 absolute top-1/2 right-7 -translate-y-1/2 p-1.5"
               onClick={() => setQuery("")}
               type="button"
             >
@@ -302,7 +301,7 @@ export function SessionHistoryDialog({
         </div>
 
         {/* Session list */}
-        <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto px-3 py-3" ref={listRef}>
+        <div className="flex max-h-[60dvh] flex-col gap-3 overflow-y-auto px-3 py-3" ref={listRef}>
           {/* List lifecycle — a failed load shows a retry row (also above
               existing rows, so a refresh failure after a mutation isn't
               silent); a first fetch shows a skeleton. Neither may be read as

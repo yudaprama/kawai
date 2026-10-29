@@ -33,7 +33,7 @@ export function PreviewDialog({ file, onClose }: { file: KnowledgeFileInfo | nul
 
   return (
     <Dialog open={file != null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex h-[80vh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+      <DialogContent className="flex h-[80dvh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="flex shrink-0 flex-row items-center justify-between gap-2 border-b px-4 py-3">
           <DialogTitle className="truncate text-sm font-medium">{file?.originalName}</DialogTitle>
         </DialogHeader>
@@ -85,6 +85,7 @@ export function LinkDialog({
         </DialogHeader>
         <Input
           autoFocus
+          inputMode="url"
           disabled={linking}
           onChange={(e) => setLinkUrl(e.target.value)}
           onKeyDown={(e) => {

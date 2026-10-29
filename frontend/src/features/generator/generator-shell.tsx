@@ -28,7 +28,7 @@ export const SEGMENTED_LIST = "inline-flex shrink-0 items-center gap-0.5 rounded
 
 export function segmentClass(active: boolean): string {
   return cn(
-    "flex min-h-7 items-center rounded-md px-3 text-xs font-medium transition-colors",
+    "hit-44 flex min-h-7 items-center rounded-md px-3 text-xs font-medium transition-colors max-md:min-h-11",
     active ? "bg-background text-foreground shadow-sm dark:bg-input/30" : "text-muted-foreground hover:text-foreground",
   );
 }
@@ -36,7 +36,7 @@ export function segmentClass(active: boolean): string {
 /** Standalone choice buttons (no shared track) — bordered, active in primary. */
 export function choiceClass(active: boolean): string {
   return cn(
-    "rounded-[8px] border px-2.5 py-1.5 text-xs font-medium transition-colors",
+    "rounded-[8px] border px-2.5 py-1.5 text-xs font-medium transition-colors max-md:min-h-11",
     active ? "border-primary bg-secondary text-primary" : "bg-muted text-muted-foreground hover:text-foreground",
   );
 }
@@ -357,10 +357,10 @@ export function NumberStepper({
 }) {
   const { t } = useI18n();
   return (
-    <div className="flex h-9 items-center rounded-[8px] border">
+    <div className="flex h-9 items-center rounded-[8px] border max-md:h-11">
       <Button
         aria-label={decrementLabel}
-        className="text-muted-foreground hover:text-foreground h-full w-8 shrink-0 rounded-l-[8px]"
+        className="text-muted-foreground hover:text-foreground h-full w-8 shrink-0 rounded-l-[8px] max-md:w-11"
         disabled={value <= min}
         onClick={() => onChange(Math.max(min, value - 1))}
         size="icon"
@@ -370,7 +370,7 @@ export function NumberStepper({
       </Button>
       <Input
         aria-label={t("generator.valueLabel")}
-        className="h-full min-w-0 flex-1 border-0 bg-transparent px-1 text-center text-sm shadow-none focus-visible:ring-0
+        className="h-full min-w-0 flex-1 border-0 bg-transparent px-1 text-center shadow-none focus-visible:ring-0
           [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none
           [-moz-appearance:textfield] appearance-none"
         id={id}
@@ -383,7 +383,7 @@ export function NumberStepper({
       />
       <Button
         aria-label={incrementLabel}
-        className="text-muted-foreground hover:text-foreground h-full w-8 shrink-0 rounded-r-[8px]"
+        className="text-muted-foreground hover:text-foreground h-full w-8 shrink-0 rounded-r-[8px] max-md:w-11"
         disabled={value >= max}
         onClick={() => onChange(Math.min(max, value + 1))}
         size="icon"

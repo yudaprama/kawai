@@ -171,9 +171,11 @@ export const WebPreviewUrl = ({
     [setUrl, onKeyDown]
   );
 
+  // kawai: 16px input floor (frontend/DESIGN.md) — Android zooms the
+  // WebView on focus for any control below 16px.
   return (
     <Input
-      className="h-8 flex-1 text-sm"
+      className="h-9 flex-1"
       onChange={onChange ?? handleChange}
       onKeyDown={handleKeyDown}
       placeholder="Enter URL..."

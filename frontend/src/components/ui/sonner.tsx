@@ -27,7 +27,11 @@ const Toaster = ({ ...props }: ToasterProps) => {
       // `offset` accepts a CSS length, so fold the safe-area inset in:
       // otherwise toasts land under the Android gesture-nav strip.
       offset="calc(env(safe-area-inset-bottom, 0px) + 1rem)"
-      mobileOffset="calc(env(safe-area-inset-bottom, 0px) + 1rem)"
+      // kawai: below sonner's 600px mobile breakpoint the Workbench pins its
+      // composer to the bottom of the canvas, so a bottom toast covers the
+      // input (or hides under the IME). Raise the mobile offset clear of the
+      // composer panel — `mobileOffset` only applies at that breakpoint.
+      mobileOffset="calc(env(safe-area-inset-bottom, 0px) + 13rem)"
       {...props}
     />
   );

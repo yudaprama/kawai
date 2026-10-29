@@ -707,7 +707,7 @@ export function WorkbenchPage({
   // drawer — hiding the only input behind it made the app unusable on touch).
   const composerPanel = (
     <>
-      <div className="mb-2 flex items-center justify-between">
+      <div className="group-has-[textarea:focus]/composer:hidden mb-2 flex items-center justify-between">
         {workbench.runs.length > 0 ? (
           <div className="text-muted-foreground font-mono text-[0.625rem] tracking-wider uppercase">
             Session · {workbench.runs.length} run{workbench.runs.length === 1 ? "" : "s"}
@@ -721,7 +721,12 @@ export function WorkbenchPage({
           A plan is awaiting your review above — run or discard it first.
         </p>
       )}
-      <FollowUpChips onChip={chipClicked} workbench={workbench} />
+      {/* kawai: the chrome above the input (session row, quick chips) is
+          hidden while the composer has focus — with the IME open those ~60px
+          are the difference between a visible deliverable and none. */}
+      <div className="group-has-[textarea:focus]/composer:hidden">
+        <FollowUpChips onChip={chipClicked} workbench={workbench} />
+      </div>
       <ComposerQuoteBadge workbench={workbench} />
       <GoalComposer
         chipDraft={chipDraft}
@@ -897,8 +902,10 @@ export function WorkbenchPage({
           </div>
         )}
         {/* Phone composer: the sidebar's copy is lg-only, so without this the
-            only way to type a follow-up is opening the progress drawer. */}
-        <div className="border-border/60 safe-b shrink-0 border-t p-3 lg:hidden">{composerPanel}</div>
+            only way to type a follow-up is opening the progress drawer.
+            `group/composer` scopes the focus-collapse above to THIS placement
+            only — the lg sidebar copy has no such group and keeps its chrome. */}
+        <div className="group/composer border-border/60 safe-b shrink-0 border-t p-3 lg:hidden">{composerPanel}</div>
       </main>
     </div>
   );

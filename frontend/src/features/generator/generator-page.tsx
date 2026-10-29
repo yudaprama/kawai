@@ -486,7 +486,7 @@ function ModelBrowser({
 
   return (
     <DialogContent
-      className="flex h-[min(80vh,44rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
+      className="flex h-[min(80dvh,44rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
       onOpenAutoFocus={(e) => e.preventDefault()}
     >
       <DialogHeader className="shrink-0 space-y-0 border-b px-4 py-3">
@@ -505,7 +505,7 @@ function ModelBrowser({
           <div className="relative min-w-[180px] flex-1">
             <Icon className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2" name="search" />
             <Input
-              className="h-8 rounded-[8px] pr-3 pl-8 text-sm"
+              className="h-9 rounded-[8px] pr-3 pl-8"
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t("generator.searchPlaceholder")}
               value={query}
@@ -1169,7 +1169,7 @@ function ImageGenerator() {
             </span>
           </Label>
           <Textarea
-            className="min-h-24 resize-none rounded-[8px] text-sm"
+            className="min-h-24 resize-none rounded-[8px]"
             id="generator-prompt"
             maxLength={10000}
             onChange={(e) => setPrompt(e.target.value)}

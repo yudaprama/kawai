@@ -889,6 +889,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
                     <td className="p-1.5 text-right">
                       <input
                         type="number"
+                        inputMode="decimal"
                         min={NOTIONAL_MIN}
                         max={NOTIONAL_MAX}
                         step={5}
@@ -899,7 +900,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
                         }}
                         disabled={busy}
                         aria-label={`Size in USDT for ${h.symbol}`}
-                        className="border-input bg-input/20 h-6 w-20 rounded border px-1.5 text-right tabular-nums outline-none focus-visible:border-ring disabled:opacity-50"
+                        className="border-input bg-input/20 h-6 w-20 rounded border px-1.5 text-right text-base tabular-nums outline-none focus-visible:border-ring disabled:opacity-50 md:text-xs max-md:h-9"
                       />
                     </td>
                     <td className="p-1.5">

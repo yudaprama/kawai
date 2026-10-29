@@ -19,10 +19,10 @@ export function FollowUpChips({
       ? workbench.dynamicChips.map((t) => ({ label: t, text: t }))
       : FOLLOW_UP_CHIPS.map((c) => ({ icon: c.icon, label: c.label, text: c.prefix }));
   return (
-    <div className="mb-2 flex flex-wrap gap-1.5">
+    <div className="mb-2 flex flex-wrap gap-2">
       {chips.map((c) => (
         <button
-          className="border-border/60 hover:border-primary/60 text-foreground/80 hover:text-foreground inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-mono text-[0.6875rem] transition-colors"
+          className="border-border/60 hover:border-primary/60 text-foreground/80 hover:text-foreground hit-44 inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 font-mono text-[0.6875rem] transition-colors"
           key={c.label}
           onClick={() => onChip(c.text)}
           title={c.text}

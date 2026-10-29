@@ -92,7 +92,7 @@ export function ToolWorkbench({
             )}
             {name === "codegraph_explore" && typeof codegraphResult === "string" ? (
               <div className="space-y-3">
-                <pre className="bg-muted max-h-[70vh] overflow-auto whitespace-pre-wrap rounded-md p-4 text-xs leading-relaxed">
+                <pre className="bg-muted max-h-[70dvh] overflow-auto whitespace-pre-wrap rounded-md p-4 text-xs leading-relaxed">
                   {codegraphResult}
                 </pre>
                 {onOpenCodeGraph && (

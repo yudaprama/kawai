@@ -283,7 +283,7 @@ export function HomeContent({
               <Icon name="history" className="size-4" /> {t("wallet.txHistory")}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-2 max-h-[60vh] overflow-auto">
+          <div className="space-y-2 max-h-[60dvh] overflow-auto">
             {transactions.map((tx) => (
               <div key={tx.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
                 <Badge>{tx.txType}</Badge>

@@ -158,7 +158,7 @@ export function StepTree({
           <div key={i}>
             <button
               aria-expanded={!collapsedPhases.has(i)}
-              className="text-foreground/80 hover:text-foreground mb-2 flex w-full items-center gap-1 font-mono text-[0.625rem] font-bold tracking-wider uppercase"
+              className="text-foreground/80 hover:text-foreground hit-44 mb-2 flex min-h-8 w-full items-center gap-1 font-mono text-[0.6875rem] font-bold tracking-wider uppercase"
               onClick={() => togglePhase(i)}
               type="button"
             >

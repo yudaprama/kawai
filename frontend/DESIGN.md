@@ -352,6 +352,11 @@ errors, toasts, dialogs, nav labels, form labels — follows the selected locale
   `aria-label` + `title`. State icons: CheckCircle2 (completed), CircleX
   (failed), LoaderCircle (running), ChevronDown (collapsed/skipped), empty
   circle (pending).
+- **Editable-input floor:** inputs and textareas render at 16px on phones
+  (`text-base md:<compact>` at the call site) — Android zooms the WebView on
+  focus for any editable control below 16px, and the zoom is unrecoverable
+  layout damage. Labels, badges and read-only text may stay small; the floor
+  covers only controls that take focus (`input`, `textarea`, `select`).
 
 ## Mobile (< lg)
 
@@ -365,3 +370,17 @@ first, then arms the two-step stop — the second press stops the run. The
 drawer header carries a collapsed Saldo-token chip, so the balance stays
 visible mid-run without opening the nav drawer. Run
 history and the goal composer are available on the landing hero throughout.
+
+Touch rules (enforced by the primitives, not per call site): below `md`
+every text-bearing `Button` is ≥44px tall (the size ladder carries
+`max-md:min-h-11`), and icon-only controls keep their visual size but carry
+`hit-44` — an `::after` hit area with `inset: -6px`, so 32px becomes 44px
+without growing the art (adjacent `hit-44` controls need `gap-2` so their
+hit areas don't collide). Dialogs subtract the safe-area insets from their
+`100dvh` arithmetic (`env(safe-area-inset-*)`) so a phone dialog never runs
+under the status bar, gesture nav strip or a landscape notch, and the
+dialog close affordance is a padded `hit-44` target rather than the bare
+16px glyph. Phone toasts rise above the pinned Workbench composer
+(sonner `mobileOffset`). The phone composer collapses its chrome — session
+row, follow-up chips — while the textarea has focus: with the IME open
+those rows are the difference between a visible deliverable and none.

@@ -63,7 +63,7 @@ export function ThemePickerDialog({ open, onOpenChange }: { open: boolean; onOpe
                     title={t("themePicker.remove")}
                     variant="ghost"
                     size="icon"
-                    className="absolute -top-1.5 -right-1.5 size-6 rounded-full border bg-background"
+                    className="hit-44 absolute -top-1.5 -right-1.5 size-7 rounded-full border bg-background"
                     onClick={() => removeCustomPalette(palette.id)}
                   >
                     <Icon name="x" className="size-3" />

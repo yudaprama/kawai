@@ -83,12 +83,12 @@ export function AskAboutResult({
   return (
     <form className="mt-3 flex items-center gap-2" onSubmit={submit}>
       <Input
-        className="h-8 flex-1 text-xs"
+        className="h-9 flex-1 text-base md:text-xs"
         onChange={(e) => setQuestion(e.target.value)}
         placeholder="Ask about this result…"
         value={question}
       />
-      <Button className="h-8 px-3 text-xs" disabled={!question.trim()} size="sm" type="submit" variant="secondary">
+      <Button className="h-9 px-3" disabled={!question.trim()} size="sm" type="submit" variant="secondary">
         Ask
       </Button>
     </form>

@@ -80,7 +80,7 @@ export function ComposerConnections() {
 
         <div className="px-1.5 pt-1.5">
           <Input
-            className="h-8 text-sm"
+            className="h-9"
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("connections.searchPlaceholder")}
             type="search"

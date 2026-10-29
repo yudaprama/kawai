@@ -13,7 +13,7 @@ const TRACK = "inline-flex items-center gap-0.5 rounded-lg bg-muted p-0.5";
 
 function pillClass(active: boolean): string {
   return cn(
-    "hit-44 flex min-h-7 items-center gap-1.5 rounded-md px-1.5 lg:px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
+    "hit-44 flex min-h-7 items-center gap-1.5 rounded-md px-1.5 lg:px-2.5 text-xs font-medium whitespace-nowrap transition-colors max-md:min-h-8",
     active ? "bg-background text-foreground shadow-sm dark:bg-input/30" : "text-muted-foreground hover:text-foreground",
   );
 }
@@ -57,7 +57,11 @@ export function ModePills({ active, onSelect }: { active: AppMode | null; onSele
             return mode === active ? (
               <span aria-current="page" className={cn(pillClass(true), "pointer-events-none")} key={mode}>
                 <Icon className="size-4" name={MODE_ICON[mode]} />
-                <span className="hidden lg:inline">{label}</span>
+                {/* The active mode keeps its label visible below lg — Android
+                    never surfaces `title`, so an icon-only active pill is an
+                    unnamed state on a phone. Inactive pills stay icons (their
+                    labels arrive on tap). */}
+                <span className="hidden max-lg:inline lg:inline">{label}</span>
               </span>
             ) : (
               <button

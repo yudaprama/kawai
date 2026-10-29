@@ -123,12 +123,12 @@ export function GoalTemplates({ value, disabled, onChange }: GoalTemplatesProps)
         href={docsUrlForTemplate(value)}
         target="_blank"
         rel="noreferrer"
-        className="text-primary inline-flex items-center gap-1 font-mono text-[0.6875rem] underline underline-offset-4 decoration-primary/40 hover:decoration-primary transition-colors"
+        className="text-primary hit-44 inline-flex items-center gap-1 py-1 font-mono text-[0.6875rem] underline underline-offset-4 decoration-primary/40 hover:decoration-primary transition-colors"
       >
         <Icon name="external-link" className="size-3" />
         How these workflows work
       </a>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-2">
         {GOAL_TEMPLATES.map((t) => {
           const active = value === t.id;
           return (
@@ -139,7 +139,7 @@ export function GoalTemplates({ value, disabled, onChange }: GoalTemplatesProps)
               aria-pressed={active}
               onClick={() => onChange(active ? null : t.id)}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-[0.6875rem] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                "hit-44 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 font-mono text-[0.6875rem] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                 active
                   ? "border-primary/60 bg-primary/10 text-primary"
                   : "border-border text-muted-foreground hover:border-[var(--tea-color-border-focus)] hover:text-foreground",

@@ -98,8 +98,9 @@ function SliderField({ id, label, value, min, max, step = 1, presets, specDefaul
           <SliderThumb aria-label={label} />
         </Slider>
         <Input
-          className="h-8 w-[64px] flex-none rounded-[8px]"
+          className="h-8 w-20 flex-none rounded-[8px] max-md:h-11"
           id={id}
+          inputMode="numeric"
           type="number"
           min={min}
           max={max}
@@ -163,8 +164,9 @@ function SeedField({ seed, onChange }: SeedFieldProps) {
           ))}
         </div>
         <Input
-          className="h-8 w-[96px] flex-none rounded-[8px]"
+          className="h-8 w-24 flex-none rounded-[8px] max-md:h-11"
           id="generator-seed"
+          inputMode="numeric"
           type="number"
           min={0}
           max={MAX_SEED}

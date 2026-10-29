@@ -676,14 +676,14 @@ export function DeckPreview({ fileId }: { fileId: string }) {
         <div
           aria-label="Presentation"
           aria-modal="true"
-          className="fixed inset-0 z-50 overflow-hidden bg-black"
+          className="safe-t safe-b safe-x fixed inset-0 z-50 overflow-hidden bg-black"
           role="dialog"
           ref={presentDialogRef}
         >
           <div ref={presentRef} className="relative h-full w-full overflow-hidden" />
           <button
             aria-label="Close presentation"
-            className="absolute right-4 top-4 z-10 rounded-md bg-white/15 px-3 py-2 text-sm text-white hover:bg-white/25"
+            className="hit-44 absolute right-4 top-4 z-10 rounded-md bg-white/15 px-3 py-2 text-sm text-white hover:bg-white/25"
             onClick={() => setPresenting(false)}
             ref={presentCloseRef}
             type="button"

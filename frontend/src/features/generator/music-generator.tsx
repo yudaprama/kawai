@@ -642,7 +642,7 @@ export function MusicGenerator() {
             {ecoId === "ace" ? ` (${t("musicGenerator.optional")})` : ""}
           </Label>
           <Textarea
-            className="min-h-24 rounded-[8px] font-mono text-xs"
+            className="min-h-24 rounded-[8px] font-mono text-base md:text-xs"
             id="music-lyrics"
             onChange={(e) => setLyrics(e.target.value)}
             placeholder={t("musicGenerator.lyricsPlaceholder")}
@@ -678,7 +678,7 @@ export function MusicGenerator() {
                 {t("musicGenerator.abc")}
               </Label>
               <Textarea
-                className="min-h-24 rounded-[8px] font-mono text-xs"
+                className="min-h-24 rounded-[8px] font-mono text-base md:text-xs"
                 id="music-abc"
                 onChange={(e) => setAbc(e.target.value)}
                 placeholder={t("musicGenerator.abcPlaceholder")}

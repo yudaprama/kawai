@@ -172,6 +172,7 @@ export function SendForm({ onSend, loading, currentNetwork }: Props) {
         <Label>{t("wallet.amountLabel")}</Label>
         <Input
           type="number"
+          inputMode="decimal"
           min={0}
           step="0.000001"
           placeholder="0.0"

@@ -301,7 +301,7 @@ function SkillEditorDialog({
 
   return (
     <Dialog onOpenChange={(open) => !open && onClose()} open>
-      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl">
+      <DialogContent className="flex max-h-[85dvh] flex-col sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{initial ? t("skills.editTitle", { name: initial.name }) : t("skills.newSkill")}</DialogTitle>
           <DialogDescription>{t("skills.editorDescription")}</DialogDescription>
@@ -334,7 +334,7 @@ function SkillEditorDialog({
               {t("skills.bodyLabel")}
             </label>
             <Textarea
-              className="min-h-[220px] font-mono text-xs"
+              className="min-h-[220px] font-mono text-base md:text-xs"
               id="skill-content"
               onChange={(e) => setContent(e.target.value)}
               placeholder={t("skills.bodyPlaceholder")}

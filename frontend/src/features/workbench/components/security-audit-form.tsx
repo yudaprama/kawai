@@ -91,7 +91,7 @@ export function SecurityAuditForm({
           aria-pressed={allSelected}
           onClick={() => setSelected(allSelected ? DEFAULT_SELECTED : ALL_CATEGORY_IDS)}
           className={cn(
-            "rounded-full border px-2.5 py-0.5 font-mono text-[0.625rem] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+            "hit-44 rounded-full border px-3 py-1.5 font-mono text-[0.6875rem] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
             allSelected
               ? "border-primary/60 bg-primary/10 text-primary"
               : "border-border text-muted-foreground hover:text-foreground",
@@ -113,7 +113,7 @@ export function SecurityAuditForm({
                 )
               }
               className={cn(
-                "rounded-full border px-2.5 py-0.5 font-mono text-[0.625rem] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                "hit-44 rounded-full border px-3 py-1.5 font-mono text-[0.6875rem] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                 active
                   ? "border-primary/60 bg-primary/10 text-primary"
                   : "border-border text-muted-foreground hover:text-foreground",
@@ -128,7 +128,7 @@ export function SecurityAuditForm({
           disabled={disabled}
           onChange={(e) => setIntensity(e.target.value as (typeof INTENSITIES)[number])}
           aria-label="Payload intensity"
-          className="border-border bg-background text-muted-foreground ml-auto rounded-full border px-2 py-0.5 font-mono text-[0.625rem] outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          className="border-border bg-background text-muted-foreground hit-44 ml-auto rounded-full border px-2.5 py-1.5 font-mono text-base outline-none disabled:cursor-not-allowed disabled:opacity-50 md:text-[0.625rem]"
         >
           {INTENSITIES.map((i) => (
             <option key={i} value={i}>
