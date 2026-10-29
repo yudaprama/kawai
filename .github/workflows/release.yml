@@ -103,9 +103,10 @@ jobs:
         env:
           # Commit push only. GITHUB_TOKEN pushes create NO push event, so
           # ci/evals/windows-smoke/release never fire on a one-field version
-          # bump. The tag push below uses the checkout's RELEASE_TOKEN
-          # credentials — a PAT event, which is what wakes release-android.
+          # bump. The tag push uses RELEASE_TOKEN — a PAT event, which is
+          # what wakes release-android + bloat.
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -euo pipefail
           # ── Resume path ── the guard detected a still-draft release for the
@@ -175,22 +176,32 @@ jobs:
           git commit -m "chore(release): v$NEW"
 
           # Land the bump commit on main BEFORE claiming the tag, so the tag
-          # always points at a commit reachable from main. Pushed with
-          # GITHUB_TOKEN (= no push event → no workflow re-triggers). On a
-          # non-FF rejection (another push raced us), rebase the one-file
-          # change and retry; failing that, go red loudly rather than
-          # orphaning a tag.
+          # always points at a commit reachable from main. On a non-FF
+          # rejection (another push raced us), rebase the one-file change and
+          # retry; failing that, go red loudly rather than orphaning a tag.
+          #
+          # The checkout above persisted RELEASE_TOKEN as an
+          # http.https://github.com/.extraheader in this job's git config; on
+          # github.com URLs that Authorization header overrides URL-embedded
+          # credentials, so an unmodified push would authenticate as the PAT
+          # and FIRE a push event on the bump commit (every push-triggered
+          # workflow re-runs on a one-field version bump). Strip it and give
+          # every remote op past this point an explicit URL instead.
+          git config --unset-all http.https://github.com/.extraheader || true
+          git config --global --unset-all http.https://github.com/.extraheader || true
           PUSH_URL="https://x-access-token:${GH_TOKEN}@github.com/yudaprama/kawai.git"
+          PAT_URL="https://x-access-token:${RELEASE_TOKEN}@github.com/yudaprama/kawai.git"
           if ! git push "$PUSH_URL" HEAD:main; then
             echo "Push rejected (remote moved) — rebasing the bump commit."
-            git fetch origin main
-            git rebase origin/main
+            git fetch "$PAT_URL" main
+            git rebase FETCH_HEAD
             git push "$PUSH_URL" HEAD:main
           fi
 
-          # The bump commit is on main — now create and claim the tag.
+          # The bump commit is on main — now create and claim the tag. PAT
+          # URL: the tag event is what wakes release-android + bloat.
           git tag "v$NEW"
-          if ! git push origin "v$NEW"; then
+          if ! git push "$PAT_URL" "v$NEW"; then
             echo "Race lost on v$NEW — another run claimed the tag. Skipping."
             echo "skipped=true" >> "$GITHUB_OUTPUT"
             echo "version=$NEW" >> "$GITHUB_OUTPUT"

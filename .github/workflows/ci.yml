@@ -15,14 +15,16 @@ name: ci
 #
 # release.yml (app bundles) is gated on this workflow's conclusion via
 # workflow_run — a green run on main is what starts a release.
-# NOTE: every push to main runs here — but the release bot's bump commits
-# (chore(release): vX.Y.Z, a one-field version bump) skip EVERY job via the
-# chore-commit gate on each job below. The run itself still completes GREEN
-# with all jobs skipped, which is load-bearing: release.yml's workflow_run
-# gate needs that completed run to re-enter (loop terminator + the one
-# automatic retry for a failed release). Do NOT replace this with [skip ci]
-# or paths-ignore — both suppress the run entirely and kill that gate
-# ([skip ci] would also skip the v* tag push that fires release-android.yml).
+# NOTE: the release bot's bump commits (chore(release): vX.Y.Z, a one-field
+# version bump) are pushed with GITHUB_TOKEN — the release.yml bump step
+# strips the checkout's PAT extraheader first, so NO push event fires and no
+# ci run exists for them. The chore-commit gate on each job below stays for
+# a HAND-pushed chore(release) commit: its jobs all skip, the run concludes
+# skipped, and release.yml's workflow_run gate (conclusion == 'success')
+# never re-enters on it. Do NOT replace the gate with [skip ci] or
+# paths-ignore — [skip ci] would also suppress the v* tag push that fires
+# release-android.yml, and paths-ignore would skip real pushes that only
+# touch ignored paths.
 #
 # agent_smoke (the full local→cloud turn) is intentionally NOT run here: it
 # needs interactive cloud-side state beyond the smokes. Run it manually

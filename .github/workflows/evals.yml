@@ -34,6 +34,11 @@ jobs:
   office-eval:
     runs-on: macos-26
     timeout-minutes: 120
+    # Bot bump commits (chore(release): vX) only move the version string —
+    # nothing to eval. The bot's own bump commit is pushed with GITHUB_TOKEN
+    # (no push event), so this gate only ever skips for a hand-pushed
+    # chore(release) commit.
+    if: "github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release): v')"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -139,6 +144,11 @@ jobs:
   analytics-eval:
     runs-on: macos-26
     timeout-minutes: 120
+    # Bot bump commits (chore(release): vX) only move the version string —
+    # nothing to eval. The bot's own bump commit is pushed with GITHUB_TOKEN
+    # (no push event), so this gate only ever skips for a hand-pushed
+    # chore(release) commit.
+    if: "github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release): v')"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -265,6 +275,11 @@ jobs:
   screener-eval:
     runs-on: macos-26
     timeout-minutes: 120
+    # Bot bump commits (chore(release): vX) only move the version string —
+    # nothing to eval. The bot's own bump commit is pushed with GITHUB_TOKEN
+    # (no push event), so this gate only ever skips for a hand-pushed
+    # chore(release) commit.
+    if: "github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore(release): v')"
     steps:
       - uses: actions/checkout@v4
         with:
