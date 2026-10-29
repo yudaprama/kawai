@@ -65,16 +65,18 @@ jobs:
         run: |
           set -euo pipefail
           MSG="$(git log -1 --format=%s)"
-          if [[ "$MSG" != "chore(release):"* ]]; then
+          # Match the bot's EXACT subject (git commit -m "chore(release):
+          # v$NEW"). A loose `chore(release):*` prefix swallowed a human
+          # commit ("chore(release): update release workflow and
+          # documentation", 2026-10-29 run 40804952018): no `v` in the
+          # subject → version parse failed → whole release silently skipped
+          # while the run stayed green.
+          RE='^chore\(release\): v[0-9]+\.[0-9]+\.[0-9]+$'
+          if [[ ! "$MSG" =~ $RE ]]; then
             echo "skipped=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           VER="${MSG##*v}"
-          if [[ ! "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Bump commit subject not parseable ('$MSG') — skipping."
-            echo "skipped=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           # gh release view resolves DRAFT releases; the releases/tags API
           # endpoint only matches published ones, so a still-draft release
           # would 404 here and the resume branch below would never fire.
