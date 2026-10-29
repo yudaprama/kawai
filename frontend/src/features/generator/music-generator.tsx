@@ -782,7 +782,7 @@ export function MusicGenerator() {
               aria-label={t(ecoId === "yue2" ? "musicGenerator.durationMax" : "musicGenerator.duration", {
                 seconds: duration,
               })}
-              className="w-full min-w-0 bg-transparent px-2 text-center text-sm outline-none"
+              className="w-full min-w-0 bg-transparent px-2 text-center text-base outline-none md:text-sm"
               inputMode="decimal"
               onBlur={(e) => {
                 const parsed = Number(e.target.value);
