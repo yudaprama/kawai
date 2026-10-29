@@ -387,4 +387,7 @@ crushing their columns to the phone's width. Phone toasts rise above the
 pinned Workbench composer (sonner `mobileOffset`). The phone composer
 collapses its chrome — session row, follow-up chips — while the textarea
 has focus: with the IME open those rows are the difference between a
-visible deliverable and none.
+visible deliverable and none. The phone app is portrait-locked
+(`android:screenOrientation="portrait"` on `MainActivity`), so landscape
+layouts and the rotation class of bugs they carry are out of scope;
+desktop is unaffected.
