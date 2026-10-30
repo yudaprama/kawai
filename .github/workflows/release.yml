@@ -221,7 +221,7 @@ jobs:
     # in SFINAE — breaks the cxx-generated contiguous_range static_assert in
     # LiteRT-LM's fc_parser_utils.cc.
     runs-on: macos-26
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
@@ -377,7 +377,7 @@ jobs:
     needs: bump
     if: needs.bump.outputs.skipped == 'false'
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
         with:
@@ -522,7 +522,7 @@ jobs:
     needs: bump
     if: needs.bump.outputs.skipped == 'false'
     runs-on: windows-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
         with:
