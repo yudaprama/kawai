@@ -779,7 +779,7 @@ function L1Pane({ memories, session }: { memories: MemoriesStore; session: ChatS
         <div className="flex items-center gap-1">
           <Input
             aria-label={t("memory.semanticSearch")}
-            className="h-9 w-48 text-base md:text-xs"
+            className="h-9 w-48 text-base md:text-xs max-md:h-11 max-md:flex-1"
             disabled={searching}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -1066,7 +1066,7 @@ function Transcript({
                   <MessageResponse mode="static">{m.content}</MessageResponse>
                 </div>
               ) : (
-                <p className="text-sm whitespace-pre-wrap">{m.content}</p>
+                <p className="text-sm whitespace-pre-wrap break-words">{m.content}</p>
               )}
             </li>
           ))}

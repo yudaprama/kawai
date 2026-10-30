@@ -107,7 +107,8 @@ function musicEntriesFromJob(row: GenerationJob): MusicResultEntry[] {
   ];
 }
 
-/** One saved music result: <audio> card, click opens preview. */
+/** One saved music result: inline <audio> player (preview via the corner
+ *  affordance — the player must not sit inside a click target). */
 function MusicResultCard({
   entry,
   onRemove,
@@ -117,6 +118,7 @@ function MusicResultCard({
   onRemove: () => void;
   onReuse: () => void;
 }) {
+  const { t } = useI18n();
   const main = useFilePreview({ id: entry.fileId, name: entry.name });
   return (
     <ResultTile
@@ -126,17 +128,36 @@ function MusicResultCard({
         detailLine(entry.req?.duration ? `${entry.req.duration}s` : undefined, entry.req?.mode),
       )}
     >
-      <button className="block w-full p-2" onClick={() => emitOpenPreview(entry.fileId, entry.name)} type="button">
-        {main.isLoading ? (
-          <div className="flex h-14 items-center justify-center">
-            <Spinner className="size-5" />
-          </div>
-        ) : (
+      {/* kawai: the <audio controls> must NOT sit inside the preview button —
+        Chromium bubbles clicks from the media shadow-DOM controls, so every
+        tap on play/seek opened the preview overlay and made the inline player
+        unusable on touch. The player lives in a plain container; the preview
+        keeps a dedicated affordance. */}
+      {main.isLoading ? (
+        <button
+          className="flex h-14 w-full items-center justify-center"
+          onClick={() => emitOpenPreview(entry.fileId, entry.name)}
+          type="button"
+        >
+          <Spinner className="size-5" />
+        </button>
+      ) : (
+        <div className="relative p-2">
           <audio className="w-full" controls preload="metadata" src={main.data?.dataUrl}>
             <track kind="captions" />
           </audio>
-        )}
-      </button>
+          <Button
+            aria-label={t("preview.open")}
+            className="hit-44 absolute top-1 right-1 size-7 rounded-full border border-border/60 bg-background/90"
+            onClick={() => emitOpenPreview(entry.fileId, entry.name)}
+            size="icon"
+            title={t("preview.open")}
+            variant="ghost"
+          >
+            <Icon className="size-3.5" name="maximize-2" />
+          </Button>
+        </div>
+      )}
       <ResultActions
         fileId={entry.fileId}
         fileName={entry.name}
@@ -537,7 +558,7 @@ export function MusicGenerator() {
               />
               <Button
                 aria-label={t("musicGenerator.clearCover")}
-                className="absolute top-1 right-1 size-6"
+                className="hit-44 absolute top-1 right-1 size-6"
                 onClick={() => setCoverImage(null)}
                 size="icon"
                 variant="secondary"
@@ -599,12 +620,18 @@ export function MusicGenerator() {
               {t("generator.prompt")}
             </Label>
             {!isSonilo && (
-              <span className="text-muted-foreground/70 cursor-help" title={t("musicGenerator.promptInfo")}>
+              <span
+                className="text-muted-foreground/70 hidden cursor-help md:inline-flex"
+                title={t("musicGenerator.promptInfo")}
+              >
                 <Icon className="size-3.5" name="info" />
               </span>
             )}
             <span className="text-destructive">*</span>
           </div>
+          {/* kawai: Android never renders `title`, so the guidance rides inline
+              text on phones instead of the desktop-only tooltip. */}
+          {!isSonilo && <p className="text-muted-foreground text-xs md:hidden">{t("musicGenerator.promptInfo")}</p>}
           <Textarea
             className="min-h-20 rounded-[8px]"
             id="music-prompt"
@@ -660,10 +687,15 @@ export function MusicGenerator() {
               <Label className="text-muted-foreground text-[0.8125rem] font-medium">
                 {t("musicGenerator.scorePlanning")}
               </Label>
-              <span className="text-muted-foreground/70 cursor-help" title={t("musicGenerator.scorePlanningInfo")}>
+              <span
+                className="text-muted-foreground/70 hidden cursor-help md:inline-flex"
+                title={t("musicGenerator.scorePlanningInfo")}
+              >
                 <Icon className="size-3.5" name="info" />
               </span>
             </div>
+            {/* kawai: inline on phones — `title` is touch-dead (see prompt hint). */}
+            <p className="text-muted-foreground text-xs md:hidden">{t("musicGenerator.scorePlanningInfo")}</p>
             <div className="flex gap-2">
               {(["full", "melody", "off"] as MusicScoreMode[]).map((m) => (
                 <ChoiceChip active={scoreMode === m} className="flex-1" key={m} onClick={() => setScoreMode(m)}>
@@ -803,7 +835,7 @@ export function MusicGenerator() {
             <div className="flex shrink-0 flex-col border-l">
               <button
                 aria-label="+"
-                className="text-muted-foreground hover:text-foreground flex h-4.5 w-6 items-center justify-center"
+                className="text-muted-foreground hover:text-foreground flex h-4.5 w-6 items-center justify-center max-md:h-11 max-md:w-11"
                 onClick={() => {
                   setDurText(null);
                   setDuration((d) => Math.min(durRange.max, +(d + durStep).toFixed(2)));
@@ -814,7 +846,7 @@ export function MusicGenerator() {
               </button>
               <button
                 aria-label="−"
-                className="text-muted-foreground hover:text-foreground flex h-4.5 w-6 items-center justify-center border-t"
+                className="text-muted-foreground hover:text-foreground flex h-4.5 w-6 items-center justify-center border-t max-md:h-11 max-md:w-11"
                 onClick={() => {
                   setDurText(null);
                   setDuration((d) => Math.max(durRange.min, +(d - durStep).toFixed(2)));
@@ -900,7 +932,7 @@ export function MusicGenerator() {
                     </ChoiceChip>
                   </div>
                   <Input
-                    className="h-8 flex-1 rounded-[8px]"
+                    className="h-8 flex-1 rounded-[8px] max-md:h-11"
                     disabled={seedMode === "random"}
                     id="music-seed"
                     inputMode="numeric"
@@ -1000,7 +1032,7 @@ export function MusicGenerator() {
         />
       }
     >
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 lg:overscroll-contain">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 pb-24 lg:overscroll-contain lg:pb-3">
         {job && (
           <div className="mb-3">
             <JobCard

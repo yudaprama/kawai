@@ -118,7 +118,13 @@ export function ConfirmIconButton({
       <button
         aria-label={armed ? confirmLabel : label}
         aria-pressed={armed}
-        className={cn("rounded p-1", armed ? "text-destructive" : "text-muted-foreground hover:text-destructive")}
+        className={cn(
+          // kawai: hit-44 — this is the destructive control on dense rows
+          // (memory, knowledge, SQL profiles); a 22px target invites
+          // neighbor-mis-taps on touch.
+          "hit-44 rounded p-1",
+          armed ? "text-destructive" : "text-muted-foreground hover:text-destructive",
+        )}
         onClick={onClick}
         title={armed ? confirmLabel : label}
         type="button"

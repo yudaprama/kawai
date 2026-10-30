@@ -268,10 +268,10 @@ export function WalletPage() {
           <TabsContent value="settings" className="mt-4">
             <Card>
               <CardContent className="pt-6 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">{t("wallet.address")}</span>
-                  <span className="font-mono text-xs flex items-center gap-2">
-                    {address} <CopyButton text={address} />
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm text-muted-foreground shrink-0">{t("wallet.address")}</span>
+                  <span className="font-mono text-xs flex min-w-0 items-center gap-2">
+                    <span className="break-all">{address}</span> <CopyButton text={address} />
                   </span>
                 </div>
                 <div className="flex items-center justify-between">

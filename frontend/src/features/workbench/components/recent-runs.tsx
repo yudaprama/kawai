@@ -112,7 +112,7 @@ export function RecentRuns({
           <button
             type="button"
             onClick={() => setRetryKey((k) => k + 1)}
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-md font-mono text-[0.625rem] tracking-wider uppercase transition-colors hover:underline"
+            className="hit-44 text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-md px-1 font-mono text-[0.625rem] tracking-wider uppercase transition-colors hover:underline"
           >
             <Icon name="refresh-cw" className="size-3" />
             {t("common.retry")}

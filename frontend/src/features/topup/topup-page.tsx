@@ -467,7 +467,7 @@ export function TopupPage() {
                   </p>
                   {uniqueCode > 0 && (
                     <details className="group text-xs">
-                      <summary className="text-muted-foreground [&::-webkit-details-marker]:hidden flex cursor-pointer list-none items-center gap-1.5 select-none hover:text-foreground">
+                      <summary className="text-muted-foreground [&::-webkit-details-marker]:hidden hit-44 flex cursor-pointer list-none items-center gap-1.5 py-1 select-none hover:text-foreground">
                         <Icon name="info" className="size-3.5" />
                         Mengapa nominalnya berbeda?
                       </summary>
@@ -570,7 +570,7 @@ export function TopupPage() {
                     <button
                       aria-pressed={selected}
                       className={cn(
-                        "rounded-md border px-3 py-1 text-xs transition-colors disabled:opacity-50",
+                        "rounded-md border px-3 py-1 text-xs transition-colors disabled:opacity-50 max-md:min-h-11",
                         selected
                           ? "border-transparent bg-primary font-medium text-primary-foreground"
                           : "hover:bg-[var(--tea-color-bg-secondary-default)]",

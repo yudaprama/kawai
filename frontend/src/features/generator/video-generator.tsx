@@ -327,7 +327,7 @@ export function FrameSlot({
       <span className="bg-black/60 absolute bottom-1 left-1 rounded px-1 text-[0.625rem] text-white">{caption}</span>
       <Button
         aria-label={caption}
-        className="absolute top-1 right-1 size-6"
+        className="hit-44 absolute top-1 right-1 size-6"
         onClick={onClear}
         size="icon"
         variant="secondary"
@@ -716,7 +716,7 @@ export function VideoGenerator() {
             <span className="text-xs text-muted-foreground/70">· {t("videoGenerator.negativePromptOptional")}</span>
           </Label>
           <Input
-            className="h-8 rounded-[8px]"
+            className="h-8 rounded-[8px] max-md:h-11"
             id="video-negative"
             onChange={(e) => setNegativePrompt(e.target.value)}
             placeholder={t("videoGenerator.negativePromptPlaceholder")}
@@ -738,7 +738,7 @@ export function VideoGenerator() {
               </video>
               <Button
                 aria-label={t("videoGenerator.clearImage")}
-                className="absolute top-1.5 right-1.5 size-6"
+                className="hit-44 absolute top-1.5 right-1.5 size-6"
                 onClick={() => setSourceVideo(null)}
                 size="icon"
                 variant="secondary"
@@ -795,7 +795,7 @@ export function VideoGenerator() {
           </div>
           {isRef2Vid && canAddFrameSlot && (
             <Button
-              className="h-8 rounded-[8px] text-xs"
+              className="h-8 rounded-[8px] text-xs max-md:h-11"
               onClick={() => setFrames((prev) => [...prev, ""])}
               size="sm"
               variant="secondary"
@@ -896,7 +896,7 @@ export function VideoGenerator() {
                 {t("videoGenerator.movement")}
               </Label>
               <Select value={movement || "auto"} onValueChange={setMovement}>
-                <SelectTrigger className="h-8 rounded-[8px]">
+                <SelectTrigger className="h-8 rounded-[8px] max-md:h-11">
                   <span>{movement || "auto"}</span>
                 </SelectTrigger>
                 <SelectContent>
@@ -968,7 +968,7 @@ export function VideoGenerator() {
           {t("generator.seed")}
         </Label>
         <Input
-          className="h-8 rounded-[8px]"
+          className="h-8 rounded-[8px] max-md:h-11"
           id="video-seed"
           inputMode="numeric"
           onChange={(e) => setSeed(e.target.value.replace(/[^0-9]/g, ""))}
@@ -1009,7 +1009,7 @@ export function VideoGenerator() {
         />
       }
     >
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 lg:overscroll-contain">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 pb-24 lg:overscroll-contain lg:pb-3">
         {job && (
           <div className="mb-3">
             <JobCard

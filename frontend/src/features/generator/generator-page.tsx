@@ -294,7 +294,7 @@ function BrowserCard({
           <>
             <Button
               aria-label="Previous image"
-              className="absolute top-1/2 left-1.5 z-10 size-6 -translate-y-1/2 rounded-full bg-black/50 text-white hover:bg-black/70"
+              className="hit-44 absolute top-1/2 left-1.5 z-10 size-6 -translate-y-1/2 rounded-full bg-black/50 text-white hover:bg-black/70"
               onClick={() => setIdx((at - 1 + gallery.length) % gallery.length)}
               size="icon"
               variant="ghost"
@@ -303,7 +303,7 @@ function BrowserCard({
             </Button>
             <Button
               aria-label="Next image"
-              className="absolute top-1/2 right-1.5 z-10 size-6 -translate-y-1/2 rounded-full bg-black/50 text-white hover:bg-black/70"
+              className="hit-44 absolute top-1/2 right-1.5 z-10 size-6 -translate-y-1/2 rounded-full bg-black/50 text-white hover:bg-black/70"
               onClick={() => setIdx((at + 1) % gallery.length)}
               size="icon"
               variant="ghost"
@@ -505,7 +505,7 @@ function ModelBrowser({
           <div className="relative min-w-[180px] flex-1">
             <Icon className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2" name="search" />
             <Input
-              className="h-9 rounded-[8px] pr-3 pl-8"
+              className="h-9 rounded-[8px] pr-3 pl-8 max-md:h-11"
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t("generator.searchPlaceholder")}
               value={query}
@@ -525,7 +525,7 @@ function ModelBrowser({
             ))}
           </div>
           <Select onValueChange={setSort} value={sort}>
-            <SelectTrigger className="h-8 w-[170px] rounded-[8px] text-xs">
+            <SelectTrigger className="h-8 w-[170px] rounded-[8px] text-xs max-md:h-11">
               {sortOptions.find((o) => o.value === sort)?.label}
             </SelectTrigger>
             <SelectContent className="z-[60] rounded-[8px]" position="popper">
@@ -1217,7 +1217,7 @@ function ImageGenerator() {
             <div className="flex items-center gap-2 rounded-[8px] border bg-secondary p-2">
               <img alt="" className="size-12 rounded-[6px] object-cover" src={sourceImage} />
               <button
-                className="text-primary text-[0.6875rem] underline-offset-2 hover:underline"
+                className="hit-44 text-primary inline-flex px-1 text-[0.6875rem] underline-offset-2 hover:underline"
                 onClick={() => {
                   setSourceImage(null);
                   setSourceDims(null);
@@ -1304,7 +1304,7 @@ function ImageGenerator() {
             <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("generator.model")}</Label>
             {selectedModel ? (
               <button
-                className="text-primary text-[0.6875rem] underline-offset-2 hover:underline"
+                className="hit-44 text-primary inline-flex px-1 text-[0.6875rem] underline-offset-2 hover:underline"
                 onClick={() => setSelectedModel(null)}
                 type="button"
               >
@@ -1358,7 +1358,7 @@ function ImageGenerator() {
               </span>
             </div>
             <button
-              className="text-primary flex items-center gap-1 text-[0.6875rem] underline-offset-2 hover:underline"
+              className="hit-44 text-primary inline-flex items-center gap-1 px-1 text-[0.6875rem] underline-offset-2 hover:underline"
               onClick={() => {
                 setPickerType("LORA");
                 setBrowserOpen(true);
@@ -1379,7 +1379,7 @@ function ImageGenerator() {
                   <span className="max-w-40 truncate">{lora.name ?? lora.air}</span>
                   <button
                     aria-label={t("generator.removeLora")}
-                    className="text-muted-foreground hover:text-foreground"
+                    className="hit-44 text-muted-foreground -mr-0.5 hover:text-foreground"
                     onClick={() => setLoras((prev) => prev.filter((l) => l.id !== lora.id))}
                     type="button"
                   >

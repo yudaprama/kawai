@@ -950,6 +950,7 @@
     "openedInDefaultApp": "Opened in your default app",
     "openedElsewhere": "{{file}} should now be open in another window.",
     "openAgain": "Open again",
+    "open": "Open preview",
     "cantPreview": "Can't preview this file"
   },
   "codegraph": {

@@ -503,7 +503,7 @@ export function Model3dGenerator() {
               {t("model3dGenerator.texturePrompt")}
             </Label>
             <Input
-              className="h-8 rounded-[8px]"
+              className="h-8 rounded-[8px] max-md:h-11"
               id="m3d-texture-prompt"
               maxLength={600}
               onChange={(e) => setTexturePrompt(e.target.value)}
@@ -577,7 +577,7 @@ export function Model3dGenerator() {
               {t("model3dGenerator.textureSeed")}
             </Label>
             <Input
-              className="h-8 rounded-[8px]"
+              className="h-8 rounded-[8px] max-md:h-11"
               id="m3d-texture-seed"
               inputMode="numeric"
               onChange={(e) => setTextureSeed(e.target.value)}
@@ -665,7 +665,7 @@ export function Model3dGenerator() {
           {t("generator.seed")}
         </Label>
         <Input
-          className="h-8 rounded-[8px]"
+          className="h-8 rounded-[8px] max-md:h-11"
           id="m3d-seed"
           inputMode="numeric"
           onChange={(e) => setSeed(e.target.value)}

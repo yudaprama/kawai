@@ -18,6 +18,15 @@
   gap: 0;
 }
 
+/* kawai: below 1023px the split stacks (matching the app's lg breakpoint),
+   so the 480px floor only creates dead space there — relax it, same as the
+   list panel does under 960px. */
+@media (max-width: 1023px) {
+  ._asset-split {
+    min-height: 0;
+  }
+}
+
 ._asset-split-sidebar,
 ._asset-split-detail {
   min-width: 0;

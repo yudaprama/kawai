@@ -47,7 +47,7 @@ export function AttachedFilesChips({
             {onRemove && (
               <button
                 aria-label={`Remove ${f.originalName}`}
-                className="hover:bg-foreground/10 -mr-0.5 flex size-4 shrink-0 items-center justify-center rounded-full"
+                className="hover:bg-foreground/10 -mr-0.5 hit-44 flex size-5 shrink-0 items-center justify-center rounded-full"
                 onClick={() => onRemove(f)}
                 type="button"
               >

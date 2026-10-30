@@ -42,7 +42,7 @@ export function AssetNavList({
             aria-label={label}
             className={cn(
               "flex shrink-0 items-center rounded-lg text-left transition-colors",
-              orientation === "vertical" ? "w-full gap-2.5 px-2.5 py-2" : "gap-2 px-2.5 py-1.5",
+              orientation === "vertical" ? "w-full gap-2.5 px-2.5 py-2 max-md:py-2.5" : "gap-2 px-2.5 py-1.5",
               active ? "bg-primary text-primary-foreground" : "hover:bg-[var(--tea-color-bg-secondary-default)]",
             )}
             key={asset.id}

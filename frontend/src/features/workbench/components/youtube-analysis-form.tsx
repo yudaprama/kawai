@@ -44,13 +44,13 @@ export function YoutubeAnalysisForm({ disabled, onSubmit }: YoutubeAnalysisFormP
           placeholder="https://www.youtube.com/watch?v=…"
           disabled={disabled}
           spellCheck={false}
-          className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 min-w-0 flex-1 rounded-lg border px-3 py-2 font-mono text-sm outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 min-w-0 flex-1 rounded-lg border px-3 py-2 font-mono text-base outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50 md:text-sm"
         />
         <button
           type="button"
           onClick={submit}
           disabled={disabled || !url.trim() || !looksLikeYoutube}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-mono text-xs font-bold tracking-wider uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex min-h-9 items-center gap-1.5 rounded-lg px-4 py-2 font-mono text-xs font-bold tracking-wider uppercase transition-colors max-md:min-h-11 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Icon name="zap" className="size-3.5" />
           Analyze

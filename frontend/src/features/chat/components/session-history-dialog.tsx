@@ -373,7 +373,7 @@ export function SessionHistoryDialog({
             <div>
               <button
                 aria-expanded={archiveOpen}
-                className="text-muted-foreground hover:text-foreground flex w-full items-center gap-1.5 px-2 pb-1 text-[0.6875rem] font-medium tracking-wider uppercase"
+                className="text-muted-foreground hover:text-foreground hit-44 flex w-full items-center gap-1.5 px-2 pb-1 text-[0.6875rem] font-medium tracking-wider uppercase"
                 onClick={() => {
                   setArchiveOpen((v) => !v);
                   setActiveIndex(0);
@@ -399,12 +399,12 @@ export function SessionHistoryDialog({
         {/* Bulk action bar — only in select mode; selection may span both
             lists, so Archive/Restore enable per side. */}
         {selectMode && (
-          <div className="flex items-center justify-between gap-2 border-t px-4 py-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 gap-y-2 border-t px-4 py-2.5">
             <span className="text-muted-foreground text-xs">
               {t("sessionSwitcher.selectedCount", { count: selected.size })}
               {selected.size > 0 && selected.size < allVisibleCount && (
                 <button
-                  className="text-foreground ml-1 underline underline-offset-2"
+                  className="text-foreground hit-44 ml-1 px-1 py-0.5 underline underline-offset-2"
                   onClick={selectAllVisible}
                   type="button"
                 >
@@ -412,7 +412,7 @@ export function SessionHistoryDialog({
                 </button>
               )}
             </span>
-            <div className="flex gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
               <Button
                 disabled={busy || selActive.length === 0}
                 onClick={() => bulkArchive(true)}

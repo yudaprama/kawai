@@ -42,7 +42,7 @@ From the `web/` SPA (updates require the same trims to be reapplied):
 
 **Trims applied when vendoring**: replace `ai` imports → `@/lib/ai-types`, strip `react-i18next`, slim `@/platform` to the local adapter (`src/platform/`), remove Lexical, `@xyflow`, `tokenlens`, and render markdown through the `LazyStreamdown` seam (`@/components/shared/lazy-streamdown`) — never import `@/lib/streamdown` or its plugins statically from eager code (see the esm.sh gotcha below).
 
-Local deltas inside vendored files (mobile touch/viewport rules in `ui/button`, `ui/dialog`, `ui/sonner`, `ui/select`, `ai-elements/web-preview`, …) are marked `// kawai:` — re-apply any `kawai:`-marked block after syncing from upstream.
+Local deltas inside vendored files (mobile touch/viewport rules in `ui/button`, `ui/dialog`, `ui/sonner`, `ui/select`, `ui/dropdown-menu`, `ui/tabs`, `ai-elements/web-preview`, `ai-elements/attachments`, …) are marked `// kawai:` — re-apply any `kawai:`-marked block after syncing from upstream.
 
 From `TencentDB-Agent-Memory/MemoryPanel/web/` (MIT; the Tea-style asset-management UI):
 

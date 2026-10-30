@@ -259,8 +259,11 @@
 }
 
 /* ===== Responsive ===== */
-@media (max-width: 960px) {
-  ._alp {
+/* kawai: the split stacks below 1023px (app lg breakpoint), so relax both
+   the panel and the empty-state floor there, not just under 960px. */
+@media (max-width: 1023px) {
+  ._alp,
+  ._alp-detail-empty {
     min-height: 0;
   }
 }

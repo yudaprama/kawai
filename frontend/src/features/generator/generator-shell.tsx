@@ -141,7 +141,7 @@ export function EcoPicker({
             </span>
           </>
         }
-        triggerClassName="flex items-center gap-2 rounded-[8px] px-3 py-2 text-sm font-semibold transition-colors hover:brightness-125"
+        triggerClassName="flex items-center gap-2 rounded-[8px] px-3 py-2 text-sm font-semibold transition-colors hover:brightness-125 max-md:min-h-11"
       />
     </div>
   );
@@ -458,7 +458,12 @@ export function JobCard({
       {error && <p className="text-destructive text-xs">{error}</p>}
       <div className="flex items-center justify-between gap-2">
         <p className="text-muted-foreground/60 truncate font-mono text-[0.625rem]">{workflowId}</p>
-        <Button className="h-7 shrink-0 rounded-[6px] px-2 text-xs" onClick={onCancel} size="sm" variant="secondary">
+        <Button
+          className="h-7 shrink-0 rounded-[6px] px-2 text-xs max-md:h-11"
+          onClick={onCancel}
+          size="sm"
+          variant="secondary"
+        >
           {cancelLabel}
         </Button>
       </div>

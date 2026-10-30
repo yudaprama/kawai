@@ -349,6 +349,9 @@ export const AttachmentRemove = ({
     <Button
       aria-label={label}
       className={cn(
+        // kawai: hit-44 — remove targets are 20-24px otherwise, below the
+        // touch floor (re-applied when syncing this vendored file).
+        "hit-44",
         variant === "grid" && [
           "absolute top-2 right-2 size-6 rounded-full p-0",
           "bg-background/80 backdrop-blur-sm",

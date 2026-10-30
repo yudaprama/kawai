@@ -311,7 +311,7 @@ export function RunHistoryRail({
             <div className="border-border/60 rounded border" key={r.id}>
               <button
                 aria-expanded={open}
-                className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left"
+                className="hit-44 flex w-full items-center gap-1.5 px-2 py-1.5 text-left"
                 onClick={() => setOpenId((v) => (v === r.id ? null : r.id))}
                 type="button"
               >
@@ -353,7 +353,7 @@ export function RunHistoryRail({
                       {(r.outputFull != null || r.outputPreview != null) && (
                         <div className="mt-1 flex items-center gap-3">
                           <button
-                            className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[0.625rem] hover:underline"
+                            className="hit-44 text-muted-foreground hover:text-primary inline-flex items-center gap-1 px-1 font-mono text-[0.625rem] hover:underline"
                             onClick={() => onOpenDeliverable(r.id)}
                             type="button"
                           >
@@ -365,7 +365,7 @@ export function RunHistoryRail({
                             r.outputFull != null &&
                             r.planKey != null && (
                               <button
-                                className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[0.625rem] hover:underline"
+                                className="hit-44 text-muted-foreground hover:text-primary inline-flex items-center gap-1 px-1 font-mono text-[0.625rem] hover:underline"
                                 onClick={() => onBuildOn(r)}
                                 title={`Arm “${r.goal}” as the follow-up context`}
                                 type="button"
@@ -535,7 +535,7 @@ export function ProgressRail({
           <PlanSummaryCard summary={supervisor.review.summary ?? supervisor.summary} />
           <button
             aria-expanded={reviewStepsOpen}
-            className="text-muted-foreground flex w-full items-center gap-1 font-mono text-[0.6875rem] uppercase hover:text-foreground"
+            className="hit-44 text-muted-foreground flex w-full items-center gap-1 px-1 py-1 font-mono text-[0.6875rem] uppercase hover:text-foreground"
             onClick={() => setReviewStepsOpen((o) => !o)}
             type="button"
           >

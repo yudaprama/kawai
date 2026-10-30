@@ -264,12 +264,17 @@ export default function App() {
   }, [mobileDrawer, mode, view]);
 
   const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
   };
   const handleTouchEnd = (e: React.TouchEvent) => {
     const dx = e.changedTouches[0].clientX - touchStartX.current;
-    if (dx < -60 && mobileDrawer) setMobileDrawer(null);
+    // A mostly-vertical scroll that happens to end leftward must NOT close
+    // the drawer — require the gesture to be predominantly horizontal.
+    const dy = Math.abs(e.changedTouches[0].clientY - touchStartY.current);
+    if (dx < -60 && dy < 40 && mobileDrawer) setMobileDrawer(null);
   };
   if (agentsError != null) {
     return (

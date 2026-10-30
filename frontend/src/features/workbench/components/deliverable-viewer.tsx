@@ -64,7 +64,7 @@ export function RunSwitcher({
   return (
     <div className="relative">
       <div
-        className="flex flex-nowrap items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex flex-nowrap items-center gap-1.5 overflow-x-auto py-1.5 pr-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         ref={scrollerRef}
       >
         {runs.map((r, i) => {
@@ -73,7 +73,7 @@ export function RunSwitcher({
           return (
             <button
               aria-pressed={sel}
-              className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 font-mono text-xs transition-colors ${
+              className={`hit-44 inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 font-mono text-xs transition-colors ${
                 sel
                   ? "border-primary bg-primary/10 text-foreground"
                   : "border-border/60 text-foreground/80 hover:border-primary/60"
@@ -342,7 +342,7 @@ function DeliverableBody({
           <div className="flex shrink-0 items-center gap-1">
             <Button
               aria-label="Copy the deliverable as markdown"
-              className="text-muted-foreground hover:text-foreground size-8 [&_svg]:size-3.5"
+              className="hit-44 text-muted-foreground hover:text-foreground size-8 [&_svg]:size-3.5"
               disabled={copied}
               onClick={() => void copyMarkdown(shown)}
               size="icon"
@@ -388,7 +388,7 @@ function DeliverableBody({
             <span className="text-destructive">Export failed: {exportError}</span>
           ) : exported != null ? (
             <button
-              className="text-success hover:text-primary inline-flex items-center gap-1 hover:underline"
+              className="hit-44 text-success hover:text-primary inline-flex items-center gap-1 px-1 hover:underline"
               onClick={() => emitOpenPreview(exported.id, exported.name)}
               title="Open the exported file"
               type="button"
@@ -502,7 +502,7 @@ export function PastRunCanvas({
             </span>
             {onBuildOn != null && run.status === "completed" && run.outputFull != null && run.planKey != null && (
               <button
-                className="hover:text-primary inline-flex items-center gap-1 font-mono text-[0.6875rem] hover:underline"
+                className="hit-44 hover:text-primary inline-flex items-center gap-1 px-1 font-mono text-[0.6875rem] hover:underline"
                 onClick={() => onBuildOn(run)}
                 title={`Arm “${goalLabel}” as the follow-up context`}
                 type="button"

@@ -97,11 +97,12 @@ export function SendForm({ onSend, loading, currentNetwork }: Props) {
           <p className="mt-2 font-semibold">{t("wallet.confirmTransaction")}</p>
         </div>
         <div className="rounded-xl border bg-muted/50 p-4 text-sm space-y-2">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">{t("wallet.to")}</span>
-            <span className="font-mono text-xs">
-              {confirm.to.slice(0, 10)}...{confirm.to.slice(-8)}
-            </span>
+          <div className="flex justify-between gap-3">
+            <span className="text-muted-foreground shrink-0">{t("wallet.to")}</span>
+            {/* kawai: full address, not a slice — on touch there is no hover to
+                reveal the truncated form, and the recipient must be verifiable
+                before confirming a transfer. */}
+            <span className="font-mono text-xs break-all text-right">{confirm.to}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">{t("wallet.amount")}</span>

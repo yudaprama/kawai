@@ -89,7 +89,7 @@ export function StockResearchForm({ disabled, domain = "stock", onSubmit }: Stoc
           placeholder={copy.tickerPlaceholder}
           disabled={disabled}
           spellCheck={false}
-          className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 min-w-[12rem] flex-1 basis-full rounded-lg border px-3 py-2 font-mono text-sm uppercase outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50 sm:basis-auto"
+          className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 min-w-[12rem] flex-1 basis-full rounded-lg border px-3 py-2 font-mono text-base uppercase outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50 sm:basis-auto md:text-sm"
         />
         <input
           value={tradeDate}
@@ -100,13 +100,13 @@ export function StockResearchForm({ disabled, domain = "stock", onSubmit }: Stoc
           type="date"
           disabled={disabled}
           spellCheck={false}
-          className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 w-full min-w-[10rem] rounded-lg border px-3 py-2 font-mono text-xs outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50 sm:w-56"
+          className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 w-full min-w-[10rem] rounded-lg border px-3 py-2 font-mono text-base outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50 sm:w-56 sm:text-xs"
         />
         <button
           type="button"
           onClick={submit}
           disabled={disabled || !ticker.trim() || selected.length === 0}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-mono text-xs font-bold tracking-wider uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex min-h-9 items-center gap-1.5 rounded-lg px-4 py-2 font-mono text-xs font-bold tracking-wider uppercase transition-colors max-md:min-h-11 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Icon name="zap" className="size-3.5" />
           {copy.button}

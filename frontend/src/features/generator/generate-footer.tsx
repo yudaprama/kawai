@@ -134,7 +134,11 @@ export function GenerateFooter({
               cost: (quote ?? 0).toLocaleString("id-ID"),
             })}
           </span>
-          <button className="text-primary underline-offset-2 hover:underline" onClick={emitOpenTopup} type="button">
+          <button
+            className="hit-44 text-primary inline-flex px-1 underline-offset-2 hover:underline"
+            onClick={emitOpenTopup}
+            type="button"
+          >
             {t("topUp.title")}
           </button>
         </div>

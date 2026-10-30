@@ -376,7 +376,9 @@ every text-bearing `Button` is ≥44px tall (the size ladder carries
 `max-md:min-h-11`), and icon-only controls keep their visual size but carry
 `hit-44` — an `::after` hit area with `inset: -6px`, so 32px becomes 44px
 without growing the art (adjacent `hit-44` controls need `gap-2` so their
-hit areas don't collide). Dialogs subtract the safe-area insets from their
+hit areas don't collide). Dropdown menu rows (`ui/dropdown-menu`,
+`max-md:py-2.5`) and tab strips (`ui/tabs`, `max-md:h-11` on the list) carry
+the same phone floors. Dialogs subtract the safe-area insets from their
 `100dvh` arithmetic (`env(safe-area-inset-*)`) so a phone dialog never runs
 under the status bar, gesture nav strip or a landscape notch, and the
 dialog close affordance is a padded `hit-44` target rather than the bare

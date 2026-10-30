@@ -380,7 +380,7 @@ function ChatComposerInner({
                   {filtered.map((f) => (
                     <button
                       aria-selected={filtered.indexOf(f) === activeMentionIndex}
-                      className={`hover:bg-accent flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left ${
+                      className={`hover:bg-accent flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left max-md:py-2.5 ${
                         filtered.indexOf(f) === activeMentionIndex ? "bg-accent" : ""
                       }`}
                       id={`mention-option-${f.id}`}

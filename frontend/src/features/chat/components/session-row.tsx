@@ -133,7 +133,7 @@ export function SessionRow({
           {onExport && (
             <button
               aria-label={`${t("sessionSwitcher.actions.export")}: ${label}`}
-              className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
+              className="hit-44 rounded p-0.5 max-md:p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
               disabled={busy || exporting}
               onClick={onExport}
               title={t("sessionSwitcher.actions.export")}
@@ -148,7 +148,7 @@ export function SessionRow({
           {!archivedStyle && (
             <button
               aria-label={`${t("sessionSwitcher.actions.rename")} ${label}`}
-              className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
+              className="hit-44 rounded p-0.5 max-md:p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
               disabled={busy}
               onClick={onStartRename}
               type="button"
@@ -160,7 +160,7 @@ export function SessionRow({
             aria-label={`${
               archivedStyle ? t("sessionSwitcher.actions.restore") : t("sessionSwitcher.actions.archive")
             } ${label}`}
-            className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
+            className="hit-44 rounded p-0.5 max-md:p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
             disabled={busy}
             onClick={onArchive}
             type="button"
@@ -173,7 +173,7 @@ export function SessionRow({
           </button>
           <button
             aria-label={`${t("sessionSwitcher.actions.delete")} ${label}`}
-            className="rounded p-0.5 text-muted-foreground hover:text-destructive disabled:opacity-30"
+            className="hit-44 rounded p-0.5 max-md:p-1 text-muted-foreground hover:text-destructive disabled:opacity-30"
             disabled={busy}
             onClick={onDelete}
             title={t("sessionSwitcher.actions.deleteHint")}

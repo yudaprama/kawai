@@ -221,7 +221,7 @@ export function ConnectionsPage() {
               {(["all", ...CONNECTOR_CATEGORIES] as const).map((c) => (
                 <button
                   className={cn(
-                    "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                    "rounded-full border px-3 py-1 text-xs font-medium transition-colors max-md:min-h-11",
                     category === c
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground",

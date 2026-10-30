@@ -10,6 +10,7 @@ import { useI18n } from "@/hooks/use-i18n";
 import type { GasEstimate, NetworkInfo, UserBalanceInfo } from "../lib/types";
 import { getFaucetUrl, safeParseFloat } from "../lib/utils";
 import { NetworkIcon } from "./network-icon";
+import { CopyButton } from "./copy-button";
 import { StablecoinIcon } from "./stablecoin-icon";
 
 type Props = {
@@ -141,6 +142,10 @@ export function HomeContent({
                   <TooltipContent>Max Tip {gasEstimate.maxTipGwei.toFixed(2)} Gwei</TooltipContent>
                 </Tooltip>
               )}
+              {/* kawai: Android never renders `title`/tooltip — the tip
+                  breakdown shows inline on phones (redundant with the tooltip
+                  on desktop). */}
+              {gasEstimate && <div className="md:hidden">Max Tip {gasEstimate.maxTipGwei.toFixed(2)} Gwei</div>}
               {currentBlock > 0 && <div>Block #{fmtNumber(currentBlock)}</div>}
             </div>
           </div>
@@ -254,12 +259,18 @@ export function HomeContent({
           ) : transactions.length ? (
             <div className="space-y-2">
               {transactions.slice(0, 5).map((tx) => (
-                <div key={tx.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                <div
+                  key={tx.id}
+                  className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
+                >
                   <Badge variant="secondary">{tx.txType}</Badge>
                   <span className="text-xs text-muted-foreground">{fmtRelative(new Date(tx.createdAt))}</span>
                   <span className="font-mono text-xs">
                     {tx.txHash ? `${tx.txHash.slice(0, 6)}...${tx.txHash.slice(-4)}` : "-"}
                   </span>
+                  {/* kawai: touch has no hover tooltip or text selection here —
+                      expose the full hash through the standard copy affordance. */}
+                  {tx.txHash && <CopyButton text={tx.txHash} />}
                 </div>
               ))}
             </div>
@@ -285,12 +296,13 @@ export function HomeContent({
           </DialogHeader>
           <div className="space-y-2 max-h-[60dvh] overflow-auto">
             {transactions.map((tx) => (
-              <div key={tx.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+              <div key={tx.id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
                 <Badge>{tx.txType}</Badge>
                 <span>
                   {tx.amount} {tx.symbol ?? currentNetwork?.stablecoinSymbol}
                 </span>
                 <span className="font-mono text-xs">{tx.txHash.slice(0, 10)}...</span>
+                {tx.txHash && <CopyButton text={tx.txHash} />}
               </div>
             ))}
           </div>

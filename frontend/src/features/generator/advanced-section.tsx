@@ -71,7 +71,7 @@ function SliderField({ id, label, value, min, max, step = 1, presets, specDefaul
                 type="button"
                 onClick={() => onChange(String(preset.value))}
                 className={cn(
-                  "rounded px-2 py-0.5 text-xs transition-colors",
+                  "rounded px-2 py-0.5 text-xs transition-colors max-md:min-h-11",
                   active
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-muted-foreground hover:text-foreground",
@@ -139,7 +139,7 @@ function SeedField({ seed, onChange }: SeedFieldProps) {
             <label
               key={option.id}
               className={cn(
-                "flex flex-1 cursor-pointer items-center justify-center rounded-[6px] px-2 py-1 text-xs font-medium transition-colors",
+                "flex flex-1 cursor-pointer items-center justify-center rounded-[6px] px-2 py-1 text-xs font-medium transition-colors max-md:py-2.5",
                 option.active
                   ? "bg-background text-foreground shadow-sm dark:bg-input/30"
                   : "text-muted-foreground hover:text-foreground",
@@ -206,7 +206,7 @@ function SamplerField({ value, presets, onChange }: SamplerFieldProps) {
                 type="button"
                 onClick={() => onChange(preset.value)}
                 className={cn(
-                  "rounded px-2 py-0.5 text-xs transition-colors",
+                  "rounded px-2 py-0.5 text-xs transition-colors max-md:min-h-11",
                   active
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-muted-foreground hover:text-foreground",

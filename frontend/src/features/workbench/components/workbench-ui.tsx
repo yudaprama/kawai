@@ -55,13 +55,13 @@ export function PeriodSubmitCard({
           placeholder="Oktober 2026 · 2026-10 · 31/10/26"
           disabled={disabled}
           spellCheck={false}
-          className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 min-w-0 flex-1 rounded-lg border px-3 py-2 font-mono text-sm outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 min-w-0 flex-1 rounded-lg border px-3 py-2 font-mono text-base outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50 md:text-sm"
         />
         <button
           type="button"
           onClick={onSubmit}
           disabled={buttonDisabled ?? false}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-mono text-xs font-bold tracking-wider uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex min-h-9 items-center gap-1.5 rounded-lg px-4 py-2 font-mono text-xs font-bold tracking-wider uppercase transition-colors max-md:min-h-11 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Icon name="zap" className="size-3.5" />
           {buttonLabel}
@@ -89,7 +89,7 @@ export function SymbolSearch({
       onChange={(e) => onQuery(e.target.value)}
       placeholder="Cari simbol… (mis. BTC)"
       aria-label={ariaLabel}
-      className="border-input bg-input/20 h-7 w-44 rounded-md border px-2 font-mono text-[0.6875rem] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+      className="border-input bg-input/20 h-9 w-full max-w-56 rounded-md border px-2 font-mono text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] sm:w-44 sm:text-[0.6875rem] max-md:h-11"
     />
   );
 }

@@ -950,6 +950,7 @@
     "openedInDefaultApp": "Dibuka di aplikasi bawaanmu",
     "openedElsewhere": "{{file}} seharusnya sudah terbuka di jendela lain.",
     "openAgain": "Buka lagi",
+    "open": "Buka pratinjau",
     "cantPreview": "Tidak dapat melihat pratinjau berkas ini"
   },
   "codegraph": {

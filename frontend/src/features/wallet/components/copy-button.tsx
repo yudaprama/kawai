@@ -18,7 +18,7 @@ export function CopyButton({ text }: { text: string }) {
     }
   };
   return (
-    <Button aria-label={t("common.copy")} size="icon" variant="ghost" className="size-7" onClick={onCopy}>
+    <Button aria-label={t("common.copy")} size="icon" variant="ghost" className="hit-44 size-7" onClick={onCopy}>
       {copied ? <Icon name="check" className="size-3.5 text-success" /> : <Icon name="copy" className="size-3.5" />}
     </Button>
   );

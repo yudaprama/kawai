@@ -99,10 +99,10 @@ export function CredentialCard({ provider }: { provider: CredentialProvider }) {
   return (
     <Card>
       <CardContent className="space-y-4">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <Icon name={provider.icon} className="text-muted-foreground size-4" />
-          <span className="text-sm font-medium">{t(provider.titleKey)}</span>
-          <span className="text-muted-foreground text-xs">{t(provider.subtitleKey)}</span>
+          <span className="text-sm font-medium min-w-0 break-words">{t(provider.titleKey)}</span>
+          <span className="text-muted-foreground text-xs min-w-0 break-words">{t(provider.subtitleKey)}</span>
           <span className="ml-auto flex items-center gap-2">
             {status === null ? (
               <Spinner className="size-4" />

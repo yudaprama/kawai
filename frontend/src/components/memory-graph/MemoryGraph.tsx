@@ -541,7 +541,7 @@ export function MemoryGraph({ nodes, edges, emptyHint, fill, showLabels, onReady
 
   return (
     <div className="memory-graph rounded-lg border" onMouseLeave={() => setHovered(null)}>
-      <div className="flex flex-none items-center justify-between gap-4 border-b px-4 py-2">
+      <div className="flex flex-none flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b px-4 py-2">
         <div className="text-muted-foreground flex items-center gap-3 text-xs">
           <span>{nodes.length} nodes</span>
           <span className="opacity-50">·</span>
