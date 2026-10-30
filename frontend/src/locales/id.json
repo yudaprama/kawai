@@ -114,7 +114,7 @@
       "mentionFileHint": "Sebutkan berkas (@)",
       "loadingFiles": "Memuat berkas…",
       "filesLoadError": "Gagal memuat berkas — {{error}}. Buka lagi untuk mencoba.",
-      "noMoreFiles": "Tidak ada berkas lagi — impor di bawah.",
+      "noMoreFiles": "Belum ada berkas terlampir — impor di bawah.",
       "noFilesMatch": "Tidak ada berkas yang cocok. Lanjut mengetik atau impor di bawah.",
       "addLinkTitle": "Ambil transkrip video YouTube ke basis pengetahuanmu",
       "addLink": "Tambah tautan",

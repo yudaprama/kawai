@@ -78,9 +78,11 @@ const isTauriDesktop = (): boolean => {
   return "__TAURI_INTERNALS__" in window;
 };
 
-/** Android (WebView or browser) — the app's Android build grants no
- *  RECORD_AUDIO permission, so getUserMedia audio capture always fails and
- *  the Web Speech API is absent in Android WebView. */
+/** Android (WebView or browser). Android System WebView DOES expose the Web
+ *  Speech API — but recognition only starts once the shell grants mic access
+ *  (RECORD_AUDIO in the manifest + the runtime prompt via
+ *  onPermissionRequest). MediaRecorder stays off the table on Android: the
+ *  webm fallback adds nothing over keyboard voice typing there. */
 const isAndroid = (): boolean =>
   typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
 
@@ -171,9 +173,17 @@ export const SpeechInput = ({
       setIsListening(false);
       const err = event as SpeechRecognitionErrorEvent;
       if (err?.error === "not-allowed" || err?.error === "service-not-allowed") {
-        toast.error("Microphone access was denied. Enable it in System Settings → Privacy & Security → Microphone.");
+        toast.error(
+          isAndroid()
+            ? "Microphone access was denied. Allow it for Kawai in Android Settings → Apps → Kawai → Permissions, then try again."
+            : isTauriDesktop()
+              ? "Microphone access was denied. Enable it in System Settings → Privacy & Security → Microphone."
+              : "Microphone access was denied — allow it when the browser prompts."
+        );
       } else if (err?.error === "no-speech") {
         toast.error("No speech detected. Try again.");
+      } else if (err?.error === "audio-capture") {
+        toast.error("No microphone was found.");
       } else if (err?.error) {
         toast.error(`Speech error: ${err.error}`);
       }
@@ -323,9 +333,18 @@ export const SpeechInput = ({
           recognitionRef.current.start();
         }
       } catch (err) {
+        if (err instanceof DOMException && err.name === "InvalidStateError") {
+          // start() while already started/just stopped — the listener state
+          // machine already tracks isListening; not an error worth a toast.
+          return;
+        }
         const msg = err instanceof DOMException && err.name === "NotAllowedError"
-          ? "Microphone access was denied."
-          : "Could not start speech recognition."
+          ? isAndroid()
+            ? "Microphone access was denied. Allow it for Kawai in Android Settings → Apps → Kawai → Permissions."
+            : "Microphone access was denied."
+          : isAndroid()
+            ? "Could not start speech recognition — allow microphone access for Kawai, then try again."
+            : "Could not start speech recognition."
         toast.error(msg);
       }
       return;
@@ -355,7 +374,7 @@ export const SpeechInput = ({
           ? "Speech is unavailable in desktop WKWebView. Use system dictation or Chrome/Edge."
           : "Speech is unavailable in this browser. Use Chrome or Edge."
       : mode === "speech-recognition" && !isRecognitionReady
-        ? "Menyiapkan speech recognition…"
+        ? "Preparing speech recognition…"
         : mode === "media-recorder" && !onAudioRecorded
           ? isTauriDesktop()
             ? "Transcription is not configured for desktop. Use system dictation."
@@ -377,14 +396,17 @@ export const SpeechInput = ({
           />
         ))}
 
-      {/* Main record button */}
+      {/* Main record button — idle styling stays MUTED: the send button owns
+          the primary accent, and a second primary-colored button next to it
+          read as a competing primary action. Listening flips to destructive
+          (red) with the pulse rings, which is an unmistakable recording state. */}
       <Button
         aria-label={isListening ? "Stop recording" : disabledReason ? "Speech unavailable" : "Start dictation"}
         className={cn(
           "relative z-10 rounded-full transition-all duration-300",
           isListening
             ? "bg-destructive text-white hover:bg-destructive/80 hover:text-white"
-            : "bg-primary text-primary-foreground hover:bg-primary/80 hover:text-primary-foreground",
+            : "bg-secondary text-secondary-foreground hover:bg-secondary/80",
           className
         )}
         disabled={isDisabled}

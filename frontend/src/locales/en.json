@@ -114,7 +114,7 @@
       "mentionFileHint": "Mention a file (@)",
       "loadingFiles": "Loading files…",
       "filesLoadError": "Couldn't load files — {{error}}. Reopen to retry.",
-      "noMoreFiles": "No more files — import one below.",
+      "noMoreFiles": "No files attached yet — import one below.",
       "noFilesMatch": "No files match. Keep typing or import below.",
       "addLinkTitle": "Ingest a YouTube video transcript into your knowledge base",
       "addLink": "Add link",

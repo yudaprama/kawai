@@ -2879,7 +2879,7 @@ async fn execute_supervisor_plan_handler(
         req.language.as_deref(),
         headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()),
     );
-    let user_goal = Some(crate::supervisor::goal_in_language(
+    let user_goal = Some(kawai_router::goal_in_language(
         req.user_goal.unwrap_or_else(|| req.plan.goal.clone()),
         language.as_deref(),
     ));

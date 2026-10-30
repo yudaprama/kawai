@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Microphone: the Web Speech API and getUserMedia audio capture inside
+         the WebView go through RustWebChromeClient.onPermissionRequest, whose
+         runtime prompt maps RESOURCE_AUDIO_CAPTURE to these permissions.
+         Undeclared permissions are auto-denied — recognition then fails with
+         "Could not start speech recognition". -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />

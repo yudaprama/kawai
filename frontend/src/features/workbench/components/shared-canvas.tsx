@@ -6,6 +6,7 @@
  * of the StrictMode deadlock and renderer-mismatch bugs.
  */
 import { Icon } from "@/components/shared/icon";
+import { EdgeFades, useXOverflow } from "@/components/shared/edge-fades";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -173,45 +174,59 @@ export function AgentReportsSwitcher({
   hasDeliverable: boolean;
   onPickDoc: (doc: string) => void;
 }) {
+  // Same overflow treatment as RunSwitcher: the fade only appears where a
+  // chip is actually scrolled out of view — without it, touch users have no
+  // hint the strip continues past the screen edge.
+  const {
+    ref: scrollerRef,
+    showStart,
+    showEnd,
+  } = useXOverflow<HTMLDivElement>(reports.length + (hasDeliverable ? 1 : 0));
   if (reports.length === 0) return null;
   return (
     <div className="flex min-w-0 items-center gap-2">
       <span className="text-muted-foreground shrink-0 font-mono text-[0.625rem] tracking-widest uppercase">
         Agent reports
       </span>
-      <div className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {hasDeliverable && (
-          <button
-            aria-pressed={activeDoc === "final"}
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[0.6875rem] transition-colors ${
-              activeDoc === "final"
-                ? "border-primary bg-primary/10 text-foreground"
-                : "border-border/60 text-foreground/80 hover:border-primary/60"
-            }`}
-            onClick={() => onPickDoc("final")}
-            title="The run's final deliverable"
-            type="button"
-          >
-            <Icon name="file-text" className="text-primary size-3 shrink-0" />
-            Deliverable
-          </button>
-        )}
-        {reports.map((r) => (
-          <button
-            aria-pressed={activeDoc === r.stepId}
-            className={`inline-flex max-w-[12rem] shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[0.6875rem] transition-colors ${
-              activeDoc === r.stepId
-                ? "border-primary bg-primary/10 text-foreground"
-                : "border-border/60 text-foreground/80 hover:border-primary/60"
-            }`}
-            key={r.stepId}
-            onClick={() => onPickDoc(r.stepId)}
-            title={r.label}
-            type="button"
-          >
-            <span className="truncate">{r.label}</span>
-          </button>
-        ))}
+      <div className="relative min-w-0 flex-1">
+        <div
+          className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          ref={scrollerRef}
+        >
+          {hasDeliverable && (
+            <button
+              aria-pressed={activeDoc === "final"}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[0.6875rem] transition-colors ${
+                activeDoc === "final"
+                  ? "border-primary bg-primary/10 text-foreground"
+                  : "border-border/60 text-foreground/80 hover:border-primary/60"
+              }`}
+              onClick={() => onPickDoc("final")}
+              title="The run's final deliverable"
+              type="button"
+            >
+              <Icon name="file-text" className="text-primary size-3 shrink-0" />
+              Deliverable
+            </button>
+          )}
+          {reports.map((r) => (
+            <button
+              aria-pressed={activeDoc === r.stepId}
+              className={`inline-flex max-w-[12rem] shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[0.6875rem] transition-colors ${
+                activeDoc === r.stepId
+                  ? "border-primary bg-primary/10 text-foreground"
+                  : "border-border/60 text-foreground/80 hover:border-primary/60"
+              }`}
+              key={r.stepId}
+              onClick={() => onPickDoc(r.stepId)}
+              title={r.label}
+              type="button"
+            >
+              <span className="truncate">{r.label}</span>
+            </button>
+          ))}
+        </div>
+        <EdgeFades showEnd={showEnd} showStart={showStart} />
       </div>
     </div>
   );

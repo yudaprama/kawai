@@ -2143,7 +2143,7 @@ pub async fn execute_supervisor_plan(
     .map_err(|e| e.to_string())?;
 
     let language = crate::supervisor::resolve_user_language(language.as_deref(), None);
-    let user_goal = Some(crate::supervisor::goal_in_language(
+    let user_goal = Some(kawai_router::goal_in_language(
         user_goal.unwrap_or_else(|| plan.goal.clone()),
         language.as_deref(),
     ));

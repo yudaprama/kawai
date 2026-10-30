@@ -443,11 +443,15 @@ what produced the mess.
 1. **The plan builder lives in the domain crate**, not in `templates.rs`
    — `kawai_desk::build_desk_plan` is the pattern: the fixed command AND
    the router template call the SAME builder, so chip and free text can
-   never disagree.
-2. Its steps dispatch tools that exist in the registry its
-   `registry_kind_for_plan` maps to (`Auto` for merged-catalog tools).
-   Run `registry.validate_plan(&plan)` in a test — an undispatchable
-   plan is as broken as no plan.
+   never disagree. The builder contract: it NEVER panics — fallible
+   validation happens inside and returns `Result<TaskPlan, String>` (a
+   plain op error the planner/router can recover from).
+2. Its steps dispatch tools that exist in the registry the template
+   DECLARED (`PlanTemplate.registry_kind` in `templates.rs` — `Template`
+   for pipelines whose stage tools live outside the merged catalog, `Auto`
+   for merged-catalog tools; `supervisor::registry_kind_for_plan` only
+   reads it). Run `registry.validate_plan(&plan)` in a test — an
+   undispatchable plan is as broken as no plan.
 3. A `plan_task` end-to-end test claims the goal through the REAL merged
    registry and asserts `usage.input_tokens == 0` (the planner was
    skipped). This is the only test that caught the trading-workflow
@@ -461,11 +465,13 @@ what produced the mess.
    pre- and post-enforcement hashes are identical.
 5. `plan_key` is the SHA-256 of the plan JSON and keys the persisted
    `supervisor_step_results` memo, so a plan that serializes identically
-   on every run REPLAYS a previous run's step outputs. Every builder of
-   a fixed-period plan stamps a per-run `nonce` (ignored by the tool's
-   args) onto its last step — `build_desk_plan`,
-   `build_trading_performance_plan` and `build_monthly_close_plan` all
-   do. A builder that skips it shows stale data on the second press.
+   on every run REPLAYS a previous run's step outputs. Use the shared
+   helpers — `kawai_router::stamp_run_nonce` (last step) or
+   `kawai_router::new_run_nonce` (pipelines that carry it on every step,
+   like the futures audits). The nonce is a STRING: a number once
+   silently ran an audit phase on DEFAULT args via `parse_args`' `{}`
+   fallback (TROUBLESHOT.md). A builder that skips it shows stale data
+   on the second press.
 6. **A step whose tool has its own budget must declare `timeout_ms`.**
    `SchedulerLimits::default()` is a 60s step timeout, and the supervisor
    runs with it — a step that dispatches an in-process engine with a longer
@@ -473,6 +479,16 @@ what produced the mess.
    `step timed out after 60000ms`. The builder sets
    `TaskStep::timeout_ms` to the tool's budget plus a dispatch margin
    (`security_tools::plan::STEP_TIMEOUT_MS`), and a builder test pins it.
+7. **`kawai_router::check_plan_conventions(&plan, language)` passes in
+   the builder's tests.** It enforces the invariants above (structural
+   validity, tool-dispatched steps, one distinct string run nonce, the
+   goal language rule iff the locale rides the goal — desk/youtube ride
+   it per-STEP instead). The template completeness test in `templates.rs`
+   runs it for every registered template; non-template builders (futures
+   audits, screener, youtube, desk) call it in their own tests. Build
+   steps with `TaskStep::tool_step`, and route the report language
+   through `goal_in_language`/`goal_in_language_verbatim` — do not
+   re-hand-roll any of them.
 
 **One source of truth per fact.** The slot resolution, the confirmation
 policy and the plan builder each existed in two places during the

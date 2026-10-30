@@ -84,7 +84,10 @@ export function RunSwitcher({
               type="button"
             >
               <span className="whitespace-nowrap">Run {i + 1}</span>
-              {goalLabel !== "" && <span className="max-w-[12rem] truncate">{goalLabel}</span>}
+              {/* Goal text at lg+ only: below lg the canvas header directly
+                  beneath this strip shows the FULL goal (line-clamp-2), so a
+                  truncated copy inside the chip just burns the row's width. */}
+              {goalLabel !== "" && <span className="hidden max-w-[12rem] truncate lg:inline">{goalLabel}</span>}
               {r.status === "running" ? (
                 <Icon name="loader-circle" className="text-primary size-3 shrink-0 animate-spin" />
               ) : r.status === "completed" ? (
@@ -97,89 +100,6 @@ export function RunSwitcher({
         })}
       </div>
       <EdgeFades showEnd={showEnd} showStart={showStart} />
-    </div>
-  );
-}
-
-/** PDF/DOCX export row for a completed deliverable — shared by the live
- *  canvas and PastRunCanvas; owns its own in-flight/feedback state. Copy
- *  puts the raw markdown on the clipboard; the saved filename opens the
- *  office-store file in the app-level preview dialog (same bridge the
- *  tool-renderer cards use). */
-function DeliverableExport({ goal, markdown }: { goal: string; markdown: string }) {
-  const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
-  const [exported, setExported] = useState<{ id: string; name: string } | null>(null);
-  const [exportError, setExportError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  const copyMarkdown = async () => {
-    try {
-      await navigator.clipboard.writeText(markdown);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      setCopied(false);
-      setExportError("Copy failed — clipboard unavailable");
-    }
-  };
-
-  const runExport = async (format: "pdf" | "docx") => {
-    if (exporting) return;
-    setExporting(format);
-    setExported(null);
-    setExportError(null);
-    const slug = slugify(goal, "deliverable");
-    try {
-      const file = await call<OfficeFileSummary>("export_deliverable", {
-        markdown,
-        filename: `${slug}.${format}`,
-      });
-      setExported({ id: file.id, name: file.originalName });
-      setExportError(null);
-    } catch (err) {
-      console.error("[workbench] export_deliverable:", errText(err));
-      setExported(null);
-      setExportError(errText(err));
-    } finally {
-      setExporting(null);
-    }
-  };
-
-  return (
-    <div className="border-border/60 bg-background sticky bottom-0 z-10 -mx-6 flex flex-wrap items-center gap-2 border-t px-6 py-2">
-      <Button disabled={copied} onClick={() => void copyMarkdown()} size="sm" variant="outline">
-        <Icon name={copied ? "check" : "copy"} className="size-3" />
-        {copied ? "Copied" : "Copy"}
-      </Button>
-      <span className="text-muted-foreground mr-1 font-mono text-[0.6875rem] uppercase">Export</span>
-      <Button disabled={exporting != null} onClick={() => void runExport("pdf")} size="sm" variant="outline">
-        {exporting === "pdf" ? (
-          <Icon name="loader-circle" className="size-3 animate-spin" />
-        ) : (
-          <FileIcon className="size-3" name="export.pdf" />
-        )}
-        PDF
-      </Button>
-      <Button disabled={exporting != null} onClick={() => void runExport("docx")} size="sm" variant="outline">
-        {exporting === "docx" ? (
-          <Icon name="loader-circle" className="size-3 animate-spin" />
-        ) : (
-          <FileIcon className="size-3" name="export.docx" />
-        )}
-        DOCX
-      </Button>
-      {exported && (
-        <button
-          className="text-success hover:text-primary inline-flex items-center gap-1 font-mono text-[0.6875rem] hover:underline"
-          onClick={() => emitOpenPreview(exported.id, exported.name)}
-          title="Open the exported file"
-          type="button"
-        >
-          Saved as {exported.name}
-          <Icon name="external-link" className="size-3" />
-        </button>
-      )}
-      {exportError && <span className="text-destructive font-mono text-xs">Export failed: {exportError}</span>}
     </div>
   );
 }
@@ -205,12 +125,13 @@ const TRANSLATE_LANGUAGES = [
 /** Display label for a language value (unknown/custom values pass through). */
 const translateLabel = (value: string) => TRANSLATE_LANGUAGES.find((l) => l.value === value)?.label ?? value;
 
-/** Deliverable body + its toolbar: the translate control, the body (original
- *  or a translated copy), and the export row. Shared by the live canvas and
- *  PastRunCanvas so the translate feature exists in exactly one place. The
- *  original markdown stays the source of truth — a translation is a view
- *  overlay (re-translating always runs from the original; "Show original"
- *  drops it), and Copy/Export follow whatever is on screen. */
+/** Deliverable body + its toolbar: a compact translate picker (translates on
+ *  language selection), the Copy/PDF/DOCX actions at the toolbar's right
+ *  edge, and the body (original or a translated copy). Shared by the live
+ *  canvas and PastRunCanvas so the translate feature exists in exactly one
+ *  place. The original markdown stays the source of truth — a translation is
+ *  a view overlay (re-translating always runs from the original; "Show
+ *  original" drops it), and Copy/Export follow whatever is on screen. */
 function DeliverableBody({
   goal,
   markdown,
@@ -290,6 +211,48 @@ function DeliverableBody({
     }
   };
 
+  // Copy/Export state — folded in from the old sticky export bar (the bar
+  // permanently covered the bottom of a phone screen; the actions now live
+  // in the toolbar at the top of the body). Copy/Export follow whatever is
+  // on screen: `shown` is passed, so a translated view exports translated.
+  const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
+  const [exported, setExported] = useState<{ id: string; name: string } | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const copyMarkdown = async (markdown: string) => {
+    try {
+      await navigator.clipboard.writeText(markdown);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+      setExportError("Copy failed — clipboard unavailable");
+    }
+  };
+
+  const runExport = async (format: "pdf" | "docx", markdown: string, goal: string) => {
+    if (exporting) return;
+    setExporting(format);
+    setExported(null);
+    setExportError(null);
+    const slug = slugify(goal, "deliverable");
+    try {
+      const file = await call<OfficeFileSummary>("export_deliverable", {
+        markdown,
+        filename: `${slug}.${format}`,
+      });
+      setExported({ id: file.id, name: file.originalName });
+      setExportError(null);
+    } catch (err) {
+      console.error("[workbench] export_deliverable:", errText(err));
+      setExported(null);
+      setExportError(errText(err));
+    } finally {
+      setExporting(null);
+    }
+  };
+
   const shown = translated?.text ?? markdown;
   const shownLanguage = translated == null ? null : translateLabel(translated.language);
 
@@ -300,71 +263,144 @@ function DeliverableBody({
           <YoutubeEmbed ref={playerRef} videoId={videoId} title={goal} />
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-muted-foreground font-mono text-[0.6875rem] uppercase">Translate</span>
-        <Select onValueChange={setLanguage} value={language}>
-          <SelectTrigger aria-label="Target language" className="w-44" size="sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {TRANSLATE_LANGUAGES.map((l) => (
-              <SelectItem key={l.value} value={l.value}>
-                {l.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button disabled={translating} onClick={() => void runTranslate(language)} size="sm" variant="outline">
-          {translating ? (
-            <Icon name="loader-circle" className="size-3 animate-spin" />
-          ) : (
-            <Icon name="languages" className="size-3" />
-          )}
-          {translating ? "Translating…" : "Translate"}
-        </Button>
-        {shownLanguage != null && (
-          <>
-            {/* Live region: the swap to the translated body is otherwise
-                silent for screen readers (the toolbar is where it's announced
-                — the body swap happens below the fold on long documents). */}
-            <span aria-live="polite" className="text-muted-foreground font-mono text-[0.6875rem]">
-              Showing {shownLanguage}
-            </span>
-            <button
-              className="hit-44 text-muted-foreground hover:text-primary font-mono text-[0.6875rem] hover:underline"
-              onClick={() => setTranslated(null)}
-              title="Back to the original deliverable"
-              type="button"
-            >
-              Show original
-            </button>
-          </>
-        )}
-        {saved.length > 0 && (
-          <span className="text-muted-foreground flex items-center gap-1 font-mono text-[0.6875rem]">
-            Saved:
-            {saved
-              .filter((t) => t.language !== translated?.language)
-              .map((t) => (
-                <button
-                  key={t.language}
-                  className="hit-44 border-border text-muted-foreground hover:text-primary rounded-full border px-2 py-0.5 text-[0.6875rem] hover:border-current disabled:opacity-50"
-                  disabled={translating}
-                  onClick={() => void runTranslate(t.language)}
-                  title={`Show the saved ${translateLabel(t.language)} translation`}
-                  type="button"
-                >
-                  {translateLabel(t.language)}
-                </button>
+      {/* One toolbar row, two groups. The old layout stacked a TRANSLATE
+       * label + select + button (three controls for one action — they
+       * wrapped to two rows on phones) PLUS a sticky bottom export bar
+       * that permanently covered the document. Translate is now a single
+       * picker that translates on selection; Copy/PDF/DOCX sit at the
+       * toolbar's right edge and the outcome renders as a plain line. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <Select
+            disabled={translating}
+            onValueChange={(v) => {
+              setLanguage(v);
+              void runTranslate(v);
+            }}
+            value={language}
+          >
+            <SelectTrigger aria-label="Translate the deliverable" className="w-auto gap-1.5" size="sm">
+              {translating ? (
+                <Icon name="loader-circle" className="size-3 animate-spin" />
+              ) : (
+                <Icon name="languages" className="size-3.5" />
+              )}
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TRANSLATE_LANGUAGES.map((l) => (
+                <SelectItem key={l.value} value={l.value}>
+                  {l.label}
+                </SelectItem>
               ))}
-          </span>
-        )}
-        {error != null && (
-          <span aria-live="polite" className="text-destructive font-mono text-xs" role="alert">
-            Translate failed: {error}
-          </span>
+            </SelectContent>
+          </Select>
+          {shownLanguage != null && (
+            <>
+              {/* Live region: the swap to the translated body is otherwise
+                  silent for screen readers (the toolbar is where it's announced
+                  — the body swap happens below the fold on long documents). */}
+              <span aria-live="polite" className="text-muted-foreground font-mono text-[0.6875rem]">
+                Showing {shownLanguage}
+              </span>
+              <button
+                className="hit-44 text-muted-foreground hover:text-primary font-mono text-[0.6875rem] hover:underline"
+                onClick={() => setTranslated(null)}
+                title="Back to the original deliverable"
+                type="button"
+              >
+                Show original
+              </button>
+            </>
+          )}
+          {saved.length > 0 && (
+            <span className="text-muted-foreground flex items-center gap-1 font-mono text-[0.6875rem]">
+              Saved:
+              {saved
+                .filter((t) => t.language !== translated?.language)
+                .map((t) => (
+                  <button
+                    key={t.language}
+                    className="hit-44 border-border text-muted-foreground hover:text-primary rounded-full border px-2 py-0.5 text-[0.6875rem] hover:border-current disabled:opacity-50"
+                    disabled={translating}
+                    onClick={() => void runTranslate(t.language)}
+                    title={`Show the saved ${translateLabel(t.language)} translation`}
+                    type="button"
+                  >
+                    {translateLabel(t.language)}
+                  </button>
+                ))}
+            </span>
+          )}
+          {error != null && (
+            <span aria-live="polite" className="text-destructive font-mono text-xs" role="alert">
+              Translate failed: {error}
+            </span>
+          )}
+        </div>
+        {showExport && (
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              aria-label="Copy the deliverable as markdown"
+              className="text-muted-foreground hover:text-foreground size-8 [&_svg]:size-3.5"
+              disabled={copied}
+              onClick={() => void copyMarkdown(shown)}
+              size="icon"
+              title="Copy markdown"
+              variant="ghost"
+            >
+              <Icon name={copied ? "check" : "copy"} />
+            </Button>
+            <Button
+              disabled={exporting != null}
+              onClick={() => void runExport("pdf", shown, goal)}
+              size="sm"
+              variant="outline"
+            >
+              {exporting === "pdf" ? (
+                <Icon name="loader-circle" className="size-3 animate-spin" />
+              ) : (
+                <FileIcon className="size-3" name="export.pdf" />
+              )}
+              PDF
+            </Button>
+            <Button
+              disabled={exporting != null}
+              onClick={() => void runExport("docx", shown, goal)}
+              size="sm"
+              variant="outline"
+            >
+              {exporting === "docx" ? (
+                <Icon name="loader-circle" className="size-3 animate-spin" />
+              ) : (
+                <FileIcon className="size-3" name="export.docx" />
+              )}
+              DOCX
+            </Button>
+          </div>
         )}
       </div>
+      {/* Copy/export feedback — an ordinary line, not a sticky band. Export
+          opens the office-store file in the app-level preview dialog. */}
+      {(copied || exported != null || exportError != null) && (
+        <div aria-live="polite" className="text-muted-foreground font-mono text-[0.6875rem]">
+          {exportError != null ? (
+            <span className="text-destructive">Export failed: {exportError}</span>
+          ) : exported != null ? (
+            <button
+              className="text-success hover:text-primary inline-flex items-center gap-1 hover:underline"
+              onClick={() => emitOpenPreview(exported.id, exported.name)}
+              title="Open the exported file"
+              type="button"
+            >
+              Saved as {exported.name}
+              <Icon name="external-link" className="size-3" />
+            </button>
+          ) : (
+            "Copied to clipboard"
+          )}
+        </div>
+      )}
 
       <div
         aria-busy={translating}
@@ -374,8 +410,6 @@ function DeliverableBody({
           {shown}
         </MarkdownWithCharts>
       </div>
-
-      {showExport && <DeliverableExport goal={goal} markdown={shown} />}
     </>
   );
 }
@@ -484,7 +518,7 @@ export function PastRunCanvas({
             reachable while reading instead of sitting below a long document.
             The rail's "see report" links stay a second path. */}
         {onPickDoc != null && (run.steps ?? []).length > 0 && (
-          <div className="sticky top-0 z-10 -mx-6 border-b border-border/60 bg-background py-2">
+          <div className="sticky top-0 z-10 -mx-6 border-b border-border/60 bg-background px-4 py-2">
             <AgentReportsSwitcher
               activeDoc={doc}
               hasDeliverable={run.status === "running" || (run.status === "completed" && run.outputFull != null)}
@@ -914,7 +948,7 @@ export function DeliverableViewer({
             Hidden while planning (no reports yet) and when navigation isn't
             wired; the rail's "see report" links stay a second path. */}
         {onPickDoc != null && reports.length > 0 && (
-          <div className="sticky top-0 z-10 -mx-6 border-b border-border/60 bg-background py-2">
+          <div className="sticky top-0 z-10 -mx-6 border-b border-border/60 bg-background px-4 py-2">
             <AgentReportsSwitcher
               activeDoc={effective}
               hasDeliverable={effective === "final" || inFlightNow}

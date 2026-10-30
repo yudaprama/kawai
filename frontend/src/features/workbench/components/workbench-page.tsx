@@ -859,7 +859,14 @@ export function WorkbenchPage({
                   view={view}
                 />
               </div>
-              {onOpenSessions && <SessionsButton onOpen={onOpenSessions} />}
+              {/* lg+ only: the mobile chrome row directly above already renders
+                  the icon-only SessionsButton — a second one here crowded the
+                  run chip into a pointless truncate. */}
+              {onOpenSessions && (
+                <div className="hidden lg:block">
+                  <SessionsButton onOpen={onOpenSessions} />
+                </div>
+              )}
             </div>
             <div className="min-h-0 flex-1">
               {(() => {

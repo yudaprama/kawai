@@ -2799,28 +2799,6 @@ pub fn resolve_user_language(
     Some(name.to_string())
 }
 
-/// Scope a CLIENT-SUPPLIED goal with the resolved output language.
-///
-/// Fixed pipelines compose their own rule into the goal they hand the writer
-/// (`desk_user_goal`, `screener_user_goal`, the accounting plan builders, …).
-/// A planner-driven or template-routed goal is the user's own text, so without
-/// this the deliverable writer answered in English no matter the locale — the
-/// `language` argument stopped at the plan and never reached the report.
-///
-/// The marker check keeps it idempotent: a goal that already carries a rule is
-/// left untouched, so two instructions never stack (a resume re-runs the same
-/// goal, and the fixed-pipeline goals already carry theirs).
-pub fn goal_in_language(goal: String, language: Option<&str>) -> String {
-    let language = language.map(str::trim).unwrap_or_default();
-    if language.is_empty() || goal.contains("LANGUAGE: Write your ENTIRE report in") {
-        return goal;
-    }
-    format!(
-        "{goal}\n\nLANGUAGE: Write your ENTIRE report in {language}. Keep numbers, tickers, \
-         tool labels and quoted tool output verbatim."
-    )
-}
-
 /// Full body of one persisted step result — the read path the wire preview
 /// (stepCompleted's 2000-char cap) deliberately does not serve. The latest
 /// row wins: upserts are keyed on (session, plan_key, tool, args_key), so a
@@ -2859,38 +2837,25 @@ pub async fn build_supervisor_registry(
     build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
 }
 
-/// Which execution registry a plan needs. Template-stamped plans dispatch
-/// their pipeline's own stage tools (`desk_role` et al.), which the merged
-/// supervisor catalog deliberately does NOT carry — a template plan against
-/// the supervisor registry dies at `validate_plan` with `UnknownTool` before
-/// the first wave even starts.
+/// The registry a plan executes against is selected from the TEMPLATE
+/// declaration (`PlanTemplate.registry_kind`, re-exported below): template-
+/// stamped plans may dispatch their pipeline's own stage tools (`desk_role`
+/// et al.), which the merged supervisor catalog deliberately does NOT carry —
+/// a template plan against the supervisor registry dies at `validate_plan`
+/// with `UnknownTool` before the first wave even starts.
 ///
 /// Pure and exhaustive-by-default: an unknown template id degrades to `Auto`
 /// (the plan validation then reports the unknown tool, which is the honest
 /// failure) — it can only happen if a writer stamps an id that is not in
 /// [`crate::templates::TEMPLATES`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PlanRegistryKind {
-    /// A registered fixed pipeline — its own stage tool rides the registry.
-    Template,
-    /// The merged supervisor catalog (planner-authored plans, and templates
-    /// whose tools live in the merged catalog).
-    Auto,
-}
+pub use kawai_router::template::PlanRegistryKind;
 
 pub fn registry_kind_for_plan(plan: &kawai_router::TaskPlan) -> PlanRegistryKind {
-    match plan.template.as_deref() {
-        Some(id) if crate::templates::TEMPLATES.iter().any(|t| t.id == id) => {
-            // Pipeline dispatch tools live outside the merged catalog today
-            // (desk_role). A future template whose tools DO ride the merged
-            // catalog would map to `Auto` here.
-            match id {
-                "desk" => PlanRegistryKind::Template,
-                _ => PlanRegistryKind::Auto,
-            }
-        }
-        _ => PlanRegistryKind::Auto,
-    }
+    plan.template
+        .as_deref()
+        .and_then(|id| crate::templates::TEMPLATES.iter().find(|t| t.id == id))
+        .map(|t| t.registry_kind)
+        .unwrap_or(PlanRegistryKind::Auto)
 }
 
 /// The registry a plan executes against — the ONE selection point both
@@ -3364,7 +3329,8 @@ pub async fn prepare_desk_run(
         &analysts_ref,
         &args.domain,
         &args.language,
-    );
+    )
+    .map_err(FixedRunError::BadInput)?;
     let user_goal =
         kawai_desk::desk_user_goal(&args.ticker, &args.trade_date, &args.domain, &args.language);
     let registry = build_desk_registry(user_id, session_id, &plan_key(&plan))

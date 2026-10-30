@@ -38,10 +38,11 @@ export function TokenBalanceChip({ onSelectAsset }: { onSelectAsset: (id: AssetV
       title={low ? `${label} · saldo menipis` : label}
       type="button"
     >
-      {/* Icon is decorative — hidden below md so a long balance never pushes
-          the mode pills into overflow on narrow phones. */}
+      {/* Icon stays md+ only (narrow phones); the "Saldo" word is ALWAYS
+          visible — a bare number read as a cryptic counter, and unlike the
+          icon the word costs ~30px, not the mode bar's whole overflow. */}
       <Icon name="qr-code" className="hidden size-4 md:inline" />
-      <span className="text-muted-foreground hidden text-xs md:inline">Saldo</span>
+      <span className="text-muted-foreground text-xs">Saldo</span>
       <span className="font-mono text-xs font-medium tabular-nums">{value}</span>
     </button>
   );

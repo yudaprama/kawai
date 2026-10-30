@@ -14,7 +14,9 @@
 //! keeps the two from drifting.
 
 
-use kawai_router::template::{PlanTemplate, ResolvedSlots, Slot, TemplateRegistry};
+use kawai_router::template::{
+    PlanRegistryKind, PlanTemplate, ResolvedSlots, Slot, TemplateRegistry,
+};
 use kawai_router::TaskPlan;
 
 /// The Stock Research desk: analysts → bull/bear debate → research manager →
@@ -59,7 +61,7 @@ fn build_desk(slots: &ResolvedSlots) -> Result<TaskPlan, String> {
         &analysts_ref,
         &args.domain,
         &args.language,
-    ))
+    )?)
 }
 
 static DESK: PlanTemplate = PlanTemplate {
@@ -87,6 +89,9 @@ static DESK: PlanTemplate = PlanTemplate {
     // 13-step futures pipeline that could not fetch a single candle.
     market_bound: true,
     slots: &[DESK_SLOT_TICKER, DESK_SLOT_ANALYSTS],
+    // The desk's stage tools (`desk_data`/`desk_role`) exist ONLY in
+    // `build_desk_registry`, never in the planner catalog.
+    registry_kind: PlanRegistryKind::Template,
     build: build_desk,
 };
 
@@ -132,6 +137,8 @@ static ACCOUNTING_MONTHLY_CLOSE: PlanTemplate = PlanTemplate {
     requires_literal: false,
     market_bound: false,
     slots: &[ACCOUNTING_SLOT_PERIOD],
+    // Every step dispatches a merged-catalog tool (`ledger_*`/`gstr1_export`).
+    registry_kind: PlanRegistryKind::Auto,
     build: build_accounting_close,
 };
 
@@ -152,6 +159,9 @@ static TRADING_PERFORMANCE: PlanTemplate = PlanTemplate {
     // `venue` is optional: absent reviews every exchange's fills, which is the
     // right default for a trader who runs more than one account.
     slots: &[ACCOUNTING_SLOT_PERIOD, ACCOUNTING_SLOT_VENUE],
+    // The stats step dispatches a binance tool, the reads dispatch
+    // accounting tools — both ride the merged catalog.
+    registry_kind: PlanRegistryKind::Auto,
     build: build_trading_performance,
 };
 
@@ -246,6 +256,8 @@ static SECURITY_AUDIT: PlanTemplate = PlanTemplate {
     requires_literal: true,
     market_bound: false,
     slots: &[SECURITY_SLOT_URL],
+    // `security_recon`/`security_scan` ride the merged catalog.
+    registry_kind: PlanRegistryKind::Auto,
     build: build_security_audit,
 };
 
@@ -296,12 +308,18 @@ mod tests {
     /// after the user waited for routing — so it is checked here instead.
     #[test]
     fn every_template_builds_a_structurally_valid_plan() {
+        use kawai_router::plan::check_plan_conventions;
         use kawai_router::plan::validate_structure;
         for t in registry().iter() {
             let slots = sample_slots(t);
             let plan = (t.build)(&slots).expect("build must succeed on a valid sample");
             validate_structure(&plan)
                 .unwrap_or_else(|e| panic!("template {} built an invalid plan: {e}", t.id));
+            // The fixed-pipeline conventions: tool-dispatched steps, one
+            // string run nonce, no stray language rule (routed builds carry
+            // no locale — the device locale rides at run time).
+            check_plan_conventions(&plan, None)
+                .unwrap_or_else(|e| panic!("template {} violates plan conventions: {e}", t.id));
         }
     }
 
