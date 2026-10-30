@@ -552,9 +552,15 @@ jobs:
           # resume retry starts warm instead of recompiling the dep graph.
           cache-on-failure: true
 
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
+        shell: bash
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
+
       # Cached LiteRT-LM DLL set — same key scheme as windows-smoke.yml (which
       # keeps the entry warm on its nightly run), so the bazel DLL build only
-      # runs when the engine source moves.
+      # runs when the engine source moves. MUST run after submodule init: the
+      # key hashes the vendored LiteRT-LM checkout, and the restore must not
+      # materialize cognee-litert-lm/native before the submodule clone.
       - name: LiteRT-LM dylib cache key
         id: litert-lib-key
         shell: bash
@@ -568,10 +574,6 @@ jobs:
         with:
           path: cognee-litert-lm/native
           key: litert-lib-windows-x86_64-${{ steps.litert-lib-key.outputs.sha }}
-
-      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
-        shell: bash
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
 
       # Bazel is only needed on a dylib-cache miss. Mounted after the
       # submodule init so the WORKSPACE hash in the key resolves (pre-init it
