@@ -1010,7 +1010,7 @@ pub async fn local_load_model(
     let result = logic::local_llm::load_model(
         &user_id,
         &model_path,
-        gpu.unwrap_or(true),
+        gpu.unwrap_or(default_gpu()),
         speculative_decoding.unwrap_or(false),
         max_num_images.unwrap_or(1),
         tools_json,
@@ -1020,6 +1020,19 @@ pub async fn local_load_model(
         tracing::warn!(component = "local_llm", error = %e, "model load failed");
     }
     result
+}
+
+/// Whether an omitted `gpu` flag means GPU. Desktop Metal covers the Gemma
+/// opset, so the desktop default stays GPU. The Android OpenCL runtime does
+/// NOT cover every op of the plain Gemma `.litertlm`, and the GPU branch of
+/// LiteRT-LM's executor settings builds a GPU-only accelerator set (no CPU
+/// fallback — unlike the NPU branch) — a phone load then dies at compiled-
+/// model creation with "Some ops are not accelerated". Default phones to CPU
+/// until the vendored GPU branch grows a CPU fallback (Roadmap 17: GPU is
+/// upstream-blocked).
+#[cfg(feature = "litert")]
+pub(crate) fn default_gpu() -> bool {
+    !cfg!(target_os = "android")
 }
 
 /// Authenticated RPC: return the current on-device model status.

@@ -1136,7 +1136,7 @@ async fn local_load_model_handler(
     logic::local_llm::load_model(
         &user_id,
         &model_path,
-        req.gpu.unwrap_or(true),
+        req.gpu.unwrap_or(crate::commands::default_gpu()),
         req.speculative_decoding.unwrap_or(false),
         req.max_num_images.unwrap_or(0),
         req.tools_json,
