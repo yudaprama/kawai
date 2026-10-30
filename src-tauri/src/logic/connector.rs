@@ -3,10 +3,12 @@
 //!
 //! Pure layer — no tauri/axum: BOTH transports (Tauri commands in
 //! `commands.rs`, Axum routes in `web.rs`) call these same fns. Identity is
-//! resolved at the transport edge and passed in as `user_id` (unused here —
-//! Composio connections are project-scoped under kawai's baked key on a
-//! personal, single-user device), but the ops are auth-required so guests can
-//! never touch third-party accounts.
+//! resolved at the transport edge and passed in as `user_id`. Composio scopes
+//! its rows to the shared project key, not the caller — so `user_id` is the
+//! ONLY ownership boundary here and every op enforces it (list filters on
+//! it; poll/disconnect verify the row belongs to the caller before acting).
+//! Ops stay auth-required regardless, so guests can never touch
+//! third-party accounts.
 //!
 //! Wire shape = camelCase JSON (web request/response structs rely on
 //! `rename_all = "camelCase"` in the wrappers; Tauri maps automatically).
@@ -36,8 +38,12 @@ pub use kawai_api_types::{
     ConnectorConnectStart as ConnectStart, ConnectorConnection as Connection,
 };
 
-/// List every connected third-party account, newest connection last.
-pub async fn list_connections(_user_id: &str) -> Result<Vec<Connection>, String> {
+/// List THIS user's connected third-party accounts, newest connection last.
+/// Composio scopes rows to the shared project key, not the caller — without
+/// the `user_id` filter every signed-in user saw every other user's
+/// connections (the `connect()` sweep below already matches on the same
+/// `user_id` field, so the field is the ownership boundary).
+pub async fn list_connections(user_id: &str) -> Result<Vec<Connection>, String> {
     let client = client()?;
     let resp = client
         .list_connected_accounts()
@@ -46,6 +52,7 @@ pub async fn list_connections(_user_id: &str) -> Result<Vec<Connection>, String>
     Ok(resp
         .items
         .into_iter()
+        .filter(|a| a.user_id.as_deref() == Some(user_id))
         .map(|a| Connection {
             id: a.id.clone(),
             app: a.toolkit_slug().to_string(),
@@ -57,7 +64,7 @@ pub async fn list_connections(_user_id: &str) -> Result<Vec<Connection>, String>
 
 /// Start an OAuth connect for `toolkit` (slug, e.g. "gmail"). Returns the
 /// redirect URL the user must visit plus the connection id to poll.
-pub async fn connect(_user_id: &str, toolkit: &str) -> Result<ConnectStart, String> {
+pub async fn connect(user_id: &str, toolkit: &str) -> Result<ConnectStart, String> {
     let client = client()?;
     let config = auth_config_for(toolkit)
         .ok_or_else(|| format!("tidak ada auth config baked untuk '{toolkit}'"))?;
@@ -74,7 +81,7 @@ pub async fn connect(_user_id: &str, toolkit: &str) -> Result<ConnectStart, Stri
     // clean and cannot touch ACTIVE grants. Best-effort.
     if let Ok(accounts) = client.list_connected_accounts().await {
         for a in &accounts.items {
-            if a.user_id.as_deref() == Some(_user_id)
+            if a.user_id.as_deref() == Some(user_id)
                 && a.toolkit_slug().eq_ignore_ascii_case(toolkit)
                 && a.status.eq_ignore_ascii_case("INITIALIZING")
             {
@@ -83,7 +90,7 @@ pub async fn connect(_user_id: &str, toolkit: &str) -> Result<ConnectStart, Stri
         }
     }
     let resp = client
-        .create_link_session(&config, _user_id, &alias)
+        .create_link_session(&config, user_id, &alias)
         .await
         .map_err(|e| e.to_string())?;
     // `connected_account_id` is often still empty right after kickoff — resolve
@@ -101,7 +108,7 @@ pub async fn connect(_user_id: &str, toolkit: &str) -> Result<ConnectStart, Stri
                 .into_iter()
                 .rev()
                 .find(|a| {
-                    a.user_id.as_deref() == Some(_user_id)
+                    a.user_id.as_deref() == Some(user_id)
                         && a.toolkit_slug().eq_ignore_ascii_case(toolkit)
                         && a.status.eq_ignore_ascii_case("INITIALIZING")
                 })
@@ -115,13 +122,18 @@ pub async fn connect(_user_id: &str, toolkit: &str) -> Result<ConnectStart, Stri
     })
 }
 
-/// Poll one connection's status during the OAuth handshake.
-pub async fn poll(_user_id: &str, connection_id: &str) -> Result<Connection, String> {
+/// Poll one connection's status during the OAuth handshake. Ownership is
+/// enforced: `connection_id` comes from the client — without the check any
+/// signed-in user could read any other user's connection status.
+pub async fn poll(user_id: &str, connection_id: &str) -> Result<Connection, String> {
     let client = client()?;
     let a = client
         .get_connected_account(connection_id)
         .await
         .map_err(|e| e.to_string())?;
+    if a.user_id.as_deref() != Some(user_id) {
+        return Err("koneksi bukan milik user ini".to_string());
+    }
     Ok(Connection {
         id: a.id.clone(),
         app: a.toolkit_slug().to_string(),
@@ -130,9 +142,18 @@ pub async fn poll(_user_id: &str, connection_id: &str) -> Result<Connection, Str
     })
 }
 
-/// Disconnect (delete) a connected account.
-pub async fn disconnect(_user_id: &str, connection_id: &str) -> Result<(), String> {
+/// Disconnect (delete) a connected account. Ownership is enforced first —
+/// ids are enumerable through the (now scoped) list, so an unchecked delete
+/// let any signed-in user kill any other user's OAuth grant.
+pub async fn disconnect(user_id: &str, connection_id: &str) -> Result<(), String> {
     let client = client()?;
+    let a = client
+        .get_connected_account(connection_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    if a.user_id.as_deref() != Some(user_id) {
+        return Err("koneksi bukan milik user ini".to_string());
+    }
     client
         .delete_connected_account(connection_id)
         .await

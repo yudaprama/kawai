@@ -17,5 +17,4 @@ exec env \
   RUSTFLAGS="-C link-arg=-Wl,-rpath,$LITERT_NATIVE" \
   LITERT_LM_LIB_DIR="$LITERT_NATIVE" \
   LLVM_PROFILE_FILE=/dev/null \
-  KAWAI_AUTH_DEV_USER_ID=demo \
   "$PROJECT_ROOT/node_modules/.bin/tauri" dev -- --features litert

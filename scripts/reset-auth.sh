@@ -5,8 +5,9 @@ set -euo pipefail
 # from a clean slate. Routine dev tooling for the wallet/SIWE login work.
 #
 # Clears (with confirmation / flags):
-#   1. Backend session token  — macOS keychain, service "pro.kawai.app",
-#      account "session-token"   (written by set_session → keychain.rs)
+#   1. Legacy keychain session item — macOS keychain, service "pro.kawai.app",
+#      account "session-token"   (no longer written by the current auth flow;
+#      kept here to clear it off machines that still carry it)
 #   2. Supabase session       — WKWebView localStorage/cookies for the app
 #   3. Device hot wallet      — keychain account "monad-wallet/device"
 #      (only with --wallet; without it the existing wallet/login maps to the
