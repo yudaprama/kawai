@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { Icon } from "@/components/shared/icon";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { isAndroid } from "@/platform/shared-media";
 
 interface SpeechRecognition extends EventTarget {
   continuous: boolean;
@@ -78,13 +79,11 @@ const isTauriDesktop = (): boolean => {
   return "__TAURI_INTERNALS__" in window;
 };
 
-/** Android (WebView or browser). Android System WebView DOES expose the Web
+/** Android System WebView DOES expose the Web
  *  Speech API — but recognition only starts once the shell grants mic access
  *  (RECORD_AUDIO in the manifest + the runtime prompt via
  *  onPermissionRequest). MediaRecorder stays off the table on Android: the
  *  webm fallback adds nothing over keyboard voice typing there. */
-const isAndroid = (): boolean =>
-  typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
 
 export const detectSpeechInputMode = (): SpeechInputMode => {
   if (typeof window === "undefined") {

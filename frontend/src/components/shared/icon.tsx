@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import uiIcons from "@/assets/ui-icons.json";
+import { platform } from "@/platform";
 
 const LUCIDE_CDN = "https://unpkg.com/lucide-static@latest/icons";
 
@@ -66,6 +67,9 @@ export function Icon({ name, className = "size-4 shrink-0" }: IconProps) {
       cancelled = true;
     };
   }, [name]);
+
+  // Android WebView renders this icon inconsistently — suppress it there.
+  if (platform.target === "mobile" && name === "zap") return null;
 
   if (svg) {
     return (

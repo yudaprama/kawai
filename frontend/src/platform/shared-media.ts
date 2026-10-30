@@ -25,6 +25,9 @@ import type { PickFilesOptions, PlatformTarget, SaveResult } from "./types";
 
 export type DictationMode = "speech-recognition" | "media-recorder" | "none";
 
+/** Android (WebView or browser). */
+export const isAndroid = (): boolean => typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+
 /** Detect the active platform from the runtime environment. */
 export function detectPlatformTarget(): PlatformTarget {
   if (typeof window === "undefined") return "web";
