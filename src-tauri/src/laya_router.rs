@@ -107,7 +107,18 @@ async fn download_assets() -> Result<(), String> {
     let dir = models.join("laya").join(VARIANT);
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
 
-    let client = reqwest::Client::builder().build().map_err(|e| e.to_string())?;
+    // Bulk-transfer bounds — deliberately NOT `worker_client()`: its 30 s
+    // TOTAL timeout would kill a 393 MB body mid-flight (the largest file;
+    // 679 MB total). The connect bound surfaces a blocked edge / IPv6-first
+    // DNS in seconds, and the per-read bound aborts a stalled transfer (no
+    // bytes for 30 s) instead of parking the task in the OS TCP retry window.
+    // On a phone that stall is invisible:
+    // no error, no log line, and the gate simply never activates.
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .read_timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
     let sums_url = format!("{HF_BASE}/SHA256SUMS");
     let sums = client
         .get(&sums_url)
@@ -133,48 +144,106 @@ async fn download_assets() -> Result<(), String> {
             continue;
         }
         let url = format!("{HF_BASE}/{file}");
-        let response = client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| format!("{url}: {e}"))?
-            .error_for_status()
-            .map_err(|e| format!("{url}: {e}"))?;
         // Hash expected BEFORE the transfer — a file with no recorded digest
         // is a package mistake, not a download problem.
         let hash = expected
             .get(file)
             .ok_or_else(|| format!("SHA256SUMS has no entry for {file}"))?
             .to_string();
-        // Stream to .part with an incremental digest — never hold a 393 MB
-        // body in RAM (the house pattern: logic::ensure_model).
-        use futures_util::StreamExt;
-        use sha2::Digest as _;
-        use std::io::Write as _;
+        // `.part` is both the staging file and the resume checkpoint — the
+        // 239–393 MB bodies must never land in RAM (the house pattern:
+        // logic::ensure_model).
         let tmp = dir.join(format!("{file}.part"));
-        let mut stream = response.bytes_stream();
-        let mut hasher = sha2::Sha256::new();
-        let mut written: u64 = 0;
-        let mut out = std::fs::File::create(&tmp)
-            .map_err(|e| format!("create {}: {e}", tmp.display()))?;
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| format!("{url}: stream: {e}"))?;
-            hasher.update(&chunk);
-            out.write_all(&chunk)
-                .map_err(|e| format!("write {}: {e}", tmp.display()))?;
-            written += chunk.len() as u64;
-        }
-        out.flush().map_err(|e| format!("flush {}: {e}", tmp.display()))?;
-        let actual = hex::encode(hasher.finalize());
+        fetch_to(&client, &url, &tmp).await?;
+        // Digest the FILE, not the stream: a resumed transfer appends to bytes
+        // already on disk, so an incremental hasher would cover only the tail.
+        // Streamed, so the body still never lands in RAM.
+        let actual = sha256_file(&tmp)?;
         if actual != hash {
+            // Drop the partial — keeping it would resume a poisoned prefix and
+            // fail identically on every later launch.
+            let _ = std::fs::remove_file(&tmp);
             return Err(format!("{file}: sha256 mismatch (got {actual})"));
         }
+        let bytes = std::fs::metadata(&tmp).map(|m| m.len()).unwrap_or(0);
         std::fs::rename(&tmp, &target).map_err(|e| format!("rename {}: {e}", target.display()))?;
-        tracing::info!(component = "laya_router", file, bytes = written, "asset downloaded");
+        tracing::info!(component = "laya_router", file, bytes, "asset downloaded");
     }
     tracing::info!(component = "laya_router", "laya assets ready — gate active");
     DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
     Ok(())
+}
+
+/// GET `url` into `tmp`, resuming a partial file.
+///
+/// A phone network drops often enough that restarting a 239–393 MB body on
+/// every stall would never finish, so `tmp` doubles as the resume checkpoint:
+/// Range from its current length, append only on a real 206, and truncate when
+/// the server ignores Range (200). A 416 means the partial is already at/past
+/// EOF (the remote asset changed) — discard it and fetch from zero. Integrity
+/// is settled by the caller's digest check.
+async fn fetch_to(client: &reqwest::Client, url: &str, tmp: &std::path::Path) -> Result<(), String> {
+    use futures_util::StreamExt;
+    use std::io::Write as _;
+
+    let mut discarded_partial = false;
+    loop {
+        let done = std::fs::metadata(tmp).map(|m| m.len()).unwrap_or(0);
+        let mut request = client.get(url);
+        if done > 0 {
+            request = request.header("Range", format!("bytes={done}-"));
+        }
+        let response = request.send().await.map_err(|e| format!("{url}: {e}"))?;
+        let status = response.status();
+        if status == reqwest::StatusCode::RANGE_NOT_SATISFIABLE && !discarded_partial {
+            discarded_partial = true;
+            let _ = std::fs::remove_file(tmp);
+            continue;
+        }
+        let append = status == reqwest::StatusCode::PARTIAL_CONTENT;
+        if !append && !status.is_success() {
+            return Err(format!("{url}: HTTP {status}"));
+        }
+        let mut options = std::fs::OpenOptions::new();
+        options.create(true).write(true);
+        if append {
+            options.append(true);
+        } else {
+            options.truncate(true);
+        }
+        let mut out = options
+            .open(tmp)
+            .map_err(|e| format!("open {}: {e}", tmp.display()))?;
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| format!("{url}: stream: {e}"))?;
+            out.write_all(&chunk)
+                .map_err(|e| format!("write {}: {e}", tmp.display()))?;
+        }
+        out.flush().map_err(|e| format!("flush {}: {e}", tmp.display()))?;
+        return Ok(());
+    }
+}
+
+/// Streamed SHA-256 of a file on disk — never buffers the body in RAM.
+fn sha256_file(path: &std::path::Path) -> Result<String, String> {
+    use sha2::Digest as _;
+    use std::io::Read as _;
+
+    let mut file =
+        std::fs::File::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
+    let mut hasher = sha2::Sha256::new();
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .map_err(|e| format!("read {}: {e}", path.display()))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hex::encode(hasher.finalize()))
 }
 
 fn load() -> Option<Gate> {
@@ -263,4 +332,147 @@ pub fn claim(goal: &str, registry: &kawai_router::TemplateRegistry<'_>) -> Optio
         return None;
     }
     Some((id, p))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::TcpListener;
+    use std::sync::{Arc, Mutex};
+
+    /// Minimal HTTP/1.1 server for `fetch_to`: serves `body`, optionally
+    /// honoring `Range`; `force_status` overrides the FIRST response. Records
+    /// the payload length of every response so a test can prove a resume
+    /// (2000 bytes served) from a silent restart (3000).
+    fn serve(
+        body: Vec<u8>,
+        honor_range: bool,
+        force_status: Option<u16>,
+    ) -> (String, Arc<Mutex<Vec<usize>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let addr = format!("http://{}", listener.local_addr().expect("local addr"));
+        let served: Arc<Mutex<Vec<usize>>> = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&served);
+        std::thread::spawn(move || {
+            let mut first = true;
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { break };
+                let mut reader = BufReader::new(stream.try_clone().expect("clone stream"));
+                let mut range_start: Option<usize> = None;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                        break;
+                    }
+                    let line = line.trim_end().to_ascii_lowercase();
+                    if line.is_empty() {
+                        break;
+                    }
+                    if let Some(v) = line.strip_prefix("range: bytes=") {
+                        range_start = v.trim_end_matches('-').parse().ok();
+                    }
+                }
+                let status = if first && force_status.is_some() {
+                    force_status.expect("checked")
+                } else if honor_range {
+                    match range_start {
+                        Some(start) if start < body.len() => 206,
+                        Some(_) => 416,
+                        None => 200,
+                    }
+                } else {
+                    200
+                };
+                first = false;
+                let payload: Vec<u8> = match (status, range_start) {
+                    (206, Some(start)) => body[start..].to_vec(),
+                    (200, _) => body.clone(),
+                    _ => Vec::new(),
+                };
+                recorded.lock().expect("served lock").push(payload.len());
+                let head = format!(
+                    "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    payload.len()
+                );
+                stream.write_all(head.as_bytes()).expect("write head");
+                stream.write_all(&payload).expect("write body");
+                stream.flush().expect("flush");
+            }
+        });
+        (addr, served)
+    }
+
+    fn asset_body() -> Vec<u8> {
+        (0..3000u32).map(|i| (i % 251) as u8).collect()
+    }
+
+    async fn fetch(url: &str, tmp: &std::path::Path) -> Result<(), String> {
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .read_timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("client");
+        fetch_to(&client, url, tmp).await
+    }
+
+    /// A partial `.part` is completed from its current length — the server
+    /// serves only the tail (206). A resume that secretly restarted would
+    /// serve 3000 bytes instead of 2000.
+    #[tokio::test]
+    async fn resumes_a_partial_file() {
+        let (addr, served) = serve(asset_body(), true, None);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let tmp = dir.path().join("asset.part");
+        std::fs::write(&tmp, &asset_body()[..1000]).expect("seed partial");
+
+        fetch(&format!("{addr}/asset"), &tmp).await.expect("fetch");
+
+        assert_eq!(std::fs::read(&tmp).expect("read"), asset_body());
+        assert_eq!(*served.lock().expect("served"), vec![2000]);
+    }
+
+    /// A server that ignores Range (200, not 206) must RESTART the file:
+    /// appending would interleave the body with the stale prefix and the
+    /// digest would fail on every later launch.
+    #[tokio::test]
+    async fn restarts_when_the_server_ignores_range() {
+        let (addr, served) = serve(asset_body(), false, None);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let tmp = dir.path().join("asset.part");
+        std::fs::write(&tmp, vec![0xAAu8; 1000]).expect("seed partial");
+
+        fetch(&format!("{addr}/asset"), &tmp).await.expect("fetch");
+
+        assert_eq!(std::fs::read(&tmp).expect("read"), asset_body());
+        assert_eq!(*served.lock().expect("served"), vec![3000]);
+    }
+
+    /// 416 = the partial is at/past EOF (the remote asset changed): discard it
+    /// and fetch from zero.
+    #[tokio::test]
+    async fn discards_a_satisfied_range_and_refetches() {
+        let (addr, served) = serve(asset_body(), true, None);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let tmp = dir.path().join("asset.part");
+        std::fs::write(&tmp, vec![0xAAu8; 5000]).expect("seed oversized partial");
+
+        fetch(&format!("{addr}/asset"), &tmp).await.expect("fetch");
+
+        assert_eq!(std::fs::read(&tmp).expect("read"), asset_body());
+        assert_eq!(*served.lock().expect("served"), vec![0, 3000]);
+    }
+
+    /// An HTTP error is surfaced rather than written out as an empty asset.
+    #[tokio::test]
+    async fn surfaces_a_server_error() {
+        let (addr, _served) = serve(asset_body(), true, Some(500));
+        let dir = tempfile::tempdir().expect("tempdir");
+        let tmp = dir.path().join("asset.part");
+
+        let err = fetch(&format!("{addr}/asset"), &tmp)
+            .await
+            .expect_err("must fail");
+        assert!(err.contains("500"), "{err}");
+    }
 }
