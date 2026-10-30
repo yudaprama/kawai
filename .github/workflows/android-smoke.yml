@@ -302,6 +302,20 @@ jobs:
             && TMPDIR=/data/local/tmp LD_LIBRARY_PATH=/data/local/tmp/kawai-smoke LLVM_PROFILE_FILE=/dev/null KAWAI_LLM_MAX_TOKENS=8192 \
             ./local_llm_smoke ./gemma-4-E4B-it.litertlm"
 
+      # GPU-path visibility, deliberately NOT a gate. The app defaults to CPU
+      # on Android (commands::default_gpu) and GPU is opt-in only; the vendored
+      # executor-settings patch builds kGpu|kCpu so uncovered ops fall back to
+      # CPU, but whether a given device's OpenCL stack cooperates is a device
+      # question (the emulator often has no OpenCL at all and is EXPECTED to
+      # fail here). Red on this step means "GPU opt-in unavailable on this
+      # target", not a release blocker — the CPU run above is the gate.
+      - name: local_llm_smoke --gpu (non-blocking GPU-path probe)
+        continue-on-error: true
+        run: |
+          adb -s "$KAWAI_ADB_SERIAL" shell "cd /data/local/tmp/kawai-smoke \
+            && TMPDIR=/data/local/tmp LD_LIBRARY_PATH=/data/local/tmp/kawai-smoke LLVM_PROFILE_FILE=/dev/null KAWAI_LLM_MAX_TOKENS=8192 \
+            ./local_llm_smoke ./gemma-4-E4B-it.litertlm --gpu"
+
       - name: Stop emulator
         if: always() && inputs.target == 'emulator'
         run: adb -s emulator-5556 emu kill || true
