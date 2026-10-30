@@ -7,7 +7,9 @@
 //! claim — or declines and layer 2 runs exactly as before.
 //!
 //! Safety contract (see the PoC: models/laya/multilingual + route_log corpus):
-//! - Opt-in via `KAWAI_LAYA_ROUTER=1`; unset ⇒ this module never loads.
+//! - Opt-in by ASSET PRESENCE, not env: no assets ⇒ the gate never loads
+//!   (`supervisor.rs` gates on `assets_ready()`), and a fresh install
+//!   downloads the 6-file set at startup. There is no env knob.
 //! - The gate can only SHORTEN the path to a claim that layer 2 might also
 //!   have made. It never sees greeting/question/direct goals (the static
 //!   layers run first) and its claim must pass the same
