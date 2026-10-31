@@ -319,6 +319,11 @@ impl ToolSet {
         self.entries.len()
     }
 
+    /// Whether a tool with this name is registered (no dispatch).
+    pub fn has_tool(&self, name: &str) -> bool {
+        self.entries.contains_key(name)
+    }
+
     /// Whether no tools are registered.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()

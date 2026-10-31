@@ -2963,6 +2963,12 @@ Rules:\n\
 - Resolve company/product names to their exchange ticker (micron → MU, \
 nvidia → NVDA, bitcoin → BTC). Uppercase, no exchange suffix.\n\
 - ticker must be null when template is null.\n\
+- Match DEPTH, not just subject. Claim a pipeline only when the goal asks \
+for its full depth: research, (multi-)analyst analysis, a debate/review, \
+an audit, a book close, a screen. A glance is not a request — quick \
+looks, single price/quote checks, chart peeks, or \"cek/check\" phrasings \
+without a research verb ⇒ {\"template\":null,\"ticker\":null} (the \
+planner composes a lighter plan for those).\n\
 - A question, chat, translation, or anything that is not a request to run a \
 research/analysis pipeline ⇒ {\"template\":null,\"ticker\":null}.";
 
@@ -3122,6 +3128,7 @@ pub async fn build_desk_registry(
     toolset.add_tool(kawai_desk::DeskRoleTool::default().with_user(user_id));
     toolset.add_tool(
         kawai_desk::DeskDataTool::default()
+            .with_user(user_id)
             .with_web_news(desk_news)
             .with_ledger(desk_ledger),
     );
@@ -4380,7 +4387,6 @@ fn repair_materials(
             let mut lines = Vec::new();
             for (arg, reference) in bindings {
                 let from = reference.get("fromStep").and_then(|v| v.as_str()).unwrap_or("?");
-                let name = reference.get("output").and_then(|v| v.as_str()).unwrap_or("?");
                 let contract = plan
                     .steps
                     .iter()
@@ -4388,13 +4394,22 @@ fn repair_materials(
                     .map(|p| tool_contracts.get(p.dispatch_key()).cloned())
                     .flatten()
                     .unwrap_or_default();
-                if contract.is_empty() {
-                    lines.push(format!("  {arg} ← {from}.{name}"));
-                } else {
-                    lines.push(format!(
+                match reference.get("output").and_then(|v| v.as_str()) {
+                    // A bare binding consumes the producing step's WHOLE
+                    // output. Render it as a definite form so the repairer
+                    // never "fixes" it by inventing an output key — the
+                    // prose tools (desk_role) are markdown, so no key can
+                    // ever match.
+                    None => lines.push(format!(
+                        "  {arg} ← {from} (BARE — the step's whole output; never add an \"output\" name)"
+                    )),
+                    Some(name) if contract.is_empty() => {
+                        lines.push(format!("  {arg} ← {from}.{name}"));
+                    }
+                    Some(name) => lines.push(format!(
                         "  {arg} ← {from}.{name} (tool contract: {})",
                         contract.join(", ")
-                    ));
+                    )),
                 }
             }
             out.push_str(&format!("consumes:\n{}\n", lines.join("\n")));
@@ -6903,6 +6918,22 @@ mod tests {
                     inputs: serde_json::json!({"fileId": {"fromStep": "list", "output": "files"}}),
                     ..Default::default()
                 },
+                TaskStep {
+                    id: "fund".into(),
+                    agent_id: "t".into(),
+                    tool: Some("desk_role".into()),
+                    ..Default::default()
+                },
+                TaskStep {
+                    id: "debate".into(),
+                    agent_id: "t".into(),
+                    tool: Some("desk_role".into()),
+                    // The desk's bare binding: whole producer output, no
+                    // "output" name — the materials must render it as BARE
+                    // so the repairer never invents a key.
+                    inputs: serde_json::json!({"fundamentals": {"fromStep": "fund"}}),
+                    ..Default::default()
+                },
             ],
             final_writer: None,
             summary: None,
@@ -6915,6 +6946,10 @@ mod tests {
         assert!(out.contains("consumes:"), "{out}");
         assert!(out.contains("fileId \u{2190} list.files"), "{out}");
         assert!(out.contains("tool contract: files"), "{out}");
+        assert!(
+            out.contains("fundamentals \u{2190} fund (BARE"),
+            "bare binding must render as BARE, not `.?`: {out}"
+        );
     }
 
     #[test]
