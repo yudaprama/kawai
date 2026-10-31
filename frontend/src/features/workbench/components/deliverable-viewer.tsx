@@ -2,6 +2,16 @@ import { Icon } from "@/components/shared/icon";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FileIcon } from "@/components/shared/file-icon";
 import { EdgeFades, useXOverflow } from "@/components/shared/edge-fades";
@@ -263,13 +273,12 @@ function DeliverableBody({
           <YoutubeEmbed ref={playerRef} videoId={videoId} title={goal} />
         </div>
       )}
-      {/* One toolbar row, two groups. The old layout stacked a TRANSLATE
-       * label + select + button (three controls for one action — they
-       * wrapped to two rows on phones) PLUS a sticky bottom export bar
-       * that permanently covered the document. Translate is now a single
-       * picker that translates on selection; Copy/PDF/DOCX sit at the
-       * toolbar's right edge and the outcome renders as a plain line. */}
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+      {/* Desktop: one toolbar row, two groups — translate is a single picker
+       * that translates on selection; Copy/PDF/DOCX sit at the right edge
+       * and the outcome renders as a plain line. Mobile hides this row: the
+       * same actions collapse into the ⋯ menu below (on a phone the document,
+       * not its controls, is the content). */}
+      <div className="hidden flex-wrap items-center justify-between gap-x-3 gap-y-1.5 sm:flex">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Select
             disabled={translating}
@@ -332,11 +341,6 @@ function DeliverableBody({
                 ))}
             </span>
           )}
-          {error != null && (
-            <span aria-live="polite" className="text-destructive font-mono text-xs" role="alert">
-              Translate failed: {error}
-            </span>
-          )}
         </div>
         {showExport && (
           <div className="flex shrink-0 items-center gap-1">
@@ -380,12 +384,87 @@ function DeliverableBody({
           </div>
         )}
       </div>
-      {/* Copy/export feedback — an ordinary line, not a sticky band. Export
-          opens the office-store file in the app-level preview dialog. */}
-      {(copied || exported != null || exportError != null) && (
+      {/* Mobile: the desktop toolbar's actions collapse into one ⋯ menu —
+          the document, not its controls, is the content on a phone. */}
+      <div className="flex items-center justify-end gap-2 sm:hidden">
+        {shownLanguage != null && (
+          <span className="text-muted-foreground flex min-w-0 items-center gap-2 font-mono text-[0.6875rem]">
+            <span className="truncate">Showing {shownLanguage}</span>
+            <button
+              className="hit-44 hover:text-primary shrink-0 hover:underline"
+              onClick={() => setTranslated(null)}
+              title="Back to the original deliverable"
+              type="button"
+            >
+              Show original
+            </button>
+          </span>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              aria-label="Deliverable actions"
+              className="hit-44 text-muted-foreground hover:text-foreground size-8 shrink-0 [&_svg]:size-3.5"
+              size="icon"
+              variant="ghost"
+            >
+              {translating ? <Icon name="loader-circle" className="size-3.5 animate-spin" /> : <Icon name="ellipsis" />}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Icon name="languages" className="size-3.5" />
+                Translate
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-72 overflow-y-auto">
+                {TRANSLATE_LANGUAGES.map((l) => (
+                  <DropdownMenuItem
+                    key={l.value}
+                    disabled={translating}
+                    onSelect={() => {
+                      setLanguage(l.value);
+                      void runTranslate(l.value);
+                    }}
+                  >
+                    {l.label}
+                    {saved.some((t) => t.language === l.value) && (
+                      <span className="text-muted-foreground font-mono text-[0.625rem]">· saved</span>
+                    )}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            {showExport && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => void copyMarkdown(shown)}>
+                  <Icon name={copied ? "check" : "copy"} className="size-3.5" />
+                  Copy markdown
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={exporting != null} onSelect={() => void runExport("pdf", shown, goal)}>
+                  <FileIcon className="size-3" name="export.pdf" />
+                  Export PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={exporting != null} onSelect={() => void runExport("docx", shown, goal)}>
+                  <FileIcon className="size-3" name="export.docx" />
+                  Export DOCX
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      {/* Copy/export/translate feedback — an ordinary line, not a sticky
+          band. Export opens the office-store file in the app-level preview
+          dialog. Shared by both toolbars so the mobile menu surfaces the
+          same outcomes. */}
+      {(copied || exported != null || exportError != null || error != null) && (
         <div aria-live="polite" className="text-muted-foreground font-mono text-[0.6875rem]">
           {exportError != null ? (
             <span className="text-destructive">Export failed: {exportError}</span>
+          ) : error != null ? (
+            <span className="text-destructive">Translate failed: {error}</span>
           ) : exported != null ? (
             <button
               className="hit-44 text-success hover:text-primary inline-flex items-center gap-1 px-1 hover:underline"
@@ -485,9 +564,9 @@ export function PastRunCanvas({
   const [errorCopied, setErrorCopied] = useState(false);
   return (
     <div className="h-full overflow-y-auto" key={run.id} ref={scrollRef}>
-      <div className="mx-auto max-w-4xl space-y-6 px-4 py-6 sm:p-6">
+      <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 sm:space-y-6 sm:p-6">
         <div>
-          <h3 className="text-foreground inline-flex items-center gap-2 text-xl font-semibold">
+          <h3 className="text-foreground inline-flex items-center gap-2 text-lg sm:text-xl font-semibold">
             <Icon name="zap" className="text-primary size-5" />
             {goalLabel || "Working…"}
             {!isDeliverable && docStep != null && (
@@ -495,7 +574,7 @@ export function PastRunCanvas({
             )}
           </h3>
           <div className="text-muted-foreground mt-1 flex items-center gap-3 font-mono text-sm">
-            <span>
+            <span className="hidden sm:inline">
               {fmtDateUS(run.startedAt)}
               {run.stepsTotal != null && ` · ${run.stepsDone ?? 0}/${run.stepsTotal} steps`}
             </span>
@@ -911,15 +990,21 @@ export function DeliverableViewer({
       <div aria-live="polite" className="sr-only" role="status">
         {phaseAnnouncement}
       </div>
-      <div className="mx-auto max-w-4xl space-y-6 px-4 py-6 sm:p-6">
+      <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 sm:space-y-6 sm:p-6">
         <div>
-          <h3 className="text-foreground flex items-start gap-2 text-xl font-semibold" title={headerGoal ?? undefined}>
+          <h3
+            className="text-foreground flex items-start gap-2 text-lg sm:text-xl font-semibold"
+            title={headerGoal ?? undefined}
+          >
             <span className="line-clamp-2">{headerGoal ?? "Working…"}</span>
           </h3>
           {effective !== "final" && resolvedStep != null && (
             <div className="text-muted-foreground mt-1 font-mono text-xs">Agent report · {agentName(resolvedStep)}</div>
           )}
-          <div className="text-muted-foreground mt-1 font-mono text-sm">
+          {/* Desktop-only: progress + duration. On a phone the progress
+              drawer and the in-flight strip carry the same facts — a second
+              mono line here is reading-view noise. */}
+          <div className="text-muted-foreground mt-1 hidden font-mono text-sm sm:block">
             {unseeded ? (
               supervisor.status === "reviewing" ? (
                 <>
