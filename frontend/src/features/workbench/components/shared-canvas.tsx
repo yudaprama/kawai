@@ -269,7 +269,7 @@ export function ScrollToBottomButton({
   return (
     <button
       aria-label="Scroll to latest"
-      className="bg-background border-border/60 text-foreground hover:border-primary/60 shadow-lg hit-44 absolute right-4 bottom-4 z-20 flex size-9 items-center justify-center rounded-full border transition-colors"
+      className="bg-background border-border/60 text-foreground hover:border-primary/60 shadow-lg hit-44 absolute bottom-4 left-1/2 z-20 flex size-9 -translate-x-1/2 items-center justify-center rounded-full border transition-colors"
       onClick={() => containerRef.current?.scrollTo({ top: containerRef.current.scrollHeight, behavior: "smooth" })}
       title="Scroll to latest"
       type="button"

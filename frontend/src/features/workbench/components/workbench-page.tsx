@@ -248,6 +248,10 @@ export function WorkbenchPage({
   };
   // Chip click → draft dropped into the input for editing (not auto-submit).
   const [chipDraft, setChipDraft] = useState<{ text: string; nonce: number } | null>(null);
+  // Phone: the composer bar hides while the reader scrolls DOWN through the
+  // deliverable (Chrome URL-bar pattern) and returns on scroll-up/at the
+  // edges — reading gets the full viewport, input stays zero taps away.
+  const [composerHidden, setComposerHidden] = useState(false);
   const [discardArmed, setDiscardArmed] = useState(false);
   // Landing goal template (single-select, null = none). Research-flavored
   // picks disclose the Stock Research panel; the rest reframe the composer's
@@ -893,6 +897,7 @@ export function WorkbenchPage({
                       onBuildOn={buildOn}
                       onPickDoc={(doc) => userPick(shown.id, doc)}
                       onAsk={workbench.askAboutResult}
+                      onScrollShift={(dir) => setComposerHidden(dir === "down")}
                       run={shown}
                       sessionId={workbench.sessionId}
                       discardArmed={discardArmed}
@@ -913,6 +918,7 @@ export function WorkbenchPage({
                       if (activeRunId != null) userPick(activeRunId, doc);
                     }}
                     onNewGoal={goHome}
+                    onScrollShift={(dir) => setComposerHidden(dir === "down")}
                     discardArmed={discardArmed}
                     setDiscardArmed={setDiscardArmed}
                   />
@@ -923,9 +929,18 @@ export function WorkbenchPage({
         )}
         {/* Phone composer: the sidebar's copy is lg-only, so without this the
             only way to type a follow-up is opening the progress drawer.
-            `group/composer` scopes the focus-collapse above to THIS placement
+            Scroll-aware: hides while the reader scrolls DOWN through the
+            deliverable (the canvas reclaims the row), returns on scroll-up or
+            at either edge — the canvas viewers report the direction.
+            `group/composer` scopes the focus-collapse to THIS placement
             only — the lg sidebar copy has no such group and keeps its chrome. */}
-        <div className="group/composer border-border/60 safe-b shrink-0 border-t p-3 lg:hidden">{composerPanel}</div>
+        <div
+          className={`group/composer border-border/60 safe-b shrink-0 border-t p-3 lg:hidden ${
+            composerHidden ? "hidden" : ""
+          }`}
+        >
+          {composerPanel}
+        </div>
       </main>
     </div>
   );

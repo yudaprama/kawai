@@ -538,6 +538,7 @@ export function PastRunCanvas({
   onBuildOn,
   onPickDoc,
   onAsk,
+  onScrollShift,
 }: {
   loadFullOutput: (stepId: string, planKey?: string) => Promise<string | null>;
   run: WorkbenchRun;
@@ -553,6 +554,8 @@ export function PastRunCanvas({
   onPickDoc?: (doc: string) => void;
   /** Ask-about-result for this run's step reports (its own planKey). */
   onAsk?: (stepId: string, question: string, planKeyOverride?: string) => Promise<string | null>;
+  /** Phone composer signal — same contract as the live viewer's. */
+  onScrollShift?: (dir: "down" | "up") => void;
   discardArmed: boolean;
   setDiscardArmed: (v: boolean) => void;
 }) {
@@ -575,10 +578,27 @@ export function PastRunCanvas({
   // Scroll memory (per run — the container key is the run id): same doc
   // round-trip keeps the reading position, an unvisited doc opens at the top.
   const scrollRef = useScrollMemory(doc);
+  // Scroll-direction tracker for the phone composer signal (see onScrollShift).
+  const lastScrollTop = useRef(0);
   const [errorCopied, setErrorCopied] = useState(false);
   return (
     <div className="relative h-full">
-      <div className="h-full overflow-y-auto" key={run.id} ref={scrollRef}>
+      <div
+        className="h-full overflow-y-auto"
+        key={run.id}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          const prev = lastScrollTop.current;
+          const at = el.scrollTop;
+          lastScrollTop.current = at;
+          if (onScrollShift == null) return;
+          if (Math.abs(at - prev) > 200) return;
+          if (at <= 4 || at + el.clientHeight >= el.scrollHeight - 4) onScrollShift("up");
+          else if (at > prev + 4) onScrollShift("down");
+          else if (at < prev - 4) onScrollShift("up");
+        }}
+        ref={scrollRef}
+      >
         <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 sm:space-y-6 sm:p-6">
           <div>
             <h3 className="text-foreground inline-flex items-center gap-2 text-lg sm:text-xl font-semibold">
@@ -882,6 +902,7 @@ export function DeliverableViewer({
   workbench,
   onPickDoc,
   onNewGoal,
+  onScrollShift,
   discardArmed,
   setDiscardArmed,
 }: {
@@ -901,6 +922,9 @@ export function DeliverableViewer({
   /** Back to the landing composer ("New goal") — offered on the failed-run
    *  card so recovery lives where the failure is read. */
   onNewGoal?: () => void;
+  /** Phone composer signal: "down" while the reader scrolls deeper (the page
+   *  hides the composer bar), "up" near either edge or scrolling back. */
+  onScrollShift?: (dir: "down" | "up") => void;
   discardArmed: boolean;
   setDiscardArmed: (v: boolean) => void;
 }) {
@@ -930,6 +954,8 @@ export function DeliverableViewer({
   // restores the new doc's last position — a long deliverable survives a
   // peek at a step report and back.
   const scrollRef = useScrollMemory(effective);
+  // Scroll-direction tracker for the phone composer signal (see onScrollShift).
+  const lastScrollTop = useRef(0);
   // Step source: supervisor state for the run it currently holds; the run
   // RECORD (≤2000-char embeds + its own planKey) otherwise — a reopened
   // session's newest run renders here too, and the supervisor may be empty
@@ -1004,7 +1030,24 @@ export function DeliverableViewer({
 
   return (
     <div className="relative h-full">
-      <div className="h-full overflow-y-auto" key={runIndex} ref={scrollRef}>
+      <div
+        className="h-full overflow-y-auto"
+        key={runIndex}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          const prev = lastScrollTop.current;
+          const at = el.scrollTop;
+          lastScrollTop.current = at;
+          if (onScrollShift == null) return;
+          // A jump is a programmatic restore (scroll memory / doc switch) —
+          // resync without toggling the composer.
+          if (Math.abs(at - prev) > 200) return;
+          if (at <= 4 || at + el.clientHeight >= el.scrollHeight - 4) onScrollShift("up");
+          else if (at > prev + 4) onScrollShift("down");
+          else if (at < prev - 4) onScrollShift("up");
+        }}
+        ref={scrollRef}
+      >
         <div aria-live="polite" className="sr-only" role="status">
           {phaseAnnouncement}
         </div>
