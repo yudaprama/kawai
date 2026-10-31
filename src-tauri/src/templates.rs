@@ -36,6 +36,13 @@ static DESK_SLOT_ANALYSTS: Slot = Slot {
     required: false,
     hint: "optional subset of market,social,news,fundamentals",
 };
+static DESK_SLOT_DOMAIN: Slot = Slot {
+    name: "domain",
+    required: false,
+    hint: "\"stock\" | \"crypto\" — the claim paths derive it from the goal's \
+           equity intent (kawai_router::domain_from_facts); the build refuses \
+           a missing value rather than default one",
+};
 
 /// Wrap the desk's own builder so both entry points (the fixed-pipeline
 /// command and the router) produce the identical plan. Inputs are validated
@@ -46,12 +53,23 @@ fn build_desk(slots: &ResolvedSlots) -> Result<TaskPlan, String> {
     let Some(ticker) = slots.get("ticker") else {
         return Err("desk template requires a ticker".into());
     };
+    // "BTC" is the coin on Binance and Grayscale's ETF on yfinance — a
+    // defaulted domain silently researches the wrong asset. The claim paths
+    // derive the slot (kawai_router::domain_from_facts); a missing value is
+    // a recoverable router error, never a stock-shaped run of a coin.
+    let Some(domain) = slots.get("domain") else {
+        return Err(
+            "desk template requires a domain slot (\"stock\"|\"crypto\") — \
+             derive it from the goal's equity intent"
+                .into(),
+        );
+    };
     let analysts: Vec<&str> = slots.list("analysts");
     let args = kawai_desk::normalize_desk_args(
         ticker,
         slots.get_or("tradeDate", ""),
         &analysts,
-        slots.get_or("domain", "stock"),
+        domain,
         slots.get_or("language", ""),
     )?;
     let analysts_ref: Vec<&str> = args.analysts.iter().map(String::as_str).collect();
@@ -88,7 +106,7 @@ static DESK: PlanTemplate = PlanTemplate {
     // an IDX bank: without this membership check the router shipped it into a
     // 13-step futures pipeline that could not fetch a single candle.
     market_bound: true,
-    slots: &[DESK_SLOT_TICKER, DESK_SLOT_ANALYSTS],
+    slots: &[DESK_SLOT_TICKER, DESK_SLOT_ANALYSTS, DESK_SLOT_DOMAIN],
     // The desk's stage tools (`desk_data`/`desk_role`) exist ONLY in
     // `build_desk_registry`, never in the planner catalog.
     registry_kind: PlanRegistryKind::Template,
@@ -295,6 +313,37 @@ mod tests {
         }
     }
 
+    /// The desk refuses to run on a defaulted domain: "BTC" is the coin on
+    /// Binance and Grayscale's ETF on yfinance, so a missing domain slot is
+    /// a recoverable router error — never a stock-shaped run of a coin.
+    #[test]
+    fn desk_build_refuses_a_missing_domain_slot() {
+        let slots = ResolvedSlots::new().with("ticker", "BTC");
+        let err = build_desk(&slots).unwrap_err();
+        assert!(err.contains("domain"), "{err}");
+    }
+
+    /// The layer-2 claim shape for "What do you think of bitcoin today?"
+    /// (route_log 2026-10-31: ticker from the resolver, domain defaulted to
+    /// stock — the run priced BTC off the Grayscale ETF). The derived domain
+    /// must reach the built plan's steps.
+    #[test]
+    fn bitcoin_claim_builds_a_crypto_desk_plan() {
+        let facts = kawai_router::extract_facts("What do you think of bitcoin today?");
+        let slots = ResolvedSlots::new()
+            .with("ticker", "BTC")
+            .with("domain", kawai_router::domain_from_facts(&facts))
+            .with("language", "id-ID");
+        let template = registry().get("desk").expect("desk template registered");
+        let plan = (template.build)(&slots).expect("bitcoin goal builds a desk plan");
+        let data = plan
+            .steps
+            .iter()
+            .find(|s| s.id == "d_data")
+            .expect("desk plan fetches data");
+        assert_eq!(data.arguments["domain"], "crypto");
+    }
+
     #[test]
     fn registry_lookup_resolves_every_declared_template() {
         for t in registry().iter() {
@@ -364,8 +413,17 @@ mod tests {
     }
 
     #[test]
-    fn desk_template_accepts_a_ticker_and_defaults_the_rest() {
-        let plan = build_desk(&ResolvedSlots::new().with("ticker", "nvda")).unwrap();
+    fn desk_template_accepts_a_ticker_and_a_derived_domain() {
+        // The domain is no longer defaulted: the claim paths derive it from
+        // the goal's equity intent (kawai_router::domain_from_facts) and the
+        // build refuses a missing value.
+        let facts = kawai_router::extract_facts("analisis saham NVDA");
+        let plan = build_desk(
+            &ResolvedSlots::new()
+                .with("ticker", "nvda")
+                .with("domain", kawai_router::domain_from_facts(&facts)),
+        )
+        .unwrap();
         assert!(plan.goal.contains("NVDA"), "goal: {}", plan.goal);
         assert_eq!(plan.final_writer, None, "deliverable writer synthesizes");
     }
@@ -375,10 +433,11 @@ mod tests {
     fn sample_slots(template: &PlanTemplate) -> ResolvedSlots {
         let mut slots = ResolvedSlots::new();
         for slot in template.slots {
-            if !slot.required {
-                continue;
-            }
             match slot.name {
+                // Optional-by-declaration but required by the desk's build:
+                // the claim paths always derive it, so a sample must too.
+                "domain" => slots.set("domain", "stock"),
+                _ if !slot.required => continue,
                 "ticker" => slots.set("ticker", "NVDA"),
                 "url" => slots.set("url", "https://youtu.be/dQw4w9WgXcQ"),
                 "period" => slots.set("period", "2026-10"),

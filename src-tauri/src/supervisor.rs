@@ -731,6 +731,11 @@ fn facts_slots(
     if let Some(venue) = &facts.venue {
         slots.set("venue", venue);
     }
+    // Asset class rides the same facts: equity-intent goals analyze the
+    // tokenized EQUITY, everything else the coin. The desk's build refuses a
+    // missing domain, so a claim path that forgets this fails loudly instead
+    // of pricing a coin off its yfinance namesake.
+    slots.set("domain", kawai_router::domain_from_facts(facts));
     slots.set("language", &resolve_user_language(language, None).unwrap_or_default());
     slots
 }
@@ -1100,6 +1105,7 @@ pub async fn plan_task(
                                 if let Some(t) = member.as_deref() {
                                     slots.set("ticker", t);
                                 }
+                                slots.set("domain", kawai_router::domain_from_facts(&facts));
                                 slots.set(
                                     "language",
                                     &resolve_user_language(language, None).unwrap_or_default(),
@@ -6686,6 +6692,27 @@ mod tests {
 
     use super::*;
     use kawai_router::{StepStatus, TaskStep};
+
+    /// facts_slots derives the desk's domain from the same facts the claim
+    /// gate uses: an equity-intent goal analyzes the tokenized equity,
+    /// everything else the coin — the yfinance namesake ("BTC" = Grayscale's
+    /// ETF) must never win a coin goal.
+    #[test]
+    fn facts_slots_derive_the_desk_domain() {
+        let slots = facts_slots(
+            &kawai_router::extract_facts("What do you think of bitcoin today?"),
+            None,
+            Some("id-ID"),
+        );
+        assert_eq!(slots.get("domain"), Some("crypto"));
+
+        let slots = facts_slots(
+            &kawai_router::extract_facts("analisis saham NVDA"),
+            None,
+            Some("id-ID"),
+        );
+        assert_eq!(slots.get("domain"), Some("stock"));
+    }
 
     #[test]
     fn planner_response_excerpt_collapses_and_caps() {
