@@ -402,10 +402,9 @@ function DeliverableBody({
         </div>
       )}
 
-      <div
-        aria-busy={translating}
-        className={`border-primary/30 bg-card rounded-lg border p-6 ${translating ? "opacity-60 transition-opacity" : ""}`}
-      >
+      {/* Generated text sits flat on the canvas background — no card border
+          or tinted surface (the ChatGPT/Gemini reading pattern). */}
+      <div aria-busy={translating} className={translating ? "opacity-60 transition-opacity" : ""}>
         <MarkdownWithCharts videoId={videoId} onSeek={(s) => playerRef.current?.seek(s)}>
           {shown}
         </MarkdownWithCharts>
@@ -486,7 +485,7 @@ export function PastRunCanvas({
   const [errorCopied, setErrorCopied] = useState(false);
   return (
     <div className="h-full overflow-y-auto" key={run.id} ref={scrollRef}>
-      <div className="mx-auto max-w-4xl space-y-6 p-6">
+      <div className="mx-auto max-w-4xl space-y-6 px-4 py-6 sm:p-6">
         <div>
           <h3 className="text-foreground inline-flex items-center gap-2 text-xl font-semibold">
             <Icon name="zap" className="text-primary size-5" />
@@ -518,7 +517,7 @@ export function PastRunCanvas({
             reachable while reading instead of sitting below a long document.
             The rail's "see report" links stay a second path. */}
         {onPickDoc != null && (run.steps ?? []).length > 0 && (
-          <div className="sticky top-0 z-10 -mx-6 border-b border-border/60 bg-background px-4 py-2">
+          <div className="sticky top-0 z-10 -mx-4 border-b border-border/60 bg-background px-4 py-2 sm:-mx-6">
             <AgentReportsSwitcher
               activeDoc={doc}
               hasDeliverable={run.status === "running" || (run.status === "completed" && run.outputFull != null)}
@@ -912,7 +911,7 @@ export function DeliverableViewer({
       <div aria-live="polite" className="sr-only" role="status">
         {phaseAnnouncement}
       </div>
-      <div className="mx-auto max-w-4xl space-y-6 p-6">
+      <div className="mx-auto max-w-4xl space-y-6 px-4 py-6 sm:p-6">
         <div>
           <h3 className="text-foreground flex items-start gap-2 text-xl font-semibold" title={headerGoal ?? undefined}>
             <span className="line-clamp-2">{headerGoal ?? "Working…"}</span>
@@ -948,7 +947,7 @@ export function DeliverableViewer({
             Hidden while planning (no reports yet) and when navigation isn't
             wired; the rail's "see report" links stay a second path. */}
         {onPickDoc != null && reports.length > 0 && (
-          <div className="sticky top-0 z-10 -mx-6 border-b border-border/60 bg-background px-4 py-2">
+          <div className="sticky top-0 z-10 -mx-4 border-b border-border/60 bg-background px-4 py-2 sm:-mx-6">
             <AgentReportsSwitcher
               activeDoc={effective}
               hasDeliverable={effective === "final" || inFlightNow}

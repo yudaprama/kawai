@@ -132,7 +132,9 @@ export function StepReportBody({
   });
   const body = output ?? previewOutput;
   return (
-    <div className="bg-card rounded-lg border p-4">
+    // Flat wrapper — the generated report reads directly on the canvas
+    // background; structured tool views inside carry their own cards.
+    <div>
       {failed && (
         <div className="border-destructive/30 mb-2 flex items-center justify-between gap-2 rounded-md border bg-destructive/5 px-3 py-2">
           <p className="text-destructive text-xs" role="alert">
