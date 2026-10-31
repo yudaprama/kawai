@@ -16,6 +16,7 @@ import { ThemePickerDialog } from "@/features/agents/theme-picker";
 import { useI18n } from "@/hooks/use-i18n";
 import type { Locale } from "@/lib/i18n";
 import { TokenBalanceChip } from "@/features/topup/token-balance-chip";
+import { isLowTokenBalance, useTokenBalance } from "@/features/topup/use-token-balance";
 
 /** Appearance section — light/dark/system mode plus a way into the color
  *  palette picker (the mode only decides which token set of the active
@@ -101,6 +102,11 @@ export function ProfileControls({
   onLogout: () => void;
 }) {
   const [palettesOpen, setPalettesOpen] = useState(false);
+  // Same shared store the inline chip reads — one subscription warms the
+  // balance for the goal-submit gate too.
+  const { tokens, pending } = useTokenBalance();
+  const low = isLowTokenBalance(tokens);
+  const balance = tokens === null ? (pending ? "…" : "—") : tokens.toLocaleString("id-ID");
   const assets = ASSET_NAV.filter(
     (asset) => (asset.id !== "code" || codegraphAvailable) && (asset.id !== "wallet" || walletAvailable),
   );
@@ -108,7 +114,12 @@ export function ProfileControls({
 
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <TokenBalanceChip onSelectAsset={onSelectAsset} />
+      {/* Inline chip at lg+ only — on phones it crowded the mode bar into
+          horizontal pill scroll; below lg the avatar menu carries the balance
+          (and the workbench drawer keeps its own mid-run chip). */}
+      <div className="hidden lg:block">
+        <TokenBalanceChip onSelectAsset={onSelectAsset} />
+      </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -128,14 +139,24 @@ export function ProfileControls({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-60">
           <DropdownMenuLabel className="font-mono text-xs break-all">{userId ?? "demo"}</DropdownMenuLabel>
-          <DropdownMenuSeparator />
+          {/* Balance row, <lg only: the inline Saldo chip leaves the mode bar
+              on phones, so this row is the balance's home there — it routes to
+              the same Top Up page the chip opened. lg+ reads the inline chip. */}
+          <DropdownMenuItem className="gap-2 cursor-pointer lg:hidden" onClick={() => onSelectAsset("topup")}>
+            <Icon name="qr-code" className="text-muted-foreground size-4" />
+            <span className="flex flex-1 flex-col leading-tight">
+              <span className="text-muted-foreground font-mono text-[0.625rem] tracking-wider uppercase">Saldo</span>
+              <span className={`text-sm font-semibold tabular-nums${low ? " text-warning" : ""}`}>{balance}</span>
+            </span>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator className="lg:hidden" />
           <DropdownMenuLabel className="font-mono text-xs tracking-wider uppercase text-muted-foreground">
             {t("profileDropdown.assets")}
           </DropdownMenuLabel>
           {assets.map((asset) => (
             <DropdownMenuItem
               key={asset.id}
-              className="gap-2 cursor-pointer"
+              className={`gap-2 cursor-pointer${asset.id === "topup" ? " max-lg:hidden" : ""}`}
               onClick={() => onSelectAsset(asset.id)}
               title={`${t(asset.labelKey)} · ${asset.subtitle}`}
             >
