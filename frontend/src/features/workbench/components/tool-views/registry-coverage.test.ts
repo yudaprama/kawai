@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { renderStepReport } from "@/features/workbench/components/tool-views";
 
 import { renderMexcFuturesFillSync, renderVenueFillsImport } from "@/components/ai-elements/tool-renderers/accounting";
+import { renderDataFetch } from "@/components/ai-elements/tool-renderers/data";
 import { renderSecurityScan } from "@/components/ai-elements/tool-renderers/security";
 import { renderMarketStructure, renderMexcFuturesPositions } from "@/components/ai-elements/tool-renderers/finance";
 
@@ -405,5 +406,32 @@ describe("dispatch gate: security tools claim their output", () => {
 
   it("refuses a foreign payload instead of half-rendering it", () => {
     expect(renderSecurityScan({ kind: "audit_data", target: "x" })).toBeNull();
+  });
+});
+
+/** data_fetch output, verbatim from `DataFetchTool::call` — the crypto TA
+ * chain entry whose step output used to fall through to the generic fallback. */
+const DATA_FETCH = {
+  kind: "data",
+  fileId: "doc3",
+  filename: "btcusdt-1d-1735689600.csv",
+  symbol: "BTCUSDT",
+  interval: "1d",
+  periodsPerYear: 365,
+  rows: 200,
+  bytes: 21504,
+  columns: ["timestamp", "open", "high", "low", "close", "volume"],
+  nextStep: 'run data_ta on fileId (timestamp="timestamp", close="close")',
+};
+
+describe("dispatch gate: data_fetch claims its output", () => {
+  it("data_fetch renders a card, never the fallback", () => {
+    const node = renderStepReport("data_fetch", JSON.stringify(DATA_FETCH));
+    expect(node, "data_fetch fell through to the generic fallback").not.toBeNull();
+    expect(JSON.stringify(node)).toContain("BTCUSDT");
+  });
+
+  it("refuses a foreign kind instead of half-rendering it", () => {
+    expect(renderDataFetch({ ...DATA_FETCH, kind: "ta" })).toBeNull();
   });
 });

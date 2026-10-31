@@ -12,7 +12,7 @@ import { renderGeocode, renderIpLocation, renderIss } from "./geo";
 import { renderConnectorTools } from "./connector";
 import { renderDeskData } from "./desk";
 import { renderWebSearch, renderWebSearchSuggest } from "./search";
-import { renderDataSchema, renderDataQuery, renderDataTa, renderDataChart, renderDataTables, renderDataImport } from "./data";
+import { renderDataFetch, renderDataSchema, renderDataQuery, renderDataTa, renderDataChart, renderDataTables, renderDataImport } from "./data";
 import { renderKnowledgeSearch } from "./knowledge";
 import { renderOfficeDocument } from "./artifacts";
 import { renderCliRun } from "./terminal";
@@ -44,6 +44,7 @@ const registry: Record<string, ToolRenderer> = {
   cli_run: renderCliRun,
   web_search: renderWebSearch,
   web_search_suggest: renderWebSearchSuggest,
+  data_fetch: renderDataFetch,
   data_schema: renderDataSchema,
   data_query: renderDataQuery,
   data_ta: renderDataTa,

@@ -1,5 +1,5 @@
 use crate::auth::Session;
-use crate::logic::{self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, DeliverableTranslationMeta, RecentRun, UserInfo};
+use crate::logic::{self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, DeliverableTranslations, RecentRun, UserInfo};
 use futures_util::{Stream, StreamExt};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -573,13 +573,14 @@ pub async fn translate_deliverable(
 }
 
 /// Authenticated RPC: saved translations (language chips) for this exact
-/// deliverable text — metadata only; restoring a chip rides the translate
-/// op's cache hit, so no stored body ships and no LLM call happens.
+/// deliverable text plus its detected source language — metadata only;
+/// restoring a chip rides the translate op's cache hit, so no stored body
+/// ships and no LLM call happens.
 #[tauri::command]
 pub async fn deliverable_translations(
     markdown: String,
     session: State<'_, Session>,
-) -> Result<Vec<DeliverableTranslationMeta>, String> {
+) -> Result<DeliverableTranslations, String> {
     let user_id = session_user_id(&session)?;
     logic::deliverable_translations(&user_id, &markdown)
         .await

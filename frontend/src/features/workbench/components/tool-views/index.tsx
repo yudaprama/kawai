@@ -80,6 +80,7 @@ import {
   renderDataQueryNl,
   renderDataSchema,
   renderDataTa,
+  renderDataFetch,
   renderDataTables,
 } from "@/components/ai-elements/tool-renderers/data";
 
@@ -340,6 +341,7 @@ const registry: Record<string, StepView> = {
   stock_info: (p) => (isRecord(p) ? genericKv(p) : null),
 
   // analytics — data_* (polars over office store / sql)
+  data_fetch: (p) => renderDataFetch(p),
   data_schema: (p) => renderDataSchema(p),
   data_query: (p) => renderDataQuery(p),
   data_query_nl: (p) => renderDataQueryNl(p),

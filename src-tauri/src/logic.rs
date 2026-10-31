@@ -190,6 +190,12 @@ pub async fn translate_deliverable(
             "deliverable too long to translate in one pass (limit {MAX_SOURCE_CHARS} characters)"
         )));
     }
+    // Asking for the language the text is already written in is a no-op —
+    // return the source with zero LLM calls and no cache write. The viewer
+    // short-circuits this client-side; the guard also covers web callers.
+    if detect_source_language(source).is_some_and(|detected| detected == language) {
+        return Ok(source.to_string());
+    }
     let source_hash = translation_source_hash(source);
     if let Some(stored) =
         kawai_db::get_deliverable_translation(user_id, &source_hash, language).await?
@@ -247,20 +253,86 @@ fn translation_source_hash(source: &str) -> String {
     hex::encode(sha2::Sha256::digest(source.as_bytes()))
 }
 
+/// The deliverable's own language, named from the same fixed menu the
+/// translate picker carries (`TRANSLATE_LANGUAGES` in the viewer), so a pick
+/// of that language means "already written in it" rather than a translation
+/// target. `None` = too little text, unreliable detection, or a language
+/// outside the menu — the picker falls back to English (the pre-detection
+/// default).
+fn detect_source_language(markdown: &str) -> Option<String> {
+    use whatlang::Lang;
+    let sample: String = strip_link_targets(markdown).chars().take(4000).collect();
+    if sample.trim().chars().count() < 40 {
+        return None;
+    }
+    let info = whatlang::detect(&sample)?;
+    if !info.is_reliable() {
+        return None;
+    }
+    let name = match info.lang() {
+        Lang::Eng => "English",
+        Lang::Ind => "Bahasa Indonesia",
+        Lang::Jpn => "Japanese",
+        Lang::Kor => "Korean",
+        Lang::Cmn => "Simplified Chinese",
+        Lang::Spa => "Spanish",
+        Lang::Fra => "French",
+        Lang::Deu => "German",
+        Lang::Por => "Portuguese",
+        Lang::Rus => "Russian",
+        Lang::Ara => "Arabic",
+        Lang::Hin => "Hindi",
+        _ => return None,
+    };
+    Some(name.to_string())
+}
+
+/// Drop URL bodies (`kawai-file://…`, `https://…`, `http://…` up to the next
+/// whitespace or closing bracket) — chart tokens and links are detection
+/// noise, not language evidence.
+fn strip_link_targets(markdown: &str) -> String {
+    const MARKERS: [&str; 3] = ["kawai-file://", "https://", "http://"];
+    let mut out = String::with_capacity(markdown.len());
+    let mut rest = markdown;
+    while let Some((at, marker)) = MARKERS
+        .iter()
+        .filter_map(|m| rest.find(m).map(|at| (at, *m)))
+        .min_by_key(|(at, _)| *at)
+    {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + marker.len()..];
+        let end = after
+            .find([')', ']', ' ', '\n', '\t', '"', '\''])
+            .unwrap_or(after.len());
+        rest = &after[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Saved translations (language chips) for this exact deliverable text.
 /// Read-only metadata — restoring a chip rides `translate_deliverable`'s
-/// cache hit, so no stored body ships and no LLM call happens.
+/// cache hit, so no stored body ships and no LLM call happens. The response
+/// also names the source text's own detected language so the translate
+/// picker can default to the content's language instead of hardcoded
+/// English.
 pub async fn deliverable_translations(
     user_id: &str,
     markdown: &str,
-) -> Result<Vec<kawai_db::DeliverableTranslationMeta>, LogicError> {
+) -> Result<kawai_db::DeliverableTranslations, LogicError> {
     let source = markdown.trim();
     if source.is_empty() {
-        return Ok(Vec::new());
+        return Ok(kawai_db::DeliverableTranslations {
+            translations: Vec::new(),
+            source_language: None,
+        });
     }
     let rows = kawai_db::list_deliverable_translations(user_id, &translation_source_hash(source))
         .await?;
-    Ok(rows)
+    Ok(kawai_db::DeliverableTranslations {
+        translations: rows,
+        source_language: detect_source_language(source),
+    })
 }
 
 /// Generator panel history (all Civitai lanes), newest first — the results
@@ -757,9 +829,12 @@ mod tests {
         assert_eq!(out, stored, "stored translation is served as-is");
 
         // The chip list reads the same row for the same (trimmed) source.
+        // The 30-char source is below the detection floor → no source
+        // language, the picker's fallback stays in charge.
         let chips = deliverable_translations(&user, source).await.unwrap();
-        assert_eq!(chips.len(), 1);
-        assert_eq!(chips[0].language, language);
+        assert_eq!(chips.translations.len(), 1);
+        assert_eq!(chips.translations[0].language, language);
+        assert_eq!(chips.source_language, None);
 
         // Validation runs before cache and model: empty input is refused
         // with a user-facing message, never a phantom row or a model call.
@@ -773,7 +848,59 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(empty_lang.contains("target language required"), "{empty_lang}");
-        assert!(deliverable_translations(&user, " ").await.unwrap().is_empty());
+        assert!(
+            deliverable_translations(&user, " ").await.unwrap().translations.is_empty(),
+            "empty source → no chips"
+        );
+    }
+
+    /// The source-language pick is a no-op: `translate_deliverable` returns
+    /// the source unchanged with zero LLM calls (an empty provider pool
+    /// would surface as an `Err("translation failed …")` if the model were
+    /// ever reached).
+    #[tokio::test]
+    async fn translate_deliverable_self_language_is_a_noop() {
+        use super::translate_deliverable;
+
+        let dir = tempfile::tempdir().unwrap();
+        super::db::set_data_root(dir.path());
+        std::mem::forget(dir);
+        let user = "xlate-logic-self-noop";
+
+        let source = "# Laporan Keuangan\n\nPendapatan bersih naik delapan persen \
+                      dibanding kuartal lalu, sementara biaya operasional tetap stabil.";
+        let out = translate_deliverable(&user, None, source, "Bahasa Indonesia")
+            .await
+            .unwrap();
+        assert_eq!(out, source, "self-language pick returns the source untouched");
+    }
+
+    #[test]
+    fn detect_source_language_names_menu_languages() {
+        use super::detect_source_language;
+
+        let indonesian = "Laporan ini merangkum kinerja portofolio selama \
+                          kuartal ketiga. Nilai tukar rupiah melemah, namun \
+                          dividen dari emiten perbankan menopang imbal hasil.";
+        assert_eq!(detect_source_language(indonesian).as_deref(), Some("Bahasa Indonesia"));
+
+        let english = "This report summarizes portfolio performance for the \
+                       third quarter. The currency weakened, but bank dividends \
+                       supported the overall return for the period.";
+        assert_eq!(detect_source_language(english).as_deref(), Some("English"));
+
+        // kawai-file tokens and links are stripped before sampling — an
+        // English-captioned chart inside a Turkish deliverable must not
+        // flip the verdict away from an out-of-menu language.
+        let turkish = format!(
+            "{}\n\n![Chart](kawai-file://abc123)\n[DuckDuckGo](https://duckduckgo.com)",
+            "Bu rapor üçüncü çeyrek portföy performansını özetlemektedir. \
+             Kur zayıfladı, ancak banka temettüleri genel getiriyi destekledi."
+        );
+        assert_eq!(detect_source_language(&turkish), None, "outside the menu → None");
+
+        // Too little text — below the detection floor.
+        assert_eq!(detect_source_language("# Laporan\n\nIsi."), None);
     }
 }
 

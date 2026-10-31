@@ -121,6 +121,19 @@ export type DeliverableTranslationMeta = {
 	createdAt: number,
 };
 
+/**
+ *  Response of `deliverable_translations`: the saved translation chips for
+ *  one deliverable text plus the detected language of the source text
+ *  itself. `source_language` is named from the same fixed menu the viewer's
+ *  translate picker carries, so the picker can default to what the content
+ *  already is; `None` = uncertain or outside the menu (picker falls back to
+ *  English).
+ */
+export type DeliverableTranslations = {
+	translations: DeliverableTranslationMeta[],
+	sourceLanguage: string | null,
+};
+
 /**  A stored agent experience (PLAN-personal-context §2.2). */
 export type ExperienceItem = {
 	id: string,

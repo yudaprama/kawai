@@ -19,7 +19,13 @@ import { MarkdownWithCharts } from "@/features/workbench/components/markdown-wit
 import { YoutubeEmbed, type YoutubeEmbedHandle } from "@/features/workbench/components/youtube-embed";
 import { DeckPreview } from "@/features/workbench/components/deck-preview";
 import { slugify } from "@/lib/utils";
-import { call, errText, type DeliverableTranslationMeta, type OfficeFileSummary } from "@/lib/api";
+import {
+  call,
+  errText,
+  type DeliverableTranslationMeta,
+  type DeliverableTranslations,
+  type OfficeFileSummary,
+} from "@/lib/api";
 import { emitOpenPreview } from "@/lib/preview-bridge";
 import {
   AgentReportsSwitcher,
@@ -166,6 +172,10 @@ function DeliverableBody({
 }) {
   const playerRef = useRef<YoutubeEmbedHandle>(null);
   const [language, setLanguage] = useState<string>(TRANSLATE_LANGUAGES[0].value);
+  /** The deliverable's own detected language (backend whatlang) — the
+   *  picker defaults to it, so the trigger names what's actually on screen
+   *  instead of a hardcoded English. Null = uncertain/out of menu. */
+  const [sourceLanguage, setSourceLanguage] = useState<string | null>(null);
   const [translating, setTranslating] = useState(false);
   const [translated, setTranslated] = useState<{ language: string; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -185,8 +195,12 @@ function DeliverableBody({
     // Saved chips are progressive enhancement: a failed list just renders none.
     void (async () => {
       try {
-        const rows = await call<DeliverableTranslationMeta[]>("deliverable_translations", { markdown });
-        if (sourceRef.current === markdown) setSaved(rows);
+        const res = await call<DeliverableTranslations>("deliverable_translations", { markdown });
+        if (sourceRef.current === markdown) {
+          setSaved(res.translations);
+          setSourceLanguage(res.sourceLanguage);
+          setLanguage(res.sourceLanguage ?? TRANSLATE_LANGUAGES[0].value);
+        }
       } catch (err) {
         console.error("[workbench] deliverable_translations:", errText(err));
       }
@@ -223,6 +237,18 @@ function DeliverableBody({
     } finally {
       setTranslating(false);
     }
+  };
+
+  /** One language pick, both toolbars (desktop Select + mobile ⋯ menu).
+   *  The content's own language is already what's on screen — picking it
+   *  shows the original instead of an identity LLM round trip. */
+  const pickLanguage = (lang: string) => {
+    setLanguage(lang);
+    if (lang === sourceLanguage) {
+      setTranslated(null);
+      return;
+    }
+    void runTranslate(lang);
   };
 
   // Copy/Export state — folded in from the old sticky export bar (the bar
@@ -284,14 +310,7 @@ function DeliverableBody({
        * not its controls, is the content). */}
       <div className="hidden flex-wrap items-center justify-between gap-x-3 gap-y-1.5 lg:flex">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Select
-            disabled={translating}
-            onValueChange={(v) => {
-              setLanguage(v);
-              void runTranslate(v);
-            }}
-            value={language}
-          >
+          <Select disabled={translating} onValueChange={pickLanguage} value={language}>
             <SelectTrigger aria-label="Translate the deliverable" className="w-auto gap-1.5" size="sm">
               {translating ? (
                 <Icon name="loader-circle" className="size-3 animate-spin" />
@@ -426,14 +445,7 @@ function DeliverableBody({
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="max-h-72 overflow-y-auto">
                 {TRANSLATE_LANGUAGES.map((l) => (
-                  <DropdownMenuItem
-                    key={l.value}
-                    disabled={translating}
-                    onSelect={() => {
-                      setLanguage(l.value);
-                      void runTranslate(l.value);
-                    }}
-                  >
+                  <DropdownMenuItem key={l.value} disabled={translating} onSelect={() => pickLanguage(l.value)}>
                     {l.label}
                     {saved.some((t) => t.language === l.value) && (
                       <span className="text-muted-foreground font-mono text-[0.625rem]">· saved</span>

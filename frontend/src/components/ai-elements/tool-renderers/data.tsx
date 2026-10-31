@@ -562,3 +562,47 @@ export function renderDataImport(output: unknown): ReactNode {
     </div>
   );
 }
+
+/** data_fetch → { kind:"data", fileId, filename, symbol, interval,
+ *  periodsPerYear, rows, bytes, columns, nextStep } — the stored klines csv,
+ *  same stored-file card language as renderDataImport. Guards on `kind` so a
+ *  foreign payload half-matching the fileId field never renders. Note the
+ *  name field is lowercase `filename` here (data_import emits `fileName`). */
+export function renderDataFetch(output: unknown): ReactNode {
+  const d = parse(output);
+  if (!isRecord(d) || d.kind !== "data" || !str(d.fileId)) return null;
+  const fileId = str(d.fileId) ?? "";
+  const fileName = str(d.filename);
+  const symbol = str(d.symbol) ?? "candles";
+  const interval = str(d.interval);
+  const items: Metric[] = [
+    {
+      label: symbol,
+      value: typeof d.rows === "number" ? `${fmtNum(d.rows)} candles` : "fetched",
+      sub: [
+        interval,
+        typeof d.periodsPerYear === "number" ? `${fmtNum(d.periodsPerYear)} bars/yr` : undefined,
+        typeof d.bytes === "number" ? formatBytes(d.bytes) : undefined,
+      ]
+        .filter(Boolean)
+        .join(" · ") || undefined,
+    },
+  ];
+  return (
+    <div className="not-prose space-y-1.5">
+      <MetricGrid items={items} />
+      <button
+        className="text-primary hover:underline text-xs"
+        onClick={() => emitOpenPreview(fileId, fileName ?? "candles.csv")}
+        type="button"
+      >
+        Preview csv
+      </button>
+      <Footnote>
+        {fileName
+          ? `${fileName} — ready for data_ta / data_query / data_chart.`
+          : "OHLCV history stored — ready for data_ta / data_query / data_chart."}
+      </Footnote>
+    </div>
+  );
+}

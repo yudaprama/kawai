@@ -152,6 +152,9 @@ kawai-email = { path = "../crates/integrations/email" }
 kawai-vault = { path = "../kawai-vault/kawai-vault" }
 kawai-telemetry = { path = "../crates/foundation/telemetry" }
 hex = "0.4"
+# Deliverable source-language detection (translate picker default) — same
+# crate the webread wiki edition + supertonic TTS detection use.
+whatlang = "0.18"
 onboarding = { path = "../crates/engines/onboarding", features = ["webread-backend"] }
 remote-llm = { path = "../crates/foundation/remote-llm" }
 analytics = { path = "../crates/engines/analytics" }

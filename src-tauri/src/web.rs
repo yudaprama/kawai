@@ -539,7 +539,7 @@ struct DeliverableTranslationsReq {
 async fn deliverable_translations_handler(
     Extension(user_id): Extension<String>,
     Json(req): Json<DeliverableTranslationsReq>,
-) -> Result<Json<Vec<logic::DeliverableTranslationMeta>>, (StatusCode, String)> {
+) -> Result<Json<logic::DeliverableTranslations>, (StatusCode, String)> {
     logic::deliverable_translations(&user_id, &req.markdown)
         .await
         .map(Json)

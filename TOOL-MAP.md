@@ -782,7 +782,7 @@ Analytics export & runtime notes:
 | Tool | Output shape | View |
 |---|---|---|
 | `data_export` | `{fileId, filename, format, rows, bytes}` | `FileCreatedView` — stored-file card, click opens the preview |
-| `data_fetch` | `{kind:"data", fileId, filename, symbol, interval, rows, bytes, columns, nextStep}` | `FileCreatedView` — stored-file card, click opens the preview |
+| `data_fetch` | `{kind:"data", fileId, filename, symbol, interval, periodsPerYear, rows, bytes, columns, nextStep}` | `renderDataFetch` — candles card (symbol · rows · interval · bars/yr · size), click opens the csv preview |
 | `deep_write` / `draft_document` / `plan_task` / `plan_revise` / `artifact_recall` | loop-intercepted by the agent engine before dispatch (`subagents.rs`) — never produce step outputs; nothing to register | — |
 | `memory_search` / `memory_graph_search` / `session_step_results` | see Memory/knowledge above (already registered) | — |
 
