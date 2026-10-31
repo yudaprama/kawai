@@ -727,12 +727,6 @@ async fn list_agents_handler() -> Json<Vec<crate::agent_registry::AgentInfo>> {
     Json(crate::agent_registry::builtin().list())
 }
 
-/// Public RPC: Laya router-gate diagnostics (same op as the Tauri
-/// `laya_status` command). Static config — no auth state.
-async fn laya_status_handler() -> Json<serde_json::Value> {
-    Json(crate::logic::laya_status())
-}
-
 /// Public RPC: native MON balance on Monad (same op as the Tauri
 /// `check_monad_balance` command). Request needs `#[serde(rename_all)]` —
 /// Axum `Json<T>` does NOT map camelCase → snake_case like Tauri does.
@@ -2404,7 +2398,6 @@ pub fn router(dist_dir: PathBuf) -> Router {
     let public = Router::new()
         .route("/api/greet", post(greet_handler))
         .route("/api/list_agents", post(list_agents_handler))
-        .route("/api/laya_status", post(laya_status_handler))
         .route("/api/generate_activity", post(generate_activity_handler))
         .route("/api/logout", post(logout_handler))
         .route("/api/check_monad_balance", post(check_monad_balance_handler))

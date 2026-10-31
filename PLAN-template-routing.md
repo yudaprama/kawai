@@ -2,22 +2,9 @@
 
 **Goal**: Sabar multi-step goal不再 selalu bayar 1–6 ronde LLM `plan_task`. Pipeline yang bentuknya sudah diketahui (Stock Research, YouTube Video Analysis, Binance audit, Crypto Screener) diekstrak jadi **template data**, dan goal freeform dicocokkan ke template secara internal — user tidak pernah melihat, tidak pernah memilih, tidak ada satu pun perubahan UI yang terlihat.
 
-**Status**: Fase 1–5 + 7 **IMPLEMENTED** (template registry, deterministic gate live in `plan_task`, `route_log`, `build_registry_for_plan`). Two deviations from the phasing below, both deliberate: route_log landed BEFORE the gate (observability ships with behavior), and **Fase 6 is IMPLEMENTED as LAYER 2** — the keyword gate stays as the precision fast-path (layer 1), and every `plan` decision it makes is re-validated by one small LLM call (`llm_route_resolve`): forced JSON `{template, ticker}` over the closed menu, company names resolved to symbols by the model, then Rust validates registration + universe membership + build before any claim ships. `direct` decisions skip layer 2. Failures/hedges ⇒ planner. Fase 9 (delete the fixed-pipeline commands/forms) is DEAD — the constraint "no user-visible UI change" keeps the forms as the explicit opt-in path.
+**Status**: Fase 1–5 + 7 **IMPLEMENTED** (template registry, deterministic gate live in `plan_task`, `route_log`, `build_registry_for_plan`). Two deviations from the phasing below, both deliberate: route_log landed BEFORE the gate (observability ships with behavior), and **Fase 6 is IMPLEMENTED as LAYER 2** — the keyword gate stays as the precision fast-path (layer 1), and every `plan` decision it makes is re-validated by one small LLM call (`llm_route_resolve`): forced JSON `{template, ticker}` over the closed menu, company names resolved to symbols by the model, then Rust validates registration + universe membership + build before any claim ships. `direct` decisions skip layer 2. Failures/hedges ⇒ planner. Fase 9 (delete the fixed-pipeline commands/forms) …
 
 ---
-
-**Layer 1.5 — Laya fast-claim (shipped)**: between layer 1 and layer 2, an
-on-device zero-shot classifier (`src-tauri/src/laya_router.rs`, model
-litert-community/Laya-Multilingual-LiteRT, assets auto-downloaded on first
-grey-band goal) may fast-claim a registered template in ~250 ms when the
-rule-extracted facts already fill every required slot. Claims pass the same
-build + `enforce_confirmation_policy` machinery and land in `route_log` with
-`source="laya"`; declines/missing slots fall through to layer 2 unchanged.
-Static guards (greeting/question/direct) always run before it — the PoC
-measured the classifier mis-claiming question-shaped goals at 0.96
-confidence. Threshold 0.7; the plan review gate is the real safety net.
-
-## 1. Masalah
 
 Supervisor adalah satu-satunya execution path (`ARCHITECTURE.md:48`). Semua submission lewat `plan_task` → `TaskPlan` tervalidasi → `run_plan_with_cancel`. Dua cara jadi multi-step ada di produk:
 

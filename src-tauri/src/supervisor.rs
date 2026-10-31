@@ -706,8 +706,9 @@ fn static_reply_plan(
 /// composer-routed desk run renders its reports in the user's language
 /// exactly like the fixed-pipeline form does.
 /// Slot values the rule gate's own fact extraction supplies — shared by the
-/// layer-1 claim arm and the Laya fast-claim so both resolve identically
-/// (the universe-matched member, period/venue verbatim, output language).
+/// layer-1 claim arm and the layer-2 resolver claim so both resolve
+/// identically (the universe-matched member, period/venue verbatim, output
+/// language).
 fn facts_slots(
     facts: &kawai_router::GoalFacts,
     universe: Option<&kawai_router::MarketUniverse>,
@@ -779,11 +780,11 @@ pub async fn plan_task(
         }
     }
 
-    // ── Template routing — layer 1, 1.5, 2 (PLAN-template-routing.md §2.5) ─
+    // ── Template routing — layers 1 and 2 (PLAN-template-routing.md §2.5) ──
     //
     // Layer 1 (deterministic, this block): the keyword gate claims goals it
     // is SURE about and skips the planner entirely. Three deliberate
-    // refusals, all falling through to layer 1.5, layer 2 or the planner:
+    // refusals, all falling through to layer 2 or the planner:
     // - Follow-ups whose user-goal carries no complete pipeline spec — a
     //   vague "lanjutkan" has no keyword/period, so the keyword gate
     //   declines it (routing happens on the clean `<user-goal>` text, never
@@ -791,14 +792,6 @@ pub async fn plan_task(
     // - Required slots the goal does not carry — never a user-facing prompt.
     // - `build` errors (a template that cannot build must never fail the
     //   submit).
-    //
-    // Layer 1.5 (between the match and layer 2, `laya_router.rs`): an
-    // on-device zero-shot classifier (~250 ms) that may fast-claim a
-    // registered template on the grey band — only when the rule-extracted
-    // facts already fill every required slot (the classifier cannot extract
-    // one), through the same build + confirmation machinery, logged
-    // route_log source="laya". Assets auto-download on first grey-band goal;
-    // absent ⇒ clean no-op and layer 2 runs unchanged.
     //
     // Layer 2 (below the match): when layer 1's decision is `plan` — the
     // grey band — one small LLM call re-validates the decision with real
@@ -957,113 +950,6 @@ pub async fn plan_task(
                 // Grey band — layer 2 decides below.
                 logged = None;
                 grey_band = true;
-            }
-        }
-
-        // ── Layer 1.5: Laya zero-shot fast claim ───────────────────────────
-        //
-        // On the grey band one ~250 ms on-device forward pass either names a
-        // registered template — short-circuiting the layer-2 LLM resolver
-        // call below — or declines and layer 2 runs exactly as before.
-        // Constraints that keep a fast claim as safe as a resolver claim:
-        // - It can only claim when the rule-extracted facts ALREADY fill
-        //   every required slot (`missing_required`): the classifier names a
-        //   pipeline, it cannot extract a period or a ticker, and a
-        //   default-filled slot would build a plausible-but-wrong plan.
-        // - The claim passes the same `build` + `enforce_confirmation_policy`
-        //   machinery and lands in `route_log` with source="laya".
-        // - Greeting/question/direct goals never reach here (static layers
-        //   run first — the PoC measured Laya mis-claiming questions at 0.96
-        //   confidence; those guards are code, not model).
-        // Optional capability: the assets are NOT bundled — a build without
-        // `~/.kawai/models/laya/multilingual` (or `<app_data>/models/…`)
-        // never loads the gate and this block is a clean no-op.
-        {
-            if !crate::laya_router::assets_ready() {
-                // Assets absent: the gate stays a no-op here. The first-use
-                // download is kicked once at app startup (Tauri shell setup),
-                // NOT per goal — a plan_task/test invocation must never
-                // trigger a 679 MB download.
-            } else {
-                let templates = crate::templates::registry();
-                let gate_goal = goal.to_string();
-                // The gate may NEVER fail the submit: a panic inside the
-                // classifier degrades to "no claim" and layer 2 runs.
-                let laya_claim = match tokio::task::spawn_blocking(move || {
-                    crate::laya_router::claim(&gate_goal, &templates)
-                })
-                .await
-                {
-                    Ok(claim) => claim,
-                    Err(e) => {
-                        tracing::warn!(
-                            component = "supervisor",
-                            error = %e,
-                            "laya gate panicked — skipping to layer 2"
-                        );
-                        None
-                    }
-                };
-                if let Some((template_id, confidence)) = laya_claim {
-                    if let Some(template) = crate::templates::registry().get(&template_id) {
-                        let slots = facts_slots(&facts, universe.as_ref(), language);
-                        let missing = slots.missing_required(template.slots);
-                        if missing.is_empty() {
-                            match (template.build)(&slots) {
-                                Ok(mut plan) => {
-                                    registry.enforce_confirmation_policy(&mut plan);
-                                    plan.template = Some(template.id.to_string());
-                                    let key = plan_key(&plan);
-                                    on_progress(SupervisorEvent::PlanningStarted {});
-                                    tracing::info!(
-                                        component = "supervisor",
-                                        template = template.id,
-                                        confidence = %confidence,
-                                        goal_chars = goal.len(),
-                                        "laya fast claim routed to template — resolver and planner skipped"
-                                    );
-                                    kawai_db::log_route_decision(
-                                        user_id,
-                                        kawai_db::RouteLogEntry {
-                                            session_id,
-                                            plan_key: Some(key.as_str()),
-                                            goal,
-                                            chosen: "template",
-                                            template_id: Some(template.id),
-                                            source: "laya",
-                                            offered: &serde_json::to_string(&decision.offered)
-                                                .unwrap_or_default(),
-                                            matched: &serde_json::to_string(&decision.matched)
-                                                .unwrap_or_default(),
-                                            blocked_by_slots: &serde_json::to_string(
-                                                &decision.blocked_by_slots,
-                                            )
-                                            .unwrap_or_default(),
-                                        },
-                                    )
-                                    .await;
-                                    return Ok((plan, resolver_usage));
-                                }
-                                Err(e) => {
-                                    tracing::warn!(
-                                        component = "supervisor",
-                                        template = template.id,
-                                        error = %e,
-                                        "laya claim build failed — layer 2"
-                                    );
-                                }
-                            }
-                        } else {
-                            tracing::info!(
-                                component = "supervisor",
-                                template = template.id,
-                                confidence = %confidence,
-                                ?missing,
-                                "laya claim missing required slots — layer 2"
-                            );
-                        }
-                    }
-                }
             }
         }
 

@@ -549,37 +549,6 @@ jobs:
           LLVM_PROFILE_FILE: /dev/null
         run: cargo run --example local_llm_smoke --features litert -- ${{ github.workspace }}/smoke-model/gemma-4-E4B-it.litertlm
 
-      # ── Smoke: Laya zero-shot classifier fixture gate (router layer 1.5).
-      #    Validates the Rust host against the shipped 201-row capture:
-      #    exact builder ids/markers + argmax parity vs captured logits.
-      #    679 MB asset set (wfp16 s256 graph, act head, fp16 table,
-      #    tokenizer, calibration), cached between runs.
-      - name: Cache laya fixture
-        id: laya
-        uses: actions/cache@v4
-        with:
-          path: laya-fixture
-          key: laya-multilingual-s256-wfp16-v1
-
-      - name: Download laya fixture
-        if: steps.laya.outputs.cache-hit != 'true'
-        run: |
-          set -euo pipefail
-          base=https://huggingface.co/litert-community/Laya-Multilingual-LiteRT/resolve/main
-          mkdir -p laya-fixture/fixtures
-          for f in laya_ml_s256_embeds_wfp16.tflite laya_ml_act_head_fp32.tflite \
-                   token_embeddings_fp16.bin tokenizer.json tokenizer_config.json \
-                   laya_ml_calibration.json fixtures/gate_rows_s256.json; do
-            curl -fL --retry 3 -o "laya-fixture/$f" "$base/$f"
-          done
-
-      - name: laya_smoke (classifier fixture gate)
-        working-directory: cognee-litert-lm
-        env:
-          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
-          DYLD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
-        run: cargo run --release --example laya_smoke --features laya -- ${{ github.workspace }}/laya-fixture
-
       # ── Smoke 2: hybrid cloud tier. The zai key comes from the compiled
       #    kawai-vault constants (cargo git dep — authenticated via the PAT
       #    rewrite above), so no extra secrets. Data goes to /tmp.
@@ -757,9 +726,9 @@ jobs:
   # ── Linux smokes: platform gate + half the OS-independent partition ─────
   # Separate job so neither half of the old 47-minute linux-smoke crosses the
   # hosted-runner reclaim window. local_llm_smoke validates THIS platform's
-  # bazel-built dylib + engine. The OS-independent smokes are split 5/4 with
-  # macos-smoke (here: remote, binance, monad_wallet; macos: laya, draft,
-  # planner, analytics) — the old duplicated set burned the job budget (run
+  # bazel-built dylib + engine. The OS-independent smokes are split 4/3 with
+  # macos-smoke (here: remote, binance, monad_wallet; macos: draft, planner,
+  # analytics) — the old duplicated set burned the job budget (run
   # 40443508677, 2026-10-27). Dylibs come from linux-build's save-always
   # cache.
   linux-smokes:
@@ -856,7 +825,7 @@ jobs:
 
       # The OS-independent smokes are PARTITIONED across macos-smoke and this
       # job (each runs exactly once per push): this job carries remote +
-      # binance + monad_wallet; macos-smoke carries laya + draft + planner +
+      # binance + monad_wallet; macos-smoke carries draft + planner +
       # analytics. Duplicating all of them here burned the job budget (the
       # 2026-10-27 timeout kill).
       - name: remote_smoke (cloud streaming + usage)
