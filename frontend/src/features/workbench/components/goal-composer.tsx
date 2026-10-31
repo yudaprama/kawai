@@ -11,6 +11,9 @@ export interface GoalComposerProps {
    *  (PromptInput clears only on resolution). */
   onSubmit: (text: string, fileIds?: string[]) => void | Promise<void>;
   placeholder?: string;
+  /** Compact footprint (one-row textarea start, tighter paddings) — the
+   *  rail + phone placements; the landing hero keeps the roomy default. */
+  compact?: boolean;
 }
 
 /** Goal composer — the single composer region (bottom of the progress rail
@@ -27,6 +30,7 @@ export function GoalComposer({
   onImageToKnowledge,
   onSubmit,
   placeholder,
+  compact = false,
 }: GoalComposerProps) {
   const { supervisor, attachedFiles, removeAttachedFile } = workbench;
   const composerStatus: "submitted" | "ready" = ["running", "stopping", "awaitingConfirmation"].includes(
@@ -41,6 +45,7 @@ export function GoalComposer({
       <ChatComposer
         agentName="Workbench"
         chipDraft={chipDraft}
+        compact={compact}
         lastUserText={workbench.lastUserText}
         onAddFiles={onAddFiles}
         onAddLink={onAddLink}

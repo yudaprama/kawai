@@ -21,7 +21,11 @@ import { DeckPreview } from "@/features/workbench/components/deck-preview";
 import { slugify } from "@/lib/utils";
 import { call, errText, type DeliverableTranslationMeta, type OfficeFileSummary } from "@/lib/api";
 import { emitOpenPreview } from "@/lib/preview-bridge";
-import { AgentReportsSwitcher, StepReportBody } from "@/features/workbench/components/shared-canvas";
+import {
+  AgentReportsSwitcher,
+  ScrollToBottomButton,
+  StepReportBody,
+} from "@/features/workbench/components/shared-canvas";
 import {
   agentName,
   DELIVERABLE_STEP_ID,
@@ -278,7 +282,7 @@ function DeliverableBody({
        * and the outcome renders as a plain line. Mobile hides this row: the
        * same actions collapse into the ⋯ menu below (on a phone the document,
        * not its controls, is the content). */}
-      <div className="hidden flex-wrap items-center justify-between gap-x-3 gap-y-1.5 sm:flex">
+      <div className="hidden flex-wrap items-center justify-between gap-x-3 gap-y-1.5 lg:flex">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Select
             disabled={translating}
@@ -384,9 +388,12 @@ function DeliverableBody({
           </div>
         )}
       </div>
-      {/* Mobile: the desktop toolbar's actions collapse into one ⋯ menu —
-          the document, not its controls, is the content on a phone. */}
-      <div className="flex items-center justify-end gap-2 sm:hidden">
+      {/* ⋯ menu through <lg (phones AND tablets): the desktop toolbar's actions
+          collapse into one menu — the document, not its controls, is the
+          content — and the full toolbar would scroll under the sticky report
+          switcher, clipping its buttons mid-scroll. The menu keeps every
+          action reachable at any scroll position. */}
+      <div className="flex items-center justify-end gap-2 lg:hidden">
         {shownLanguage != null && (
           <span className="text-muted-foreground flex min-w-0 items-center gap-2 font-mono text-[0.6875rem]">
             <span className="truncate">Showing {shownLanguage}</span>
@@ -483,7 +490,14 @@ function DeliverableBody({
 
       {/* Generated text sits flat on the canvas background — no card border
           or tinted surface (the ChatGPT/Gemini reading pattern). */}
-      <div aria-busy={translating} className={translating ? "opacity-60 transition-opacity" : ""}>
+      {/* Mobile type scale: 15px base + table cells on <lg — the 14px canvas
+          default reads dense on a phone; lg+ keeps the desktop sizes. */}
+      <div
+        aria-busy={translating}
+        className={`max-lg:text-[0.9375rem] [&_[data-streamdown=table-cell]]:max-lg:px-3 [&_[data-streamdown=table-cell]]:max-lg:text-[0.9375rem] [&_[data-streamdown=table-header-cell]]:max-lg:px-3 [&_[data-streamdown=table-header-cell]]:max-lg:text-[0.9375rem] ${
+          translating ? "opacity-60 transition-opacity" : ""
+        }`}
+      >
         <MarkdownWithCharts videoId={videoId} onSeek={(s) => playerRef.current?.seek(s)}>
           {shown}
         </MarkdownWithCharts>
@@ -563,142 +577,145 @@ export function PastRunCanvas({
   const scrollRef = useScrollMemory(doc);
   const [errorCopied, setErrorCopied] = useState(false);
   return (
-    <div className="h-full overflow-y-auto" key={run.id} ref={scrollRef}>
-      <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 sm:space-y-6 sm:p-6">
-        <div>
-          <h3 className="text-foreground inline-flex items-center gap-2 text-lg sm:text-xl font-semibold">
-            <Icon name="zap" className="text-primary size-5" />
-            {goalLabel || "Working…"}
-            {!isDeliverable && docStep != null && (
-              <span className="text-muted-foreground text-sm font-normal">— {docStepLabel} report</span>
-            )}
-          </h3>
-          <div className="text-muted-foreground mt-1 flex items-center gap-3 font-mono text-sm">
-            <span className="hidden sm:inline">
-              {fmtDateUS(run.startedAt)}
-              {run.stepsTotal != null && ` · ${run.stepsDone ?? 0}/${run.stepsTotal} steps`}
-            </span>
-            {onBuildOn != null && run.status === "completed" && run.outputFull != null && run.planKey != null && (
-              <button
-                className="hit-44 hover:text-primary inline-flex items-center gap-1 px-1 font-mono text-[0.6875rem] hover:underline"
-                onClick={() => onBuildOn(run)}
-                title={`Arm “${goalLabel}” as the follow-up context`}
-                type="button"
-              >
-                <Icon name="corner-down-right" className="size-3" />
-                build on this
-              </button>
-            )}
+    <div className="relative h-full">
+      <div className="h-full overflow-y-auto" key={run.id} ref={scrollRef}>
+        <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 sm:space-y-6 sm:p-6">
+          <div>
+            <h3 className="text-foreground inline-flex items-center gap-2 text-lg sm:text-xl font-semibold">
+              <Icon name="zap" className="text-primary size-5" />
+              {goalLabel || "Working…"}
+              {!isDeliverable && docStep != null && (
+                <span className="text-muted-foreground text-sm font-normal">— {docStepLabel} report</span>
+              )}
+            </h3>
+            <div className="text-muted-foreground mt-1 flex items-center gap-3 font-mono text-sm">
+              <span className="hidden sm:inline">
+                {fmtDateUS(run.startedAt)}
+                {run.stepsTotal != null && ` · ${run.stepsDone ?? 0}/${run.stepsTotal} steps`}
+              </span>
+              {onBuildOn != null && run.status === "completed" && run.outputFull != null && run.planKey != null && (
+                <button
+                  className="hit-44 hover:text-primary inline-flex items-center gap-1 px-1 font-mono text-[0.6875rem] hover:underline"
+                  onClick={() => onBuildOn(run)}
+                  title={`Arm “${goalLabel}” as the follow-up context`}
+                  type="button"
+                >
+                  <Icon name="corner-down-right" className="size-3" />
+                  build on this
+                </button>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Sticky document nav — the deliverable ↔ report picker stays
+          {/* Sticky document nav — the deliverable ↔ report picker stays
             reachable while reading instead of sitting below a long document.
             The rail's "see report" links stay a second path. */}
-        {onPickDoc != null && (run.steps ?? []).length > 0 && (
-          <div className="sticky top-0 z-10 -mx-4 border-b border-border/60 bg-background px-4 py-2 sm:-mx-6">
-            <AgentReportsSwitcher
-              activeDoc={doc}
-              hasDeliverable={run.status === "running" || (run.status === "completed" && run.outputFull != null)}
-              onPickDoc={onPickDoc}
-              reports={(run.steps ?? [])
-                .filter(
-                  (s) =>
-                    // Record steps are the persisted shape (optional fields) —
-                    // match the reserved writer step by id/tool instead of
-                    // isDeliverableStep (which needs the live SupervisorStep).
-                    s.stepId !== DELIVERABLE_STEP_ID &&
-                    s.tool !== DELIVERABLE_TOOL &&
-                    (s.state === "completed" || s.state === "failed") &&
-                    (s.output != null || s.error != null),
-                )
-                .map((s) => ({ label: (s.task || s.tool || s.stepId).trim(), stepId: s.stepId }))}
-            />
-          </div>
-        )}
+          {onPickDoc != null && (run.steps ?? []).length > 0 && (
+            <div className="sticky top-0 z-10 -mx-4 border-b border-border/60 bg-background px-4 py-2 sm:-mx-6">
+              <AgentReportsSwitcher
+                activeDoc={doc}
+                hasDeliverable={run.status === "running" || (run.status === "completed" && run.outputFull != null)}
+                onPickDoc={onPickDoc}
+                reports={(run.steps ?? [])
+                  .filter(
+                    (s) =>
+                      // Record steps are the persisted shape (optional fields) —
+                      // match the reserved writer step by id/tool instead of
+                      // isDeliverableStep (which needs the live SupervisorStep).
+                      s.stepId !== DELIVERABLE_STEP_ID &&
+                      s.tool !== DELIVERABLE_TOOL &&
+                      (s.state === "completed" || s.state === "failed") &&
+                      (s.output != null || s.error != null),
+                  )
+                  .map((s) => ({ label: (s.task || s.tool || s.stepId).trim(), stepId: s.stepId }))}
+              />
+            </div>
+          )}
 
-        {isDeliverable ? (
-          run.status === "failed" && run.error != null ? (
-            // Failure visibility: a failed run never produced a deliverable —
-            // and its outputPreview is just the error's first 200 chars, which
-            // must not render AS the deliverable body.
-            <div className="border-destructive/40 bg-card rounded-lg border p-6">
-              <div className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">Run failed</div>
-              <p className="text-muted-foreground mt-2 font-mono text-xs leading-relaxed break-words">{run.error}</p>
-              {/* A past run can't resume — the copy gives the error a path
+          {isDeliverable ? (
+            run.status === "failed" && run.error != null ? (
+              // Failure visibility: a failed run never produced a deliverable —
+              // and its outputPreview is just the error's first 200 chars, which
+              // must not render AS the deliverable body.
+              <div className="border-destructive/40 bg-card rounded-lg border p-6">
+                <div className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">Run failed</div>
+                <p className="text-muted-foreground mt-2 font-mono text-xs leading-relaxed break-words">{run.error}</p>
+                {/* A past run can't resume — the copy gives the error a path
                   out of the app (bug report) instead of a dead end. */}
-              <Button
-                className="mt-3"
-                onClick={() => {
-                  void navigator.clipboard.writeText(run.error ?? "").then(
-                    () => setErrorCopied(true),
-                    () => {},
-                  );
-                }}
-                size="sm"
-                variant="outline"
-              >
-                <Icon name={errorCopied ? "check" : "copy"} className="size-3" />
-                {errorCopied ? "Copied" : "Copy error"}
-              </Button>
+                <Button
+                  className="mt-3"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(run.error ?? "").then(
+                      () => setErrorCopied(true),
+                      () => {},
+                    );
+                  }}
+                  size="sm"
+                  variant="outline"
+                >
+                  <Icon name={errorCopied ? "check" : "copy"} className="size-3" />
+                  {errorCopied ? "Copied" : "Copy error"}
+                </Button>
+              </div>
+            ) : deliverableBody ? (
+              <DeliverableBody
+                goal={run.goal}
+                markdown={deliverableBody}
+                sessionId={sessionId}
+                showExport={run.status === "completed" && run.outputFull != null}
+                videoId={run.videoId}
+              />
+            ) : (
+              <div className="text-muted-foreground rounded-lg border border-dashed p-8 text-center font-mono text-sm">
+                No deliverable was produced.
+              </div>
+            )
+          ) : docStep?.state === "failed" && docStep.error != null && docStep.output == null ? (
+            <div className="border-destructive/40 bg-card rounded-lg border p-4">
+              <div className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">Step failed</div>
+              <p className="text-muted-foreground mt-1.5 font-mono text-xs leading-relaxed break-words">
+                {docStep.error}
+              </p>
             </div>
-          ) : deliverableBody ? (
-            <DeliverableBody
-              goal={run.goal}
-              markdown={deliverableBody}
-              sessionId={sessionId}
-              showExport={run.status === "completed" && run.outputFull != null}
-              videoId={run.videoId}
-            />
           ) : (
-            <div className="text-muted-foreground rounded-lg border border-dashed p-8 text-center font-mono text-sm">
-              No deliverable was produced.
-            </div>
-          )
-        ) : docStep?.state === "failed" && docStep.error != null && docStep.output == null ? (
-          <div className="border-destructive/40 bg-card rounded-lg border p-4">
-            <div className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">Step failed</div>
-            <p className="text-muted-foreground mt-1.5 font-mono text-xs leading-relaxed break-words">
-              {docStep.error}
-            </p>
-          </div>
-        ) : (
-          <StepReportBody
-            fetcher={loadFullOutput}
-            // Always fetch the full body — same as the live canvas, so a
-            // restored report matches what the run showed. Runs with a
-            // planKey read their own plan's rows; legacy records without one
-            // pass "" which hits supervisor::step_output's session-scope
-            // fallback (newest rows for that step id, still user-scoped —
-            // a same-id step from a NEWER run can win). On failure the
-            // ≤2000-char record embed stays visible.
-            needsFetch
-            planKey={run.planKey ?? ""}
-            previewOutput={docStep?.output ?? ""}
-            stepId={doc}
-            tool={stepTool}
-            onAsk={onAsk ? (stepId, question) => onAsk(stepId, question, run.planKey ?? "") : undefined}
-          />
-        )}
+            <StepReportBody
+              fetcher={loadFullOutput}
+              // Always fetch the full body — same as the live canvas, so a
+              // restored report matches what the run showed. Runs with a
+              // planKey read their own plan's rows; legacy records without one
+              // pass "" which hits supervisor::step_output's session-scope
+              // fallback (newest rows for that step id, still user-scoped —
+              // a same-id step from a NEWER run can win). On failure the
+              // ≤2000-char record embed stays visible.
+              needsFetch
+              planKey={run.planKey ?? ""}
+              previewOutput={docStep?.output ?? ""}
+              stepId={doc}
+              tool={stepTool}
+              onAsk={onAsk ? (stepId, question) => onAsk(stepId, question, run.planKey ?? "") : undefined}
+            />
+          )}
 
-        {/* Post-audit placement offer: the audit proposed, the user approves
+          {/* Post-audit placement offer: the audit proposed, the user approves
             here. Renders under the report of a COMPLETED audit run only. */}
-        {isDeliverable && run.status === "completed" && pastAuditStep != null && (
-          <BinanceAuditOffer
-            fetcher={loadFullOutput}
-            planKey={run.planKey ?? ""}
-            sessionId={sessionId}
-            stepId={pastAuditStep.stepId}
-            venue={pastAuditStep.venue}
-          />
-        )}
-        {/* Post-screener entry offer: the run's own hits, opened only where
+          {isDeliverable && run.status === "completed" && pastAuditStep != null && (
+            <BinanceAuditOffer
+              fetcher={loadFullOutput}
+              planKey={run.planKey ?? ""}
+              sessionId={sessionId}
+              stepId={pastAuditStep.stepId}
+              venue={pastAuditStep.venue}
+            />
+          )}
+          {/* Post-screener entry offer: the run's own hits, opened only where
             the user approves. Sits beside the audit's offer — a run is one
             or the other, never both. */}
-        {isDeliverable && run.status === "completed" && pastAuditStep == null && pastScreenerStepIds.length > 0 && (
-          <CryptoScreenerOffer fetcher={loadFullOutput} planKey={run.planKey ?? ""} stepIds={pastScreenerStepIds} />
-        )}
+          {isDeliverable && run.status === "completed" && pastAuditStep == null && pastScreenerStepIds.length > 0 && (
+            <CryptoScreenerOffer fetcher={loadFullOutput} planKey={run.planKey ?? ""} stepIds={pastScreenerStepIds} />
+          )}
+        </div>
       </div>
+      <ScrollToBottomButton containerRef={scrollRef} watchKey={run.id} />
     </div>
   );
 }
@@ -986,188 +1003,193 @@ export function DeliverableViewer({
             : "Running";
 
   return (
-    <div className="h-full overflow-y-auto" key={runIndex} ref={scrollRef}>
-      <div aria-live="polite" className="sr-only" role="status">
-        {phaseAnnouncement}
-      </div>
-      <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 sm:space-y-6 sm:p-6">
-        <div>
-          <h3
-            className="text-foreground flex items-start gap-2 text-lg sm:text-xl font-semibold"
-            title={headerGoal ?? undefined}
-          >
-            <span className="line-clamp-2">{headerGoal ?? "Working…"}</span>
-          </h3>
-          {effective !== "final" && resolvedStep != null && (
-            <div className="text-muted-foreground mt-1 font-mono text-xs">Agent report · {agentName(resolvedStep)}</div>
-          )}
-          {/* Desktop-only: progress + duration. On a phone the progress
+    <div className="relative h-full">
+      <div className="h-full overflow-y-auto" key={runIndex} ref={scrollRef}>
+        <div aria-live="polite" className="sr-only" role="status">
+          {phaseAnnouncement}
+        </div>
+        <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 sm:space-y-6 sm:p-6">
+          <div>
+            <h3
+              className="text-foreground flex items-start gap-2 text-lg sm:text-xl font-semibold"
+              title={headerGoal ?? undefined}
+            >
+              <span className="line-clamp-2">{headerGoal ?? "Working…"}</span>
+            </h3>
+            {effective !== "final" && resolvedStep != null && (
+              <div className="text-muted-foreground mt-1 font-mono text-xs">
+                Agent report · {agentName(resolvedStep)}
+              </div>
+            )}
+            {/* Desktop-only: progress + duration. On a phone the progress
               drawer and the in-flight strip carry the same facts — a second
               mono line here is reading-view noise. */}
-          <div className="text-muted-foreground mt-1 hidden font-mono text-sm sm:block">
-            {unseeded ? (
-              supervisor.status === "reviewing" ? (
-                <>
-                  plan ready
-                  {runRecord?.startedAt != null && ` · ${fmtDuration(runRecord.startedAt)}`}
-                </>
+            <div className="text-muted-foreground mt-1 hidden font-mono text-sm sm:block">
+              {unseeded ? (
+                supervisor.status === "reviewing" ? (
+                  <>
+                    plan ready
+                    {runRecord?.startedAt != null && ` · ${fmtDuration(runRecord.startedAt)}`}
+                  </>
+                ) : (
+                  <>
+                    planning…
+                    {runRecord?.startedAt != null && ` · ${fmtDuration(runRecord.startedAt)}`}
+                  </>
+                )
               ) : (
                 <>
-                  planning…
-                  {runRecord?.startedAt != null && ` · ${fmtDuration(runRecord.startedAt)}`}
+                  {done}/{supervisor.steps.length} steps
+                  {supervisor.planStartedAt != null &&
+                    ` · ${fmtDuration(supervisor.planStartedAt, supervisor.planCompletedAt ?? undefined)}`}
                 </>
-              )
-            ) : (
-              <>
-                {done}/{supervisor.steps.length} steps
-                {supervisor.planStartedAt != null &&
-                  ` · ${fmtDuration(supervisor.planStartedAt, supervisor.planCompletedAt ?? undefined)}`}
-              </>
-            )}
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Sticky document nav — the deliverable ↔ report picker stays
+          {/* Sticky document nav — the deliverable ↔ report picker stays
             reachable while reading instead of sitting below a long document.
             Hidden while planning (no reports yet) and when navigation isn't
             wired; the rail's "see report" links stay a second path. */}
-        {onPickDoc != null && reports.length > 0 && (
-          <div className="sticky top-0 z-10 -mx-4 border-b border-border/60 bg-background px-4 py-2 sm:-mx-6">
-            <AgentReportsSwitcher
-              activeDoc={effective}
-              hasDeliverable={effective === "final" || inFlightNow}
-              onPickDoc={onPickDoc}
-              reports={reports.map((r) => ({ label: agentName(r), stepId: r.stepId }))}
-            />
-          </div>
-        )}
+          {onPickDoc != null && reports.length > 0 && (
+            <div className="sticky top-0 z-10 -mx-4 border-b border-border/60 bg-background px-4 py-2 sm:-mx-6">
+              <AgentReportsSwitcher
+                activeDoc={effective}
+                hasDeliverable={effective === "final" || inFlightNow}
+                onPickDoc={onPickDoc}
+                reports={reports.map((r) => ({ label: agentName(r), stepId: r.stepId }))}
+              />
+            </div>
+          )}
 
-        {/* In-flight status strip: planning, execution, writer, approval gate,
+          {/* In-flight status strip: planning, execution, writer, approval gate,
             stop — never a blank pane between submit and the deliverable. */}
-        {stripVisible && (
-          <RunStatusStrip
-            startedAt={runRecord?.startedAt ?? null}
-            unseeded={unseeded === true}
-            workbench={workbench}
-            discardArmed={discardArmed}
-            setDiscardArmed={setDiscardArmed}
-          />
-        )}
+          {stripVisible && (
+            <RunStatusStrip
+              startedAt={runRecord?.startedAt ?? null}
+              unseeded={unseeded === true}
+              workbench={workbench}
+              discardArmed={discardArmed}
+              setDiscardArmed={setDiscardArmed}
+            />
+          )}
 
-        {supervisor.status === "idle" && supervisor.planning == null && (
-          <div className="text-muted-foreground rounded-lg border border-dashed p-8 text-center font-mono text-sm">
-            {EMPTY_RUNS_HINT}
-          </div>
-        )}
+          {supervisor.status === "idle" && supervisor.planning == null && (
+            <div className="text-muted-foreground rounded-lg border border-dashed p-8 text-center font-mono text-sm">
+              {EMPTY_RUNS_HINT}
+            </div>
+          )}
 
-        {/* Failure visibility: a failed run says WHY on the canvas — and the
+          {/* Failure visibility: a failed run says WHY on the canvas — and the
             recovery actions are reachable where the failure is read, not
             only in the rail (mirrors the rail's failed-state buttons). */}
-        {effective === "final" && !unseeded && supervisor.status === "failed" && supervisor.finalOutput == null && (
-          <div className="border-destructive/40 bg-card rounded-lg border p-6">
-            <div className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">Run failed</div>
-            <p className="text-muted-foreground mt-2 font-mono text-xs leading-relaxed break-words">
-              {supervisor.error ?? "The run ended before a deliverable was written."}
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {supervisor.steps.some((s) => s.state === "completed") && (
-                <Button onClick={workbench.supervisor.resume} size="sm" variant="outline">
-                  <Icon name="play" className="size-3" />
-                  Resume
-                </Button>
-              )}
-              {onNewGoal != null && (
-                <Button onClick={onNewGoal} size="sm" variant="outline">
-                  <Icon name="plus" className="size-3" />
-                  New goal
-                </Button>
-              )}
+          {effective === "final" && !unseeded && supervisor.status === "failed" && supervisor.finalOutput == null && (
+            <div className="border-destructive/40 bg-card rounded-lg border p-6">
+              <div className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">Run failed</div>
+              <p className="text-muted-foreground mt-2 font-mono text-xs leading-relaxed break-words">
+                {supervisor.error ?? "The run ended before a deliverable was written."}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {supervisor.steps.some((s) => s.state === "completed") && (
+                  <Button onClick={workbench.supervisor.resume} size="sm" variant="outline">
+                    <Icon name="play" className="size-3" />
+                    Resume
+                  </Button>
+                )}
+                {onNewGoal != null && (
+                  <Button onClick={onNewGoal} size="sm" variant="outline">
+                    <Icon name="plus" className="size-3" />
+                    New goal
+                  </Button>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Planning progress lives in the sidebar rail (PlanningStatus inside
+          {/* Planning progress lives in the sidebar rail (PlanningStatus inside
             ProgressRail). The canvas keeps showing the previous run's content
             until the new run's first content lands (canvas policy). */}
 
-        {/* Deck hero: on the final view AND on the deck_writer step report
+          {/* Deck hero: on the final view AND on the deck_writer step report
             (the report the user lands on via "see report") — both otherwise
             show only the note text without the slides. */}
-        {!unseeded && workbench.deck != null && (effective === "final" || effective === "__deliverable") && (
-          <div className="space-y-1">
-            <div className="text-muted-foreground flex items-center gap-2 font-mono text-[0.6875rem] uppercase">
-              <Icon name="zap" className="size-3" /> Deck · {workbench.deck.label ?? "presentation"}
-            </div>
-            {/* Native slide preview — plain DOM fragments + theme CSS (a few
+          {!unseeded && workbench.deck != null && (effective === "final" || effective === "__deliverable") && (
+            <div className="space-y-1">
+              <div className="text-muted-foreground flex items-center gap-2 font-mono text-[0.6875rem] uppercase">
+                <Icon name="zap" className="size-3" /> Deck · {workbench.deck.label ?? "presentation"}
+              </div>
+              {/* Native slide preview — plain DOM fragments + theme CSS (a few
                   KB per slide). The full reveal.js deck opens in the browser via
                   "Open full deck" inside the preview; no iframe in the app. */}
-            <DeckPreview fileId={workbench.deck.handle} />
-          </div>
-        )}
-        {effective === "final" && !unseeded && supervisor.finalOutput != null && (
-          <DeliverableBody
-            goal={supervisor.goal ?? "deliverable"}
-            markdown={supervisor.finalOutput}
-            sessionId={workbench.sessionId}
-            showExport={supervisor.status === "completed"}
-            videoId={supervisor.videoId ?? runRecord?.videoId ?? null}
-          />
-        )}
-        {/* Post-audit placement offer: the audit proposed, the user approves
-            here — one click each for stops and take-profits, confirmed before
-            anything is sent. Renders only under a COMPLETED audit run. */}
-        {effective === "final" && !unseeded && supervisor.status === "completed" && liveAuditStep != null && (
-          <BinanceAuditOffer
-            fetcher={workbench.loadFullOutput}
-            planKey={runRecord?.planKey ?? supervisor.planKey ?? ""}
-            sessionId={workbench.sessionId}
-            stepId={liveAuditStep.stepId}
-            venue={liveAuditStep.venue}
-          />
-        )}
-        {/* Post-screener entry offer: the run's own hits, opened only where
-            the user approves. A run is an audit or a screener, never both. */}
-        {effective === "final" &&
-          !unseeded &&
-          supervisor.status === "completed" &&
-          liveAuditStep == null &&
-          liveScreenerStepIds.length > 0 && (
-            <CryptoScreenerOffer
-              fetcher={workbench.loadFullOutput}
-              planKey={runRecord?.planKey ?? supervisor.planKey ?? ""}
-              stepIds={liveScreenerStepIds}
-            />
-          )}
-        {/* Failed step with no output: show its WHY instead of an empty body
-            (the rail's "see report" now opens something meaningful). */}
-        {effective !== "final" &&
-          resolvedStep != null &&
-          resolvedStep.state === "failed" &&
-          output == null &&
-          resolvedStep.error != null && (
-            <div className="border-destructive/40 bg-card rounded-lg border p-4">
-              <div className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">Step failed</div>
-              <p className="text-muted-foreground mt-1.5 font-mono text-xs leading-relaxed break-words">
-                {resolvedStep.error}
-              </p>
+              <DeckPreview fileId={workbench.deck.handle} />
             </div>
           )}
-        {effective !== "final" && resolvedStep != null && output != null && resolvedStep.tool !== "deck_writer" && (
-          <StepReportBody
-            fetcher={workbench.loadFullOutput}
-            needsFetch
-            // The shown run's OWN planKey — supervisor.planKey is the ACTIVE
-            // run's key and is null/stale once the session is reopened.
-            // Legacy records without a planKey pass "" (session-scope read).
-            planKey={runRecord?.planKey ?? supervisor.planKey ?? ""}
-            cacheKey={runRecord?.id ?? "live"}
-            previewOutput={output}
-            stepId={resolvedStep.stepId}
-            tool={resolvedStep.tool}
-            onAsk={workbench.askAboutResult}
-          />
-        )}
+          {effective === "final" && !unseeded && supervisor.finalOutput != null && (
+            <DeliverableBody
+              goal={supervisor.goal ?? "deliverable"}
+              markdown={supervisor.finalOutput}
+              sessionId={workbench.sessionId}
+              showExport={supervisor.status === "completed"}
+              videoId={supervisor.videoId ?? runRecord?.videoId ?? null}
+            />
+          )}
+          {/* Post-audit placement offer: the audit proposed, the user approves
+            here — one click each for stops and take-profits, confirmed before
+            anything is sent. Renders only under a COMPLETED audit run. */}
+          {effective === "final" && !unseeded && supervisor.status === "completed" && liveAuditStep != null && (
+            <BinanceAuditOffer
+              fetcher={workbench.loadFullOutput}
+              planKey={runRecord?.planKey ?? supervisor.planKey ?? ""}
+              sessionId={workbench.sessionId}
+              stepId={liveAuditStep.stepId}
+              venue={liveAuditStep.venue}
+            />
+          )}
+          {/* Post-screener entry offer: the run's own hits, opened only where
+            the user approves. A run is an audit or a screener, never both. */}
+          {effective === "final" &&
+            !unseeded &&
+            supervisor.status === "completed" &&
+            liveAuditStep == null &&
+            liveScreenerStepIds.length > 0 && (
+              <CryptoScreenerOffer
+                fetcher={workbench.loadFullOutput}
+                planKey={runRecord?.planKey ?? supervisor.planKey ?? ""}
+                stepIds={liveScreenerStepIds}
+              />
+            )}
+          {/* Failed step with no output: show its WHY instead of an empty body
+            (the rail's "see report" now opens something meaningful). */}
+          {effective !== "final" &&
+            resolvedStep != null &&
+            resolvedStep.state === "failed" &&
+            output == null &&
+            resolvedStep.error != null && (
+              <div className="border-destructive/40 bg-card rounded-lg border p-4">
+                <div className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">Step failed</div>
+                <p className="text-muted-foreground mt-1.5 font-mono text-xs leading-relaxed break-words">
+                  {resolvedStep.error}
+                </p>
+              </div>
+            )}
+          {effective !== "final" && resolvedStep != null && output != null && resolvedStep.tool !== "deck_writer" && (
+            <StepReportBody
+              fetcher={workbench.loadFullOutput}
+              needsFetch
+              // The shown run's OWN planKey — supervisor.planKey is the ACTIVE
+              // run's key and is null/stale once the session is reopened.
+              // Legacy records without a planKey pass "" (session-scope read).
+              planKey={runRecord?.planKey ?? supervisor.planKey ?? ""}
+              cacheKey={runRecord?.id ?? "live"}
+              previewOutput={output}
+              stepId={resolvedStep.stepId}
+              tool={resolvedStep.tool}
+              onAsk={workbench.askAboutResult}
+            />
+          )}
+        </div>
       </div>
+      <ScrollToBottomButton containerRef={scrollRef} watchKey={runIndex} />
     </div>
   );
 }

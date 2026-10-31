@@ -47,6 +47,9 @@ type ChatComposerProps = {
   onDraftConsumed?: () => void;
   /** Disabled state — true when generation is in progress. */
   disabled?: boolean;
+  /** Compact footprint (workbench rail + phone placements): one-row textarea
+   *  start, tighter paddings. The landing hero keeps the roomy default. */
+  compact?: boolean;
   /** Supervisor plan mode: submits route to the planner instead of the agent. */
   attachedFiles?: KnowledgeFileInfo[];
   onRemoveAttachedFile?: (file: KnowledgeFileInfo) => void;
@@ -67,12 +70,14 @@ export function ChatComposer({
   onDraftConsumed,
   placeholder,
   disabled,
+  compact,
 }: ChatComposerProps) {
   return (
     <PromptInputProvider>
       <ChatComposerInner
         agentName={agentName}
         chipDraft={chipDraft}
+        compact={compact}
         disabled={disabled}
         onDraftConsumed={onDraftConsumed}
         placeholder={placeholder}
@@ -105,6 +110,7 @@ function ChatComposerInner({
   onDraftConsumed,
   placeholder,
   disabled,
+  compact,
 }: ChatComposerProps) {
   const { t } = useI18n();
   const controller = usePromptInputController();
@@ -293,7 +299,9 @@ function ChatComposerInner({
 
   return (
     <PromptInput
-      className="mx-auto max-w-2xl [&_[data-slot=input-group]]:flex-col [&_[data-slot=input-group]]:items-stretch [&_[data-slot=input-group]]:gap-1 [&_[data-slot=input-group]]:overflow-visible [&_[data-slot=input-group]]:rounded-3xl [&_[data-slot=input-group]]:px-2 [&_[data-slot=input-group]]:py-1.5"
+      className={`mx-auto max-w-2xl [&_[data-slot=input-group]]:flex-col [&_[data-slot=input-group]]:items-stretch [&_[data-slot=input-group]]:gap-1 [&_[data-slot=input-group]]:overflow-visible [&_[data-slot=input-group]]:rounded-3xl [&_[data-slot=input-group]]:px-2 ${
+        compact ? "[&_[data-slot=input-group]]:py-1" : "[&_[data-slot=input-group]]:py-1.5"
+      }`}
       onSubmit={handleSubmit}
     >
       {attachedFiles && <AttachedFilesChips files={attachedFiles} onRemove={onRemoveAttachedFile} />}
@@ -342,7 +350,17 @@ function ChatComposerInner({
           }
           onChange={handleComposerChange}
           onKeyDown={handleTextareaKeyDown}
-          className={recallFlash ? "ring-2 ring-primary/50 rounded transition-all duration-300" : undefined}
+          className={
+            [
+              // Compact (rail + phone): start at one row — the pill footprint
+              // — grow with content up to a cap; 16px input text below lg
+              // keeps mobile typing comfortable.
+              compact ? "min-h-9 max-h-48 py-2 max-lg:text-base" : undefined,
+              recallFlash ? "ring-2 ring-primary/50 rounded transition-all duration-300" : undefined,
+            ]
+              .filter(Boolean)
+              .join(" ") || undefined
+          }
         />
       </PromptInputBody>
       <PromptInputFooter>

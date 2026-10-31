@@ -730,6 +730,7 @@ export function WorkbenchPage({
       <ComposerQuoteBadge workbench={workbench} />
       <GoalComposer
         chipDraft={chipDraft}
+        compact
         workbench={workbench}
         onAddFiles={handleAddFiles}
         onAddLink={onAddLink}
@@ -821,17 +822,29 @@ export function WorkbenchPage({
               <Icon name="menu" className="size-4" />
             </button>
           )}
+          {/* Icon-only below lg: this row's width belongs to the run switcher —
+              one chrome row funds content, not labels. */}
           <button
             type="button"
             aria-label={t("workbench.progressRail.openProgress")}
-            title="Progress"
+            title={t("workbench.progressRail.openProgress")}
             onClick={() => setMobileRail(true)}
-            className="text-muted-foreground hover:text-foreground hit-44 inline-flex items-center gap-1 rounded-lg px-2 py-1.5 transition-colors"
+            className="text-muted-foreground hover:text-foreground hit-44 rounded-lg p-1.5 transition-colors"
           >
             <Icon name="panel-left" className="size-4" />
-            <span className="font-mono text-[0.625rem] tracking-wider uppercase">Progress</span>
           </button>
-          <span className="flex-1" />
+          {/* Run switcher folded into the chrome row below lg — the canvas
+              header was two stacked rows stating the same facts (nav + run). */}
+          <div className="min-w-0 flex-1">
+            {workbench.runs.length > 0 && (
+              <RunSwitcher
+                activeRunId={activeRunId}
+                onPick={(runId) => userPick(runId, "final")}
+                runs={workbench.runs}
+                view={view}
+              />
+            )}
+          </div>
           {onOpenSessions && <SessionsButton iconOnly onOpen={onOpenSessions} />}
           <button
             type="button"
@@ -850,7 +863,7 @@ export function WorkbenchPage({
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="border-border/60 flex items-center gap-2 border-b px-4 py-2">
+            <div className="border-border/60 hidden items-center gap-2 border-b px-4 py-2 lg:flex">
               <div className="min-w-0 flex-1">
                 <RunSwitcher
                   activeRunId={activeRunId}

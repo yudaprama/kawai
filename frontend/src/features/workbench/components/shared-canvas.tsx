@@ -7,7 +7,7 @@
  */
 import { Icon } from "@/components/shared/icon";
 import { EdgeFades, useXOverflow } from "@/components/shared/edge-fades";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -231,5 +231,50 @@ export function AgentReportsSwitcher({
         <EdgeFades showEnd={showEnd} showStart={showStart} />
       </div>
     </div>
+  );
+}
+
+// ── Scroll-to-bottom ────────────────────────────────────────────────────────
+
+/** Floating jump-to-latest control for the canvas. Appears once the content
+ *  sits more than a viewport above the bottom (streaming deliverables grow
+ *  under the reader) and disappears again at the bottom. `watchKey` re-arms
+ *  the listeners when the scroll container remounts — the viewers key that
+ *  div by run, so a run/doc switch swaps the DOM node under a stable ref. */
+export function ScrollToBottomButton({
+  containerRef,
+  watchKey,
+}: {
+  containerRef: RefObject<HTMLDivElement | null>;
+  watchKey: string | number;
+}) {
+  const [visible, setVisible] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: watchKey re-arms this effect when the viewers remount the keyed scroll container — the ref's DOM node is replaced without this component re-rendering, so the ref object alone is not enough.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (el == null) return;
+    const update = () => setVisible(el.scrollHeight - el.scrollTop - el.clientHeight > 96);
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    // Streaming markdown, charts, and deck previews change content height
+    // without a scroll event — observe the content wrapper directly.
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    if (ro != null && el.firstElementChild != null) ro.observe(el.firstElementChild);
+    return () => {
+      el.removeEventListener("scroll", update);
+      ro?.disconnect();
+    };
+  }, [containerRef, watchKey]);
+  if (!visible) return null;
+  return (
+    <button
+      aria-label="Scroll to latest"
+      className="bg-background border-border/60 text-foreground hover:border-primary/60 shadow-lg hit-44 absolute right-4 bottom-4 z-20 flex size-9 items-center justify-center rounded-full border transition-colors"
+      onClick={() => containerRef.current?.scrollTo({ top: containerRef.current.scrollHeight, behavior: "smooth" })}
+      title="Scroll to latest"
+      type="button"
+    >
+      <Icon name="arrow-down" className="size-4" />
+    </button>
   );
 }
