@@ -286,15 +286,17 @@ jobs:
           adb -s "$KAWAI_ADB_SERIAL" push \
             cognee-litert-lm/native/aarch64-linux-android/liblitert-lm.so \
             cognee-litert-lm/native/aarch64-linux-android/libGemmaModelConstraintProvider.so \
+            cognee-litert-lm/native/aarch64-linux-android/libwebgpu_dawn.so \
             /data/local/tmp/kawai-smoke/
           adb -s "$KAWAI_ADB_SERIAL" push --sync smoke-model/gemma-4-E4B-it.litertlm /data/local/tmp/kawai-smoke/
 
       # Runs as the shell user under bionic; LD_LIBRARY_PATH resolves the
-      # .so chain from the payload dir (the dlopen'd companions load from
-      # the same dir). TMPDIR must be a writable dir (there is no /tmp on
-      # Android); LLVM_PROFILE_FILE per the bazel-instrumented-dylib
-      # landmine; K/V clamped to 8192 — the emulator guest has 4 GB RAM and
-      # E4B already needs ~3.5 GB.
+      # .so chain from the payload dir (the engine's hard DT_NEEDED deps —
+      # libGemmaModelConstraintProvider + libwebgpu_dawn — and any dlopen'd
+      # GPU plugins load from the same dir). TMPDIR must be a writable dir
+      # (there is no /tmp on Android); LLVM_PROFILE_FILE per the
+      # bazel-instrumented-dylib landmine; K/V clamped to 8192 — the emulator
+      # guest has 4 GB RAM and E4B already needs ~3.5 GB.
       - name: local_llm_smoke (on-device Android streaming regression)
         run: |
           adb -s "$KAWAI_ADB_SERIAL" shell "chmod 755 /data/local/tmp/kawai-smoke/local_llm_smoke \

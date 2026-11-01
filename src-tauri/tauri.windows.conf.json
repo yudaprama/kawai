@@ -4,7 +4,7 @@
     "resources": {
       "../cognee-litert-lm/native/litert-lm.dll": "litert-lm.dll",
       "../cognee-litert-lm/native/libGemmaModelConstraintProvider.dll": "libGemmaModelConstraintProvider.dll",
-      "../cognee-litert-lm/native/libLiteRt.dll": "libLiteRt.dll",
+      "../cognee-litert-lm/native/webgpu_dawn.dll": "webgpu_dawn.dll",
       "../cognee-litert-lm/native/MNN.dll": "MNN.dll"
     }
   }

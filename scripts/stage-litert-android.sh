@@ -13,9 +13,11 @@ set -euo pipefail
 #      cognee-litert-lm/vendor/LiteRT-LM, then copy into native/<triple>/)
 #   src-tauri/gen/android/  (`bun tauri android init`)
 #
-# liblitert-lm.so hard-requires libGemmaModelConstraintProvider.so. The
-# GPU/OpenCL/WebGPU companions are dlopen'd opportunistically — without them
-# the engine falls back to CPU; pass STAGE_ALL=1 to pack them too.
+# liblitert-lm.so hard-requires libGemmaModelConstraintProvider.so AND
+# libwebgpu_dawn.so (both are DT_NEEDED, resolved through RUNPATH $ORIGIN).
+# The GPU/OpenCL accelerator + TopK sampler plugins are dlopen'd
+# opportunistically — without them the engine falls back to CPU; pass
+# STAGE_ALL=1 to pack them too.
 #
 # Usage:
 #   bash scripts/stage-litert-android.sh            # required libs only
@@ -49,12 +51,13 @@ mkdir -p "$JNI_LIBS"
 echo "→ Staging required libs into jniLibs/..."
 cp "$LIB_DIR/liblitert-lm.so" "$JNI_LIBS/"
 cp "$COMPANIONS/libGemmaModelConstraintProvider.so" "$JNI_LIBS/"
+cp "$COMPANIONS/libwebgpu_dawn.so" "$JNI_LIBS/"
 
 if [ "${STAGE_ALL:-0}" = "1" ]; then
   echo "→ Staging optional GPU companions (STAGE_ALL=1)..."
   for lib in libLiteRtGpuAccelerator.so libLiteRtOpenClAccelerator.so \
              libLiteRtTopKOpenClSampler.so libLiteRtTopKWebGpuSampler.so \
-             libLiteRtWebGpuAccelerator.so libwebgpu_dawn.so; do
+             libLiteRtWebGpuAccelerator.so; do
     if [ -f "$COMPANIONS/$lib" ]; then
       cp "$COMPANIONS/$lib" "$JNI_LIBS/"
       echo "  $lib"
