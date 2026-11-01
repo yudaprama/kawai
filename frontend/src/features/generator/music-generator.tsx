@@ -809,12 +809,12 @@ export function MusicGenerator() {
               })}
             />
           </Slider>
-          <div className="flex h-9 w-[4.5rem] shrink-0 items-center rounded-[8px] border">
+          <div className="flex h-9 w-[4.5rem] shrink-0 items-center rounded-[8px] border max-md:h-11 max-md:w-20">
             <input
               aria-label={t(ecoId === "yue2" ? "musicGenerator.durationMax" : "musicGenerator.duration", {
                 seconds: duration,
               })}
-              className="w-full min-w-0 bg-transparent px-2 text-center text-base outline-none md:text-sm"
+              className="h-full w-full min-w-0 bg-transparent px-2 text-center text-base outline-none md:text-sm"
               inputMode="decimal"
               onBlur={(e) => {
                 const parsed = Number(e.target.value);
@@ -832,10 +832,10 @@ export function MusicGenerator() {
               }}
               value={durText ?? String(duration)}
             />
-            <div className="flex shrink-0 flex-col border-l">
+            <div className="hidden shrink-0 flex-col border-l md:flex">
               <button
                 aria-label="+"
-                className="text-muted-foreground hover:text-foreground flex h-4.5 w-6 items-center justify-center max-md:h-11 max-md:w-11"
+                className="text-muted-foreground hover:text-foreground flex h-4.5 w-6 items-center justify-center"
                 onClick={() => {
                   setDurText(null);
                   setDuration((d) => Math.min(durRange.max, +(d + durStep).toFixed(2)));
@@ -846,7 +846,7 @@ export function MusicGenerator() {
               </button>
               <button
                 aria-label="−"
-                className="text-muted-foreground hover:text-foreground flex h-4.5 w-6 items-center justify-center border-t max-md:h-11 max-md:w-11"
+                className="text-muted-foreground hover:text-foreground flex h-4.5 w-6 items-center justify-center border-t"
                 onClick={() => {
                   setDurText(null);
                   setDuration((d) => Math.max(durRange.min, +(d - durStep).toFixed(2)));
