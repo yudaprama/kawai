@@ -4,10 +4,12 @@ Status: **PARTIALLY IMPLEMENTED (2026-09-23) — deliverable path shipped.** Cha
 ride the supervisor deliverable: `data_chart` saves a png twin next to the svg
 (`store::import_chart`, charton `png` feature), the deliverable writer receives a
 `<charts>` block and may embed `![caption](kawai-file://<fileId>)`, the Workbench
-viewer resolves tokens (svg inline + preview), and pdf/docx exports embed the raster
-(`crates/engines/office/src/deliverable.rs`; office_oxide markdown parser accepts
-data-URI image lines). Still open: `DocBlock::Image` in `office_create_document`
-(the tool path below) and pptx export images. Earlier scope notes follow.
+viewer resolves tokens (svg inline + preview), the docx export embeds the raster,
+and the pdf export prints a standalone `[Image: caption]` line (pdf_oxide's
+markdown renderer has no image blocks — only the separate `Pdf::from_html_css`
+pipeline paints `<img>`). Still open: image embedding in the pdf export,
+`DocBlock::Image` in `office_create_document` (the tool path below), and pptx
+export images. Earlier scope notes follow.
 
 ---
 
