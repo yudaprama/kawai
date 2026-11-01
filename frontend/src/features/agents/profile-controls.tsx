@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Icon } from "@/components/shared/icon";
+import { LogoMark } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -129,8 +130,8 @@ export function ProfileControls({
             title={`Signed in as ${userId ?? "demo"}`}
             variant="ghost"
           >
-            <span className="bg-primary text-primary-foreground relative flex size-8 items-center justify-center rounded-full text-sm font-semibold">
-              {(userId ?? "d").charAt(0).toUpperCase()}
+            <span className="bg-primary text-primary-foreground relative flex size-8 items-center justify-center rounded-full">
+              <LogoMark className="size-6" />
               {assetView != null && (
                 <span className="bg-primary -top-0.5 -right-0.5 absolute size-2 rounded-full ring-2 ring-background" />
               )}
