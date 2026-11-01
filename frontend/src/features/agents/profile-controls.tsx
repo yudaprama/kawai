@@ -131,7 +131,7 @@ export function ProfileControls({
             variant="ghost"
           >
             <span className="bg-primary text-primary-foreground relative flex size-8 items-center justify-center rounded-full">
-              <LogoMark className="size-6" />
+              <LogoMark className="size-[26px]" />
               {assetView != null && (
                 <span className="bg-primary -top-0.5 -right-0.5 absolute size-2 rounded-full ring-2 ring-background" />
               )}
