@@ -1,4 +1,5 @@
 import { Icon } from "@/components/shared/icon";
+import { LogoMark } from "@/components/shared/logo";
 import { EdgeFades, useXOverflow } from "@/components/shared/edge-fades";
 import { ProfileControls } from "@/features/agents/profile-controls";
 import type { AssetViewId } from "@/features/assets/components/asset-nav";
@@ -117,7 +118,7 @@ export function ModeBar({
   return (
     <header className="border-border bg-background flex min-h-12 shrink-0 items-center gap-2 border-b px-3 lg:gap-3">
       <span className="text-foreground flex shrink-0 items-center gap-1.5 text-sm font-semibold">
-        <Icon className="text-primary size-4" name="zap" />
+        <LogoMark className="text-brand size-5" />
         <span className="hidden sm:inline">kawai</span>
       </span>
       <ModePills active={active} onSelect={onSelect} />
