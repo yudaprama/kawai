@@ -170,6 +170,19 @@ abstract class StripReleaseNativeLibs : DefaultTask() {
 
         val staged = libs.map { lib ->
             val abi = lib.parentFile.name
+            // cargo-mobile2 places libc++_shared.so in jniLibs as a SYMLINK
+            // into the NDK sysroot (src/android/jnilibs.rs symlink_lib), and
+            // it only does so at all when the built .so lists the library in
+            // DT_NEEDED (src/android/target.rs symlink_libs → ndk.required_libs).
+            // Materialize the link into a real file BEFORE the copy and the
+            // strip below: `llvm-strip` opens the path it is handed, so
+            // running it on the link rewrites the NDK's own copy in place.
+            if (java.nio.file.Files.isSymbolicLink(lib.toPath())) {
+                val bytes = lib.readBytes()
+                java.nio.file.Files.delete(lib.toPath())
+                lib.writeBytes(bytes)
+                logger.lifecycle("kawai: materialized symlinked $abi/${lib.name} into a real file")
+            }
             val original = File(temporaryDir, "$abi-${lib.name}")
             lib.copyTo(original, overwrite = true)
             val proc = ProcessBuilder(strip.path, "--strip-unneeded", lib.absolutePath)

@@ -9,9 +9,20 @@ set -euo pipefail
 # Prerequisites:
 #   cognee-litert-lm/native/aarch64-linux-android/liblitert-lm.so
 #     (bazel build //c:litert-lm --config=android_arm64 --jobs=6 \
+#      --linkopt=-Wl,-soname,liblitert-lm.so \
 #      --linkopt=-Wl,-z,max-page-size=16384 — run inside
 #      cognee-litert-lm/vendor/LiteRT-LM, then copy into native/<triple>/)
 #   src-tauri/gen/android/  (`bun tauri android init`)
+#
+# -Wl,-soname is NOT optional: the Linux/Android link passes
+# c/litert_lm_c_api_linux.lds, a version script that puts the exports in the
+# version node LITERT_LM_C_API_1.0. Consumers then record a DT_VERNEED entry
+# naming liblitert-lm.so, and bionic resolves that name against the loaded
+# dependency's DT_SONAME (VersionTracker::init_verneed). A library built
+# without -soname has an empty one, so `System.loadLibrary("kawai_lib")` dies
+# with `cannot find "liblitert-lm.so" from verneed[0] in DT_NEEDED list` —
+# an instant crash at launch. -Wl,-z,max-page-size=16384 keeps the ELF LOAD
+# segments 16 KB aligned (Google Play requirement).
 #
 # liblitert-lm.so hard-requires libGemmaModelConstraintProvider.so AND
 # libwebgpu_dawn.so (both are DT_NEEDED, resolved through RUNPATH $ORIGIN).
@@ -34,8 +45,9 @@ if [ ! -f "$LIB_DIR/liblitert-lm.so" ]; then
   echo "Build it first:"
   echo "  cd cognee-litert-lm/vendor/LiteRT-LM"
   echo "  LLVM_PROFILE_FILE=/dev/null ANDROID_NDK_HOME=/opt/homebrew/share/android-ndk \\"
-  echo "    bazel build //c:litert-lm --config=android_arm64 --jobs=6 \\
-      --linkopt=-Wl,-z,max-page-size=16384"
+  echo "    bazel build //c:litert-lm --config=android_arm64 --jobs=6 \\"
+  echo "      --linkopt=-Wl,-soname,liblitert-lm.so \\"
+  echo "      --linkopt=-Wl,-z,max-page-size=16384"
   echo "  mkdir -p ../../native/aarch64-linux-android"
   echo "  cp bazel-bin/c/liblitert-lm.so ../../native/aarch64-linux-android/"
   exit 1

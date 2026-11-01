@@ -1,4 +1,24 @@
 fn main() {
+    // Android: the C++ objects in the CDylib (MNN, pulled in by the
+    // OCR/TTS stack via rust-paddle-ocr) reference libc++ runtime symbols
+    // (_Znwm, _ZTISt12length_error, …) that nothing in the dependency tree
+    // defines — bionic has no libc++ at all. They used to resolve against
+    // liblitert-lm.so, which exported the libc++ it links statically, until
+    // upstream's c/litert_lm_c_api_linux.lds version script started hiding
+    // everything but litert_lm_*; System.loadLibrary then died with `cannot
+    // locate symbol "_ZTISt12length_error"`.
+    //
+    // Declaring the NDK's shared libc++ here does two things: it puts a
+    // DT_NEEDED libc++_shared.so on the CDylib (so the loader resolves those
+    // symbols), and it is what makes cargo-mobile2 stage the NDK's
+    // libc++_shared.so into jniLibs — its symlink_libs only copies a library
+    // whose name appears in the built .so's DT_NEEDED list
+    // (src/android/target.rs → ndk.required_libs). Without this line the APK
+    // contains no libc++ runtime at all.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android") {
+        println!("cargo:rustc-link-lib=dylib=c++_shared");
+    }
+
     // Desktop only: tauri_build is required for the Tauri shell. Skip when
     // building the standalone `kawai-web` ( --no-default-features --features web ).
     if std::env::var("CARGO_FEATURE_DESKTOP").is_err() {

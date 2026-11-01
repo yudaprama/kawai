@@ -231,7 +231,17 @@ jobs:
           # updates targeting Android 15+ to be 16 KB aligned (ELF LOAD
           # p_align); the default lld page size here is 4 KB and Play rejects
           # the AAB with a bare "Validation of uploaded file failed."
+          # -soname: the Linux/Android link branch passes
+          # c/litert_lm_c_api_linux.lds, a VERSION SCRIPT, so the library
+          # exports a versioned symbol node (LITERT_LM_C_API_1.0). Every
+          # consumer then records a DT_VERNEED entry naming liblitert-lm.so,
+          # and bionic resolves that name against the loaded dependency's
+          # DT_SONAME (linker.cpp VersionTracker::init_verneed). With no
+          # DT_SONAME the soname is "" and dlopen of libkawai_lib.so dies at
+          # launch with `cannot find "liblitert-lm.so" from verneed[0] in
+          # DT_NEEDED list` — an instant crash, before any Rust code runs.
           bazelisk build //c:litert-lm --config=android_arm64 --jobs=6 \
+            --linkopt=-Wl,-soname,liblitert-lm.so \
             --linkopt=-Wl,-z,max-page-size=16384
           mkdir -p ../../native/aarch64-linux-android
           cp bazel-bin/c/liblitert-lm.so ../../native/aarch64-linux-android/
@@ -376,6 +386,100 @@ jobs:
             echo "zip=" >> "$GITHUB_OUTPUT"
             echo "::warning::No unstripped native debug symbols were exported — Play cannot symbolicate native crashes for this build."
           fi
+
+      # The APK dlopen()s its native libs the moment MainActivity starts, so a
+      # broken DT_NEEDED/DT_VERNEED graph or an unprovided C++ runtime symbol
+      # is an instant crash on a device — and none of the checks above
+      # (stripping, alignment, exports) can see it. Two failures shipped this
+      # way: liblitert-lm.so exported a versioned symbol node
+      # (c/litert_lm_c_api_linux.lds) but carried no DT_SONAME, so bionic's
+      # VersionTracker::init_verneed could not match the verneed entry and
+      # died with `cannot find "liblitert-lm.so" from verneed[0] in DT_NEEDED
+      # list`; and libc++_shared.so was missing from the package while
+      # libkawai_lib.so needed its C++ runtime symbols.
+      - name: Verify native dependency graph
+        run: |
+          set -euo pipefail
+          NDK="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"
+          READELF="$(ls "$NDK"/toolchains/llvm/prebuilt/*/bin/llvm-readelf 2>/dev/null | head -n1)"
+          NM="$(ls "$NDK"/toolchains/llvm/prebuilt/*/bin/llvm-nm 2>/dev/null | head -n1)"
+          SYSROOT="$(ls -d "$NDK"/toolchains/llvm/prebuilt/*/sysroot/usr/lib/aarch64-linux-android 2>/dev/null | head -n1)"
+          if [ -z "$READELF" ] || [ -z "$NM" ] || [ -z "$SYSROOT" ]; then
+            echo "::error::NDK llvm-readelf / llvm-nm / sysroot not found — cannot verify the native dependency graph."
+            exit 1
+          fi
+          APK="$(ls src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk | head -n1)"
+          WORK="$(mktemp -d)"
+          while IFS= read -r so; do
+            unzip -p "$APK" "$so" > "$WORK/$(basename "$so")"
+          done < <(unzip -Z1 "$APK" | grep -E '^lib/arm64-v8a/.*\.so$')
+          soname_of() { "$READELF" -d "$1" | sed -n 's/.*(SONAME).*\[\(.*\)\]/\1/p'; }
+          # Platform libraries come from the NDK sysroot. libc++ is NOT one of
+          # them: the app must package its own copy (the sysroot also carries
+          # libc++_shared.so, so a plain "exists in the sysroot" test would
+          # wave the missing-library case straight through). Only the sysroot
+          # ROOT holds static archives — the shared platform libs (liblog.so,
+          # libandroid.so, …) live in per-API subdirectories, so both are
+          # searched.
+          is_system() {
+            case "$1" in libc++*) return 1 ;; esac
+            [ -f "$SYSROOT/$1" ] && return 0
+            ls "$SYSROOT"/*/"$1" > /dev/null 2>&1
+          }
+          fail=0
+          for file in "$WORK"/*.so; do
+            name="$(basename "$file")"
+            while IFS= read -r needed; do
+              [ -n "$needed" ] || continue
+              is_system "$needed" && continue
+              if [ ! -f "$WORK/$needed" ]; then
+                echo "::error::$name lists DT_NEEDED $needed, which is not packaged in the APK — dlopen fails at launch."
+                fail=1
+                continue
+              fi
+              dep_soname="$(soname_of "$WORK/$needed")"
+              if [ "$dep_soname" != "$needed" ]; then
+                echo "::error::$name needs $needed, but that library's DT_SONAME is '${dep_soname:-<none>}' — bionic resolves both DT_NEEDED and DT_VERNEED by SONAME. Link it with -Wl,-soname,$needed."
+                fail=1
+              fi
+            done < <("$READELF" -d "$file" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p')
+            # A version script on a dependency (litert-lm's LITERT_LM_C_API_1.0
+            # node) adds a verneed entry that bionic also resolves by SONAME.
+            while IFS= read -r vfile; do
+              [ -n "$vfile" ] || continue
+              is_system "$vfile" && continue
+              if [ ! -f "$WORK/$vfile" ]; then
+                echo "::error::$name has a DT_VERNEED entry for $vfile, which is not packaged in the APK."
+                fail=1
+                continue
+              fi
+              v_soname="$(soname_of "$WORK/$vfile")"
+              if [ "$v_soname" != "$vfile" ]; then
+                echo "::error::$name has a DT_VERNEED entry for $vfile, but that library's DT_SONAME is '${v_soname:-<none>}' — dlopen of $name fails at launch with 'cannot find \"$vfile\" from verneed[...] in DT_NEEDED list'."
+                fail=1
+              fi
+            done < <("$READELF" -V "$file" | sed -n 's/.*File: \([^ ]*\).*/\1/p' | sort -u)
+          done
+          # Itanium-ABI C++ symbols (_Z…) are not provided by bionic at all:
+          # they come from a libc++ runtime that the APK must package
+          # (libc++_shared.so). Resolve every undefined one against the
+          # packaged set; this is the check that would have caught the
+          # `cannot locate symbol "_ZTISt12length_error"` launch crash.
+          DEFINED="$(mktemp)"
+          UNDEFINED="$(mktemp)"
+          "$NM" -D --defined-only "$WORK"/*.so 2>/dev/null \
+            | awk '{print $NF}' | sed 's/@.*//' | sort -u > "$DEFINED"
+          "$NM" -D --undefined-only "$WORK"/*.so 2>/dev/null \
+            | awk '$1 == "U" {print $NF}' | sed 's/@.*//' \
+            | grep '^_Z' | sort -u > "$UNDEFINED" || true
+          UNRESOLVED="$(comm -23 "$UNDEFINED" "$DEFINED")"
+          if [ -n "$UNRESOLVED" ]; then
+            echo "::error::Unresolved C++ runtime symbols — no packaged library defines them (libc++_shared.so missing from the APK?). dlopen fails at launch with 'cannot locate symbol \"$(echo "$UNRESOLVED" | head -n1)\"'."
+            echo "$UNRESOLVED" | head -n 10
+            fail=1
+          fi
+          [ "$fail" = 0 ] || { echo "::error::The packaged native dependency graph cannot be loaded on a device (see the messages above)."; exit 1; }
+          echo "Native dependency graph resolvable: $(ls "$WORK"/*.so | wc -l) packaged libraries verified, $(wc -l < "$UNDEFINED" | tr -d ' ') C++ runtime symbols resolved."
 
       - name: Store native debug symbols as a run artifact
         if: ${{ steps.native_symbols.outputs.zip != '' }}
