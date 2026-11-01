@@ -183,6 +183,10 @@ function MusicResultCard({
  * reported as its own state instead of quietly rendering the starters as
  * if there were no community clips.
  */
+/** Media one community music prompt owns. Module-level so the gallery's
+ *  fetch stays mount-once. */
+const musicPresetMedia = (preset: MusicTemplatePreset) => [preset.thumbnail];
+
 function MusicTemplateGallery({
   starters,
   onApplyCommunity,
@@ -193,7 +197,7 @@ function MusicTemplateGallery({
   onApplyStarter: (starter: MusicStarter) => void;
 }) {
   const { t } = useI18n();
-  const { presets, failed } = usePresetGallery<MusicTemplatePreset>("civitai_music_template_gallery");
+  const { presets, failed } = usePresetGallery<MusicTemplatePreset>("civitai_music_template_gallery", musicPresetMedia);
 
   return (
     <div className="flex flex-col gap-4">

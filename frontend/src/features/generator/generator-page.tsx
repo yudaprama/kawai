@@ -1565,9 +1565,13 @@ export function GeneratorPage({ lane }: { lane: MediaMode }) {
  * preset's ecosystem. A failed or empty gallery degrades to the plain
  * empty state.
  */
+/** Media one community image owns. Module-level so the gallery's fetch stays
+ *  mount-once. */
+const imagePresetMedia = (preset: TemplatePreset) => [preset.url];
+
 function TemplateGallery({ cols, onApply }: { cols: number; onApply: (preset: TemplatePreset) => void }) {
   const { t } = useI18n();
-  const { presets } = usePresetGallery<TemplatePreset>("civitai_template_gallery");
+  const { presets } = usePresetGallery<TemplatePreset>("civitai_template_gallery", imagePresetMedia);
 
   if (presets === null) {
     return (

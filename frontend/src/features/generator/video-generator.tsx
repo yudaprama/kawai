@@ -122,13 +122,17 @@ function videoEntriesFromJob(row: GenerationJob): VideoResultEntry[] {
  * community txt2vid clips yet — that one says so plainly instead of
  * blaming the user's history.
  */
+/** Media one community clip owns — the playable URL plus its poster.
+ *  Module-level so the gallery's fetch stays mount-once. */
+const videoPresetMedia = (preset: VideoTemplatePreset) => [preset.url, preset.thumbnail];
+
 function VideoTemplateGallery({ onApply }: { onApply: (preset: VideoTemplatePreset) => void }) {
   const { t } = useI18n();
   // Community clips are NOT uniform (704x960, 864x480, 832x1504 all on one
   // page), so the grid is a masonry: a row-synced grid forces one height and
   // crops the rest, which is what made every tile look square.
   const cols = useColumnCount(3);
-  const { presets, failed } = usePresetGallery<VideoTemplatePreset>("civitai_video_template_gallery");
+  const { presets, failed } = usePresetGallery<VideoTemplatePreset>("civitai_video_template_gallery", videoPresetMedia);
 
   if (presets === null) {
     return <PresetSkeletonGrid aspect="aspect-video" grid="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3" />;

@@ -20,6 +20,7 @@ import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
 import type { TranslationKey } from "@/lib/i18n";
 import type { PickerGroup } from "./picker-menu";
+import { filterExcludedMedia } from "./civitai-media";
 import { publishMediaDebit } from "./generate-footer";
 
 /** Terminal-but-not-success states (lowercase wire vocabulary). */
@@ -64,8 +65,15 @@ export function useAliveEffect(aliveRef: { current: boolean }) {
  * Load a `<modality>_template_gallery` listing once on mount. `presets` is
  * `null` while loading; on fetch failure it resolves to `[]` with `failed`
  * set, so renderers can word the empty state honestly.
+ *
+ * `mediaUrls` names the civitai media one preset owns (clip, poster, image);
+ * presets carrying an excluded asset are dropped before they reach a tile.
+ * Callers pass a MODULE-LEVEL function so the fetch stays mount-once.
  */
-export function usePresetGallery<T>(op: string): { presets: T[] | null; failed: boolean } {
+export function usePresetGallery<T>(
+  op: string,
+  mediaUrls?: (item: T) => Array<string | null | undefined>,
+): { presets: T[] | null; failed: boolean } {
   const [presets, setPresets] = useState<T[] | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -74,7 +82,9 @@ export function usePresetGallery<T>(op: string): { presets: T[] | null; failed: 
     setFailed(false);
     call<T[]>(op)
       .then((list) => {
-        if (alive) setPresets(Array.isArray(list) ? list : []);
+        if (!alive) return;
+        const rows = Array.isArray(list) ? list : [];
+        setPresets(mediaUrls ? filterExcludedMedia(rows, mediaUrls) : rows);
       })
       .catch(() => {
         if (!alive) return;
@@ -84,7 +94,7 @@ export function usePresetGallery<T>(op: string): { presets: T[] | null; failed: 
     return () => {
       alive = false;
     };
-  }, [op]);
+  }, [op, mediaUrls]);
   return { presets, failed };
 }
 
