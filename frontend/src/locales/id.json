@@ -121,7 +121,10 @@
       "addFilesTitle": "Impor dokumen & gambar (.docx .xlsx .pptx .pdf .png .jpg …)",
       "addFiles": "Tambah berkas",
       "newSessionBlocked": "Tidak dapat memulai sesi baru saat rencana sedang dibuat",
-      "escStopArmed": "Tekan Esc lagi untuk menghentikan jalankan"
+      "escStopArmed": "Tekan Esc lagi untuk menghentikan jalankan",
+      "freshSessionToast": "Sesi baru dimulai",
+      "freshSessionToastHint": "Sesi sebelumnya beserta run-nya tetap tersimpan di Sessions.",
+      "reopenAction": "Buka lagi"
     },
     "progressRail": {
       "status": {
@@ -148,7 +151,7 @@
       "deliverableWriter": "Menulis deliverable…",
       "stopButton": "Hentikan",
       "resumeButton": "Lanjutkan",
-      "newGoalButton": "Tujuan baru",
+      "newGoalButton": "Tujuan lain",
       "runButton": "Jalankan",
       "discardButton": "Buang",
       "messagesAndTools": "Pesan & Alat",

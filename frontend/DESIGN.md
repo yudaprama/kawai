@@ -18,7 +18,7 @@ primary surface is the **Workbench** — a goal-centric two-pane layout:
 │              │  · collapsible phases with step states      │
 │              │  · Messages & Tools timeline (collapsible)  │
 │              │  · deliverable writer row                   │
-│              │  · stop / resume / new goal buttons         │
+│              │  · stop / resume / another goal buttons     │
 │              ├─────────────────────────────────────────────┤
 │              │ sidebar footer: goal composer (pinned)      │
 └──────────────┴─────────────────────────────────────────────┘
@@ -72,7 +72,8 @@ view.
   to 48 chars), state icon (pending/running/completed/failed/skipped), tool
   name or live duration, and a "see report" link for completed steps. Below
   the phases: the deliverable writer row, then context-sensitive buttons
-  (Stop, Resume, New goal). When the run needs the user — plan review or a
+  (Stop, Resume, Another goal — plus Fresh session on a failed run, whose
+  toast offers Reopen). When the run needs the user — plan review or a
   confirmation gate — the corresponding card takes keyboard focus (after the
   mobile drawer auto-opens), so the request is announced and reachable.
 - **DeliverableViewer (center).** The main content area. Shows the rendered

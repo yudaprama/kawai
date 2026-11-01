@@ -121,7 +121,10 @@
       "addFilesTitle": "Import documents & images (.docx .xlsx .pptx .pdf .png .jpg …)",
       "addFiles": "Add files",
       "newSessionBlocked": "Can't start a new session while a plan is being created",
-      "escStopArmed": "Press Esc again to stop the run"
+      "escStopArmed": "Press Esc again to stop the run",
+      "freshSessionToast": "Fresh session started",
+      "freshSessionToastHint": "The previous session and its runs stay saved in Sessions.",
+      "reopenAction": "Reopen"
     },
     "progressRail": {
       "status": {
@@ -148,7 +151,7 @@
       "deliverableWriter": "Writing deliverable…",
       "stopButton": "Stop",
       "resumeButton": "Resume",
-      "newGoalButton": "New goal",
+      "newGoalButton": "Another goal",
       "runButton": "Run",
       "discardButton": "Discard",
       "messagesAndTools": "Messages & Tools",

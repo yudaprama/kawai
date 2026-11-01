@@ -135,7 +135,7 @@ export function WorkbenchPage({
     };
   }, [attachFilesRef, workbench.attachFiles]);
   // Home = the landing composer. Submitting a goal moves to the workbench;
-  // "New goal" returns here.
+  // "Another goal" returns here.
   const [home, setHome] = useState(true);
   // Landing recents: refetch when a run lands its plan record (the edge
   // below) and when the sessions dialog closes (rename/delete underneath —
@@ -304,7 +304,7 @@ export function WorkbenchPage({
     if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) setMobileRail(true);
   }, []);
 
-  /** Back to the landing hero — keeps the session + runs ("New goal"
+  /** Back to the landing hero — keeps the session + runs ("Another goal"
    *  semantics). Blocked while a plan is in flight or awaiting review: the
    *  run view must keep showing progress (there is no way back mid-run). */
   const goHome = useCallback(() => {
@@ -502,7 +502,7 @@ export function WorkbenchPage({
       return;
     }
     if (supervisor.status === "reviewing") supervisor.cancelPlan();
-    workbench.startNewSession();
+    const previous = workbench.startNewSession();
     pendingPickRow.current = null;
     autoSwitchedRun.current = null;
     setChipDraft(null);
@@ -510,7 +510,29 @@ export function WorkbenchPage({
     setView(null);
     setMobileRail(false);
     setHome(true);
-  }, [supervisor.planning, supervisor.status, supervisor.cancelPlan, runInFlight, workbench.startNewSession, t]);
+    // Nothing was deleted — say so, and make going back one click.
+    if (previous != null) {
+      toast(t("workbench.composer.freshSessionToast"), {
+        id: "fresh-session",
+        description: t("workbench.composer.freshSessionToastHint"),
+        action: {
+          label: t("workbench.composer.reopenAction"),
+          onClick: () => {
+            setHome(false);
+            workbench.selectSession(previous);
+          },
+        },
+      });
+    }
+  }, [
+    supervisor.planning,
+    supervisor.status,
+    supervisor.cancelPlan,
+    runInFlight,
+    workbench.startNewSession,
+    workbench.selectSession,
+    t,
+  ]);
 
   // Esc: close the mobile progress drawer, else two-step-stop a running plan
   // (see escStopArmedAt). Mirrors
@@ -801,6 +823,10 @@ export function WorkbenchPage({
             unseeded={planningUnseeded}
             workbench={workbench}
             onNewGoal={goHome}
+            onReopenSession={(id) => {
+              setHome(false);
+              workbench.selectSession(id);
+            }}
             onOpenReport={openReport}
             discardArmed={discardArmed}
             setDiscardArmed={setDiscardArmed}

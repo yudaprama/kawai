@@ -1173,9 +1173,12 @@ export function useWorkbench() {
     [sessionId, supervisor.planKey],
   );
 
-  /** "New session": the ONLY reset — the next run gets a fresh session and
-   *  recalls nothing from these runs. Named for what it actually does. */
-  const startNewSession = useCallback(() => {
+  /** "Fresh session" (the ONLY reset): the next run gets a fresh session and
+   *  recalls nothing from these runs. Named for what it actually does.
+   *  Returns the detached session id so callers can offer a Reopen toast
+   *  (nothing is deleted — the session stays in Sessions). */
+  const startNewSession = useCallback((): number | null => {
+    const previous = sessionIdRef.current;
     // Clear the restore guard so re-opening the PREVIOUS session later
     // rehydrates its records instead of silently skipping the fetch.
     restoredSessionRef.current = null;
@@ -1190,6 +1193,7 @@ export function useWorkbench() {
     setAttachedFiles([]);
     // Reset supervisor to idle so the form is enabled for the new session
     supervisor.reset();
+    return previous;
   }, [supervisor]);
 
   return {
