@@ -183,7 +183,11 @@ jobs:
       # every cfg(not(feature = …)) stub. Mixed regions (e.g. litert without
       # binance) are covered by linux-smoke's `--features litert` test build.
       - name: cargo check (all features on)
-        run: cargo check --features litert,office,binance,graph,web,accounting,mexc,tts
+        # security + headless-chrome compile ONLY here and in the release
+        # bundlers (crates/lonkero is a nested submodule, fetched above) —
+        # without this line a break in the security toolset surfaces first in
+        # a release run. `monad` stays out: nothing currently builds it on CI.
+        run: cargo check --features litert,office,binance,graph,web,accounting,mexc,tts,security,headless-chrome
         working-directory: src-tauri
 
       # Data analysis agent (polars + office_oxide xlsx bridge) is always

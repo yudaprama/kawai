@@ -267,10 +267,13 @@ tasks.matching {
     dependsOn(stripReleaseNativeLibs)
 }
 
-// Tauri's rust build populates jniLibs (including the libc++_shared.so
-// symlink); Gradle runs dependencies in arbitrary order, so without this pin
-// the strip task can execute against an empty jniLibs dir and silently strip
-// nothing. Force the strip to run AFTER the Rust build.
+// Tauri's release rust build populates jniLibs (including the
+// libc++_shared.so symlink); Gradle runs dependencies in arbitrary order, so
+// without this pin the strip task can execute against an empty jniLibs dir
+// and silently strip nothing. Pin the strip to the RELEASE rust builds only:
+// the debug ones feed debug packaging through RustPlugin's own wiring and are
+// never packaged by a release build — matching them too made every release
+// run cross-compile the debug cargo profile for nothing.
 stripReleaseNativeLibs.configure {
-    dependsOn(tasks.matching { it.name.startsWith("rustBuild") })
+    dependsOn(tasks.matching { it.name.startsWith("rustBuild") && it.name.endsWith("Release") })
 }
