@@ -303,7 +303,7 @@ Tools yang sudah menggunakan remote LLM untuk reasoning:
 engine loaded && feature litert? ── ya ──► LOCAL multi-turn (detail di bawah)
         │ tidak
         ▼
-remote_llm::reason(system, prompt)   ← pool: zai → … → empero → local (litert)
+remote_llm::reason(system, prompt)   ← pool: zai → … → local (litert)
 ```
 
 - **`remote_llm::reason`** (helper shared di `crates/foundation/remote-llm/src/reason.rs`): remote pool dulu; dengan feature `litert`, on-device engine jadi KANDIDAT TERAKHIR pool (stateless one-shot, `fresh=true`, materials di-cap 12k chars) — jadi semua caller remote (deep_write, planner, diagram) otomatis dapat fallback local saat seluruh cloud gagal, tanpa ubah API.

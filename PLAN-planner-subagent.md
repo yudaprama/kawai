@@ -11,7 +11,7 @@ mushed and untracked. A cloud reasoning pass produces that skeleton once per
 task, cheaply, and local follows it.
 
 This rides the existing rail end-to-end: same pool (`crates/foundation/remote-llm`,
-health-aware failover zai → … → empero), same dispatch (`SubagentHandler` via
+health-aware failover zai → … → poolside), same dispatch (`SubagentHandler` via
 `kind_for_capability`), same streaming machinery (`run_pending_subagent`),
 same persistence (`TurnMemory` → `session_artifacts`), same telemetry
 (`turn_log`). **No new transport op, no new event variant, no schema change.**
