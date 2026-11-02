@@ -141,6 +141,26 @@ jobs:
           # wedging the counter: if the tag got ahead of the conf, every run
           # would re-propose an existing version and skip forever.
           CONF_VER=$(python3 -c "import json;print(json.load(open('$CONF'))['version'])")
+
+          # Duplicate-release guard: two green ci runs on main each fire a
+          # release (workflow_run), and the second one checks out a tree that
+          # PREDATES the bump the first run already landed (the bump commit
+          # is a descendant of this checkout). Without this check the second
+          # run proposes the NEXT version, its push is rejected non-fast-
+          # forward, and the rebase retry dies on the same conf line — or,
+          # if the rebase won, ships an empty duplicate release. If remote
+          # main's conf version is NEWER than the checked-out one, this
+          # head's release is already claimed: loop terminator. The resume
+          # paths (draft release, dispatch on a bump commit) all exit above.
+          git fetch origin main --quiet
+          REMOTE_VER=$(git show "FETCH_HEAD:$CONF" | python3 -c "import json,sys;print(json.load(sys.stdin)['version'])")
+          NEWEST_VER=$(printf '%s\n%s\n' "$CONF_VER" "$REMOTE_VER" | sort -V | tail -1)
+          if [ "$REMOTE_VER" != "$CONF_VER" ] && [ "$NEWEST_VER" = "$REMOTE_VER" ]; then
+            echo "v$REMOTE_VER already claimed by another release run (remote main is ahead with a newer bump) — nothing to do."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           LATEST_TAG=$(git ls-remote --tags origin 'v[0-9]*' \
             | cut -f2 | sed 's#^refs/tags/##' | grep -v '\^{}$' \
             | sed 's/^v//' | sort -V | tail -1)
