@@ -1,3 +1,4 @@
+import java.nio.file.Files
 import java.util.Properties
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
@@ -177,9 +178,9 @@ abstract class StripReleaseNativeLibs : DefaultTask() {
             // Materialize the link into a real file BEFORE the copy and the
             // strip below: `llvm-strip` opens the path it is handed, so
             // running it on the link rewrites the NDK's own copy in place.
-            if (java.nio.file.Files.isSymbolicLink(lib.toPath())) {
+            if (Files.isSymbolicLink(lib.toPath())) {
                 val bytes = lib.readBytes()
-                java.nio.file.Files.delete(lib.toPath())
+                Files.delete(lib.toPath())
                 lib.writeBytes(bytes)
                 logger.lifecycle("kawai: materialized symlinked $abi/${lib.name} into a real file")
             }
