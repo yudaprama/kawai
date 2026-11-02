@@ -1554,10 +1554,19 @@ via the always-available `session_step_results` tool. If the goal depends on det
         // without redeploying (planner_smoke 2026-10-26: 4 unreadable rounds).
         let debug_dump = std::env::var("KAWAI_PLANNER_DEBUG").as_deref() == Ok("1");
         let shown = planner_response_excerpt(&raw, if debug_dump { 8_000 } else { 160 });
-        eprintln!("[plan_task] round {calls}: off-protocol ({len} chars), begins: `{shown}`", len = raw.len());
+        // The defect region lives at the END of the reply (2026-11-02: an
+        // extra `}` at the last step's close, six identical rounds) — echo
+        // the tail too, or the model repeats a slip the head-only excerpt
+        // never showed it.
+        let tail_shown = planner_response_tail(&raw, 300);
+        eprintln!(
+            "[plan_task] round {calls}: off-protocol ({len} chars), begins: `{shown}`, ends: `{tail_shown}`",
+            len = raw.len()
+        );
         materials.push_str(&format!(
             "\n<system-note>Unrecognized response — it was not a single JSON object. It began \
-             with: `{shown}`. Respond ONLY with ONE JSON object, either a search \
+             with: `{shown}` and ended with: `{tail_shown}`. Respond ONLY with ONE JSON \
+             object, either a search \
              {{\"action\":\"search\",\"queries\":[…]}} or the final plan, exactly: \
              {{\"goal\":\"<one-line goal>\",\"summary\":{{\"overview\":\"…\",\"actions\":[\"…\"],\
              \"outputs\":[\"…\"]}},\"steps\":[{{\"id\":\"s1\",\"tool\":\"<exact tool name>\",\
@@ -2086,15 +2095,39 @@ fn planner_response_excerpt(s: &str, max_chars: usize) -> String {
     out
 }
 
+/// Last `max_chars` of `s`, whitespace-collapsed, on one line — the END of an
+/// off-protocol planner response. The head excerpt shows what the model
+/// intended; JSON slips concentrate at the tail (a stray closer at the last
+/// step/array boundary), so the corrective note and the round log echo this
+/// region too — a head-only excerpt let the model repeat the same slip six
+/// rounds running because it never saw the broken part (planner_smoke
+/// 2026-11-02).
+fn planner_response_tail(s: &str, max_chars: usize) -> String {
+    let collapsed = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let total = collapsed.chars().count();
+    if total <= max_chars {
+        return collapsed;
+    }
+    let cut = total - max_chars;
+    let start = collapsed
+        .char_indices()
+        .nth(cut)
+        .map(|(i, _)| i)
+        .unwrap_or(collapsed.len());
+    format!("…{}", &collapsed[start..])
+}
+
 /// Mechanical repair of a planner response that is ALMOST a final plan: the
-/// model left braces unclosed (truncation or a nesting slip) and/or nested
-/// `steps` inside `summary` instead of at the top level. One missing `}`
-/// makes the whole response unparseable for `extract_json_slice`, so the
-/// round burns as off-protocol — planner_smoke 2026-10-27 lost six straight
-/// rounds to the identical shape even though the corrective note named the
+/// model left braces unclosed (truncation or a nesting slip), emitted one
+/// closing brace too many (an over-closed object), and/or nested `steps`
+/// inside `summary` instead of at the top level. One stray brace makes the
+/// whole response unparseable for `extract_json_slice`, so a plan-shaped
+/// response burns as off-protocol — planner_smoke lost six straight rounds
+/// to the identical shape twice (2026-10-27: one `}` short at EOF;
+/// 2026-11-02: one `}` too many) even though the corrective note named the
 /// exact mistake, which is why this lives in code and not in the prompt.
 /// Returns `None` when nothing mechanical is wrong (balanced text without
-/// nested steps) or the text is unparseable even after closing, so the
+/// nested steps) or the text is unparseable even after repair, so the
 /// normal protocol path is untouched. Whatever comes back still goes through
 /// the full plan validator — this rescues the SHAPE only, never the content.
 fn repair_nested_steps_json(raw: &str) -> Option<String> {
@@ -2135,6 +2168,7 @@ fn repair_nested_steps_json(raw: &str) -> Option<String> {
         tail.push(closer);
     }
     let closed = !tail.is_empty() || in_str;
+    let mut over_closed = false;
     let mut fixed = format!("{body}{tail}");
     // A cut mid-generation can land right after a `,` or a `"key":` —
     // appending closers alone then leaves an invalid tail. Strip the dangling
@@ -2147,7 +2181,18 @@ fn repair_nested_steps_json(raw: &str) -> Option<String> {
             break;
         }
         if !closed {
-            return None;
+            // Over-CLOSED shape: one `}` too many, nothing left open for
+            // stage 1 to close (planner_smoke 2026-11-02: six straight
+            // rounds, every slip inside the SAME step — a premature close
+            // right after a scalar field, then `}}]` at the last step's
+            // close). Drop one closer at a time until the text parses; the
+            // full plan validator still gates whatever comes back.
+            let Some(repaired) = repair_extra_close_json(&fixed) else {
+                return None;
+            };
+            fixed = repaired;
+            over_closed = true;
+            break;
         }
         let head = fixed[..fixed.len() - tail.len()].trim_end();
         let Some(last) = head.chars().last() else {
@@ -2176,7 +2221,63 @@ fn repair_nested_steps_json(raw: &str) -> Option<String> {
             repaired = true;
         }
     }
-    repaired.then_some(fixed)
+    (repaired || over_closed).then_some(fixed)
+}
+
+/// Candidate cap for `repair_extra_close_json`: plan replies run ~1.5k chars
+/// ≈ 40 closers; a pathological reply stays unparseable (the protocol note
+/// takes over) instead of costing an unbounded parse loop.
+const MAX_EXTRA_CLOSE_CANDIDATES: usize = 64;
+
+/// Repair a response with one `}` TOO MANY — the mirror image of stage 1
+/// (which only closes braces left OPEN). String-aware scan for closing
+/// braces outside string literals, then delete one at a time and keep the
+/// first deletion that parses — scanning from the END of the reply, because
+/// the slip lands in the newest text (right after a scalar field mid-object
+/// or doubled at the last step/array boundary, `}}]`) and a tail deletion
+/// keeps every earlier byte intact: both 2026-11-02 shapes reconstruct with
+/// full field fidelity (an earlier-byte deletion can also parse, but it
+/// slides the spurious close's sibling fields into the wrong object).
+/// `]`-only extras have never been observed and are not handled. Returns
+/// None when no single deletion parses (prose, stranded keys, mixed
+/// defects) — the protocol note path. Whatever parses still goes through
+/// the full plan validator — shape rescue only, never content.
+fn repair_extra_close_json(raw: &str) -> Option<String> {
+    // Byte scan is UTF-8 safe: ASCII delimiter bytes never occur as
+    // continuation bytes of a multi-byte char.
+    let bytes = raw.as_bytes();
+    let mut candidates: Vec<usize> = Vec::new();
+    let mut in_str = false;
+    let mut escaped = false;
+    for (i, b) in bytes.iter().enumerate() {
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if *b == b'\\' {
+                escaped = true;
+            } else if *b == b'"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match *b {
+            b'"' => in_str = true,
+            b'}' => candidates.push(i),
+            _ => {}
+        }
+    }
+    if candidates.len() > MAX_EXTRA_CLOSE_CANDIDATES {
+        return None;
+    }
+    for i in candidates.into_iter().rev() {
+        let mut attempt = String::with_capacity(raw.len() - 1);
+        attempt.push_str(&raw[..i]);
+        attempt.push_str(&raw[i + 1..]);
+        if serde_json::from_str::<serde_json::Value>(&attempt).is_ok() {
+            return Some(attempt);
+        }
+    }
+    None
 }
 
 fn plan_loop_system_prompt(core_tools: &str, cli_block: &str) -> String {
@@ -6915,6 +7016,76 @@ mod tests {
         assert!(repair_nested_steps_json(plan).is_none());
         // Prose with no object at all: left to the protocol note.
         assert!(repair_nested_steps_json("I will fetch the klines now.").is_none());
+    }
+
+    // Verbatim planner replies from macos-smoke CI run 41447893666
+    // (2026-11-02): the remote planner emitted an over-closed reply SIX
+    // rounds running — one `}` too many, always inside the same third step —
+    // and stage 1 (which only closes braces left OPEN) rightly declined
+    // every round, burning the call budget. These pin the over-close rescue.
+
+    #[test]
+    fn repair_rescues_over_closed_plan_extra_brace_at_last_step_close() {
+        // Rounds 2-6 shape: the third step closes with a doubled `}}]`
+        // instead of `}]`.
+        const RAW: &str = r#"{"goal":"Fetch live BTCUSDT and ETHUSDT prices and prepare data for a first-time buyer advisory","summary":{"overview":"The agent will fetch current average BTC and ETH prices from public exchange APIs, then the supervisor will write a short comparison advisory note for a first-time buyer.","actions":["Query public market APIs for live BTCUSDT and ETHUSDT prices","Gather brief context on volatility/market caps for the comparison"],"outputs":["Current BTCUSDT price","Current ETHUSDT price","First-time buyer advisory note comparing the two assets"]},"steps":[{"id":"s1","tool":"cli_run","task":"Fetch current BTCUSDT price from Binance API","arguments":{"command":"curl","args":["-s","https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"]},"produces":["btc_price"],"timeoutMs":30000,"retries":1,"onError":"continue","requiresConfirmation":false},{"id":"s2","tool":"cli_run","task":"Fetch current ETHUSDT price from Binance API","arguments":{"command":"curl","args":["-s","https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT"]},"produces":["eth_price"],"timeoutMs":30000,"retries":1,"onError":"continue","requiresConfirmation":false},{"id":"s3","tool":"web_search","task":"Search BTC vs ETH volatility and market cap context","arguments":{"query":"Bitcoin vs Ethereum volatility market cap comparison for new investors"},"produces":["comparison_hits"],"timeoutMs":60000,"retries":0,"onError":"skip","requiresConfirmation":false}}],"finalWriter":"default"}"#;
+        let fixed = repair_nested_steps_json(RAW).expect("over-closed plan must repair");
+        let v: serde_json::Value = serde_json::from_str(&fixed).unwrap();
+        assert_eq!(
+            v["goal"],
+            "Fetch live BTCUSDT and ETHUSDT prices and prepare data for a first-time buyer advisory"
+        );
+        let steps = v["steps"].as_array().expect("steps at TOP LEVEL");
+        assert_eq!(steps.len(), 3);
+        assert_eq!(steps[2]["tool"], "web_search");
+        assert_eq!(steps[2]["produces"][0], "comparison_hits");
+        assert_eq!(v["finalWriter"], "default");
+    }
+
+    #[test]
+    fn repair_rescues_over_closed_plan_premature_step_close() {
+        // Round 1 shape: `}` right after the `"maxResults":5` scalar closes
+        // the step mid-way, stranding the remaining fields outside the
+        // object. Deleting that one closer restores the step intact.
+        const RAW: &str = r#"{"goal":"Fetch live BTCUSDT and ETHUSDT prices and prepare data for a first-time buyer advisory","summary":{"overview":"The agent will fetch current average BTC and ETH prices from public exchange APIs, then the supervisor will write a short comparison advisory note for a first-time buyer.","actions":["Query public market APIs for live BTCUSDT and ETHUSDT prices","Gather brief context on volatility/market caps for the comparison"],"outputs":["Current BTCUSDT price","Current ETHUSDT price","First-time buyer advisory note comparing the two assets"]},"steps":[{"id":"s1","tool":"cli_run","task":"Fetch current BTCUSDT price from Binance API","arguments":{"command":"curl","args":["-s","https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"]},"produces":["btc_price"],"timeoutMs":30000,"retries":1,"onError":"continue","requiresConfirmation":false},{"id":"s2","tool":"cli_run","task":"Fetch current ETHUSDT price from Binance API","arguments":{"command":"curl","args":["-s","https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT"]},"produces":["eth_price"],"timeoutMs":30000,"retries":1,"onError":"continue","requiresConfirmation":false},{"id":"s3","tool":"web_search","task":"Rechercher volatilité et capitalisation BTC vs ETH","arguments":{"query":"Bitcoin vs Ethereum volatility market cap comparison 2026 for new investors"},"maxResults":5},"produces":["comparison_hits"],"timeoutMs":60000,"retries":0,"onError":"skip","requiresConfirmation":false}],"finalWriter":"default"}"#;
+        let fixed = repair_nested_steps_json(RAW).expect("premature-close plan must repair");
+        let v: serde_json::Value = serde_json::from_str(&fixed).unwrap();
+        let steps = v["steps"].as_array().unwrap();
+        assert_eq!(steps.len(), 3);
+        // The spurious closer sat after "maxResults" — the field must stay in
+        // its step, not vanish with the deletion.
+        assert_eq!(steps[2]["maxResults"], 5);
+        assert_eq!(steps[2]["task"], "Rechercher volatilité et capitalisation BTC vs ETH");
+        assert_eq!(steps[2]["produces"][0], "comparison_hits");
+    }
+
+    #[test]
+    fn repair_stays_off_unfixable_shapes() {
+        // A stranded `"key"` with no value (truncation): not fixable by
+        // closing open braces or deleting a closer — the protocol note keeps
+        // it, exactly as before the over-close pass existed.
+        let stranded = r#"{"goal":"G","steps":[{"id":"s1","tool":"cli_run","task":"t","arguments":{"command":"curl"},"retries":"#;
+        assert!(repair_nested_steps_json(stranded).is_none());
+    }
+
+    #[test]
+    fn planner_response_tail_shows_end_region() {
+        let head = "{\"goal\":\"g\",\"summary\":{\"overview\":\"o\"},";
+        let defective_tail = "\"steps\":[{\"id\":\"s1\"}}],\"finalWriter\":\"default\"}";
+        let raw = format!("{head}{defective_tail}");
+        let tail = planner_response_tail(&raw, defective_tail.chars().count());
+        assert_eq!(tail, format!("…{defective_tail}"));
+        // Longer than the cap: ellipsis-prefixed, capped, still the END.
+        let long_tail = planner_response_tail(&raw, 10);
+        assert!(long_tail.starts_with('…'), "got: {long_tail}");
+        assert!(long_tail.chars().count() <= 11, "got: {long_tail}");
+        assert!(
+            defective_tail.ends_with(long_tail.trim_start_matches('…')),
+            "got: {long_tail}"
+        );
+        assert_eq!(planner_response_tail("short", 300), "short");
+        // Multi-byte safety on the cut edge.
+        let _ = planner_response_tail("プロンプト 🎉 テスト plan JSON", 6);
     }
 
     fn preview_chars_is_char_boundary_safe_and_capped() {
