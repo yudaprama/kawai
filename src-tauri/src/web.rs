@@ -2958,6 +2958,33 @@ fn supervisor_sse(
     Sse::new(s).keep_alive(KeepAlive::default())
 }
 
+/// Epilogue shared by every FIXED-pipeline SSE handler: forward the built
+/// [`FixedRun`] plus transport identity to [`supervisor_sse`]. The planner
+/// handler composes [`supervisor_sse`] directly (its goal and registry come
+/// from the request, not a `prepare_*` builder).
+#[cfg(feature = "litert")]
+fn prepared_sse(
+    run: crate::supervisor::FixedRun,
+    stream_id: String,
+    user_id: String,
+    session_id: i64,
+    bearer: &str,
+    pending: crate::supervisor::PendingConfirmations,
+) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
+    supervisor_sse(
+        run.plan,
+        run.allow_model_revision,
+        run.registry,
+        stream_id,
+        user_id,
+        session_id,
+        Some(run.user_goal),
+        run.video_id,
+        bearer,
+        pending,
+    )
+}
+
 /// Stock Research (PLAN-stock-research): run the fixed stock-research pipeline
 /// for one ticker and stream the same `SupervisorEvent` lifecycle.
 #[cfg(feature = "litert")]
@@ -3011,15 +3038,11 @@ async fn run_stock_research_handler(
     .await
     .map_err(fixed_run_status)?;
 
-    Ok(supervisor_sse(
-        run.plan,
-        run.allow_model_revision,
-        run.registry,
+    Ok(prepared_sse(
+        run,
         req.stream_id,
         user_id,
         req.session_id,
-        Some(run.user_goal),
-        run.video_id,
         &bearer,
         pending,
     ))
@@ -3064,15 +3087,11 @@ async fn run_youtube_analysis_handler(
     .await
     .map_err(fixed_run_status)?;
 
-    Ok(supervisor_sse(
-        run.plan,
-        run.allow_model_revision,
-        run.registry,
+    Ok(prepared_sse(
+        run,
         req.stream_id,
         user_id,
         req.session_id,
-        Some(run.user_goal),
-        run.video_id,
         &bearer,
         pending,
     ))
@@ -3082,29 +3101,17 @@ async fn run_youtube_analysis_handler(
 /// Binance futures positions. Same fixed-plan contract as the desk and the
 /// YouTube video analysis — the presets are normalized before the plan exists, so a
 /// bad value is a 400, never a half-started run.
-#[cfg(all(feature = "litert", feature = "binance"))]
+/// `market` is Binance-only; the MEXC builder ignores it (serde drops the
+/// unknown-to-it value, same as an absent field).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RunBinanceRiskAuditRequest {
+struct RunRiskAuditRequest {
     session_id: i64,
     interval: Option<String>,
     risk: Option<String>,
     limit: Option<u32>,
     /// Market scope: "all" (default), "usdm", or "coinm".
     market: Option<String>,
-    /// Raw device locale tag (e.g. "id-ID"); falls back to Accept-Language.
-    language: Option<String>,
-    stream_id: String,
-}
-
-#[cfg(all(feature = "litert", feature = "mexc"))]
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RunMexcRiskAuditRequest {
-    session_id: i64,
-    interval: Option<String>,
-    risk: Option<String>,
-    limit: Option<u32>,
     /// Raw device locale tag (e.g. "id-ID"); falls back to Accept-Language.
     language: Option<String>,
     stream_id: String,
@@ -3181,7 +3188,7 @@ async fn run_binance_risk_audit_handler(
     Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
     Extension(user_id): Extension<String>,
     headers: HeaderMap,
-    Json(req): Json<RunBinanceRiskAuditRequest>,
+    Json(req): Json<RunRiskAuditRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
     // Billing bearer off the session cookie — the edge middleware already
     // validated it (AGENTS.md #8); fail closed here before the supervisor.
@@ -3203,15 +3210,11 @@ async fn run_binance_risk_audit_handler(
     .await
     .map_err(fixed_run_status)?;
 
-    Ok(supervisor_sse(
-        run.plan,
-        run.allow_model_revision,
-        run.registry,
+    Ok(prepared_sse(
+        run,
         req.stream_id,
         user_id,
         req.session_id,
-        Some(run.user_goal),
-        run.video_id,
         &bearer,
         pending,
     ))
@@ -3222,7 +3225,7 @@ async fn run_mexc_risk_audit_handler(
     Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
     Extension(user_id): Extension<String>,
     headers: HeaderMap,
-    Json(req): Json<RunMexcRiskAuditRequest>,
+    Json(req): Json<RunRiskAuditRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
     let bearer = cookie_bearer(&headers)?;
     ensure_session(&user_id, req.session_id).await?;
@@ -3239,15 +3242,11 @@ async fn run_mexc_risk_audit_handler(
     .await
     .map_err(fixed_run_status)?;
 
-    Ok(supervisor_sse(
-        run.plan,
-        run.allow_model_revision,
-        run.registry,
+    Ok(prepared_sse(
+        run,
         req.stream_id,
         user_id,
         req.session_id,
-        Some(run.user_goal),
-        run.video_id,
         &bearer,
         pending,
     ))
@@ -3274,15 +3273,11 @@ async fn run_trading_performance_handler(
     )
     .await
     .map_err(fixed_run_status)?;
-    Ok(supervisor_sse(
-        run.plan,
-        run.allow_model_revision,
-        run.registry,
+    Ok(prepared_sse(
+        run,
         req.stream_id,
         user_id,
         req.session_id,
-        Some(run.user_goal),
-        run.video_id,
         &bearer,
         pending,
     ))
@@ -3307,15 +3302,11 @@ async fn run_monthly_close_handler(
     )
     .await
     .map_err(fixed_run_status)?;
-    Ok(supervisor_sse(
-        run.plan,
-        run.allow_model_revision,
-        run.registry,
+    Ok(prepared_sse(
+        run,
         req.stream_id,
         user_id,
         req.session_id,
-        Some(run.user_goal),
-        run.video_id,
         &bearer,
         pending,
     ))
@@ -3348,15 +3339,11 @@ async fn run_security_audit_handler(
     )
     .await
     .map_err(fixed_run_status)?;
-    Ok(supervisor_sse(
-        run.plan,
-        run.allow_model_revision,
-        run.registry,
+    Ok(prepared_sse(
+        run,
         req.stream_id,
         user_id,
         req.session_id,
-        Some(run.user_goal),
-        run.video_id,
         &bearer,
         pending,
     ))
@@ -3392,15 +3379,11 @@ async fn run_crypto_screener_handler(
     .await
     .map_err(fixed_run_status)?;
 
-    Ok(supervisor_sse(
-        run.plan,
-        run.allow_model_revision,
-        run.registry,
+    Ok(prepared_sse(
+        run,
         req.stream_id,
         user_id,
         req.session_id,
-        Some(run.user_goal),
-        run.video_id,
         &bearer,
         pending,
     ))

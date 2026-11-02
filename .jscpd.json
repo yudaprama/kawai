@@ -17,6 +17,7 @@
     "**/AGENTS.md",
     "**/DESIGN.md",
     "**/generated-tools/**/*.gen.rs",
+    "**/lonkero/**",
     "**/vendor/**",
     "**/target/**",
     "**/node_modules/**",

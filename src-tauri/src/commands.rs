@@ -2118,6 +2118,30 @@ impl SupervisorStreamCtx {
         );
         run_streaming(stream_id, on_event, &self.registry, stream, Some(token)).await
     }
+
+    /// Epilogue for the fixed pipelines: forward a fully built
+    /// [`crate::supervisor::FixedRun`] to [`Self::run`]. Fixed pipelines never
+    /// let the model rebuild the plan, so `allow_model_revision` is
+    /// `FixedRun::allow_model_revision` and the goal always rides the run.
+    async fn run_prepared(
+        &self,
+        run: crate::supervisor::FixedRun,
+        stream_id: String,
+        on_event: Channel<kawai_events::SupervisorEvent>,
+        pending: &crate::supervisor::PendingConfirmations,
+    ) -> Result<(), String> {
+        self.run(
+            run.plan,
+            run.registry,
+            Some(run.user_goal),
+            run.video_id,
+            stream_id,
+            on_event,
+            pending,
+            run.allow_model_revision,
+        )
+        .await
+    }
 }
 
 /// Streaming supervisor execution: build the tool registry for the user's
@@ -2194,7 +2218,7 @@ pub async fn run_stock_research(
     )
     .await
     .map_err(|e| e.message().to_string())?;
-    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending, run.allow_model_revision)
+    ctx.run_prepared(run, stream_id, on_event, &pending)
         .await
 }
 
@@ -2239,7 +2263,7 @@ pub async fn run_binance_risk_audit(
     )
     .await
     .map_err(|e| e.message().to_string())?;
-    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending, run.allow_model_revision)
+    ctx.run_prepared(run, stream_id, on_event, &pending)
         .await
 }
 
@@ -2272,7 +2296,7 @@ pub async fn run_mexc_risk_audit(
     )
     .await
     .map_err(|e| e.message().to_string())?;
-    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending, run.allow_model_revision)
+    ctx.run_prepared(run, stream_id, on_event, &pending)
         .await
 }
 
@@ -2320,7 +2344,7 @@ pub async fn run_trading_performance(
     )
     .await
     .map_err(|e| e.message().to_string())?;
-    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending, run.allow_model_revision)
+    ctx.run_prepared(run, stream_id, on_event, &pending)
         .await
 }
 
@@ -2350,7 +2374,7 @@ pub async fn run_monthly_close(
     )
     .await
     .map_err(|e| e.message().to_string())?;
-    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending, run.allow_model_revision)
+    ctx.run_prepared(run, stream_id, on_event, &pending)
         .await
 }
 
@@ -2389,7 +2413,7 @@ pub async fn run_security_audit(
     )
     .await
     .map_err(|e| e.message().to_string())?;
-    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending, run.allow_model_revision)
+    ctx.run_prepared(run, stream_id, on_event, &pending)
         .await
 }
 
@@ -2442,7 +2466,7 @@ pub async fn run_crypto_screener(
     )
     .await
     .map_err(|e| e.message().to_string())?;
-    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending, run.allow_model_revision)
+    ctx.run_prepared(run, stream_id, on_event, &pending)
         .await
 }
 
@@ -2477,7 +2501,7 @@ pub async fn run_youtube_analysis(
     )
     .await
     .map_err(|e| e.message().to_string())?;
-    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending, run.allow_model_revision)
+    ctx.run_prepared(run, stream_id, on_event, &pending)
         .await
 }
 
