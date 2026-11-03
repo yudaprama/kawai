@@ -77,7 +77,7 @@ async fn run() {
                 winner = provider;
             }
             Err(e) => {
-                println!("\n[remote_smoke] stream error: {e}");
+                println!("\n[remote_smoke] stream error: {} | {}", e, e.diagnostic());
                 std::process::exit(1);
             }
         }

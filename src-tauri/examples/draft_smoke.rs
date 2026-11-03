@@ -79,13 +79,13 @@ Results: cloud smoke 3.6s, 193 output tokens; local tests 40/40. Next: calibrati
                     // is a transient provider flake — retry it like malformed
                     // JSON instead of failing the gate on attempt 1.
                     if attempt < 3 {
-                        println!("[draft_smoke] stream error ({e}) — retrying (attempt {} follows)", attempt + 1);
+                        println!("[draft_smoke] stream error ({}) — retrying (attempt {} follows)", e.diagnostic(), attempt + 1);
                         feedback = format!(
                             "CORRECTION — your previous attempt was cut off by a transport error. Return ONLY one complete JSON object {{\"blocks\": [...]}}."
                         );
                         continue 'attempts;
                     }
-                    println!("[draft_smoke] stream error after {attempt} attempts: {e}");
+                    println!("[draft_smoke] stream error after {attempt} attempts: {}", e.diagnostic());
                     std::process::exit(1);
                 }
             }

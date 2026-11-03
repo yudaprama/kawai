@@ -5424,7 +5424,7 @@ async fn synthesize_final_answer(
         let mut stream = match remote.stream(system, &task, materials).await {
             Ok(s) => s,
             Err(e) => {
-                tracing::error!(component = "supervisor", "deliverable writer: planner pool unavailable ({e}) — falling back to raw output");
+                tracing::error!(component = "supervisor", detail = %e.diagnostic(), "deliverable writer: planner pool unavailable — falling back to raw output");
                 return None;
             }
         };
@@ -5439,7 +5439,8 @@ async fn synthesize_final_answer(
                 Err(e) => {
                     tracing::error!(
                         component = "supervisor",
-                        "deliverable writer: stream failed mid-generation ({e}) — falling back to raw output"
+                        detail = %e.diagnostic(),
+                        "deliverable writer: stream failed mid-generation — falling back to raw output"
                     );
                     return None;
                 }
