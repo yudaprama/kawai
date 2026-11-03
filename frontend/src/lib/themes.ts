@@ -242,8 +242,11 @@ const CLAUDE_PLUS: ThemePalette = {
     "popover-foreground": "oklch(0.9211 0.0040 106.4781)",
     primary: "oklch(0.6724 0.1308 38.7559)",
     "primary-foreground": "oklch(0.1908 0.0020 106.5859)",
-    secondary: "oklch(0.9818 0.0054 95.0986)",
-    "secondary-foreground": "oklch(0.3085 0.0035 106.6039)",
+    // `secondary` is a *surface* in this app — chips, slider tracks, cards —
+    // so its dark half is a raised warm dark with light text. A cream fill
+    // here puts near-white text on a light box on every one of those.
+    secondary: "oklch(0.3085 0.0035 106.6039)",
+    "secondary-foreground": "oklch(0.9576 0.0027 106.4494)",
     muted: "oklch(0.2213 0.0038 106.7070)",
     "muted-foreground": "oklch(0.7713 0.0169 99.0657)",
     accent: "oklch(0.2130 0.0078 95.4245)",
@@ -255,17 +258,22 @@ const CLAUDE_PLUS: ThemePalette = {
     ring: "oklch(0.6724 0.1308 38.7559)",
     "chart-1": "oklch(0.5583 0.1276 42.9956)",
     "chart-2": "oklch(0.6898 0.1581 290.4107)",
-    "chart-3": "oklch(0.2130 0.0078 95.4245)",
-    "chart-4": "oklch(0.3074 0.0516 289.3230)",
+    // chart-3/4 keep their light-half values: the registry's dark halves sit
+    // at page luminance and disappear on the warm-dark background.
+    "chart-3": "oklch(0.8816 0.0276 93.1280)",
+    "chart-4": "oklch(0.8822 0.0403 298.1792)",
     "chart-5": "oklch(0.5608 0.1348 42.0584)",
     sidebar: "oklch(0.2357 0.0024 67.7077)",
     "sidebar-foreground": "oklch(0.8074 0.0142 93.0137)",
-    "sidebar-primary": "oklch(0.3250 0 0)",
-    "sidebar-primary-foreground": "oklch(0.9881 0 0)",
+    "sidebar-primary": "oklch(0.6724 0.1308 38.7559)",
+    "sidebar-primary-foreground": "oklch(0.1908 0.0020 106.5859)",
     "sidebar-accent": "oklch(0.1680 0.0020 106.6177)",
     "sidebar-accent-foreground": "oklch(0.8074 0.0142 93.0137)",
-    "sidebar-border": "oklch(0.9401 0 0)",
-    "sidebar-ring": "oklch(0.7731 0 0)",
+    // Dividers + active-nav ring follow the page border and accent: their
+    // registry values are near-white, which draws white hairlines on the
+    // dark sidebar.
+    "sidebar-border": "oklch(0.3618 0.0101 106.8928)",
+    "sidebar-ring": "oklch(0.6724 0.1308 38.7559)",
     ...FONTS_OUTFIT,
     ...SHADOWS_STD,
   },

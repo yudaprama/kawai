@@ -35,14 +35,17 @@ export function Masonry<T>({
 }
 
 /** N columns by viewport width — `max` is the count at lg and up, half of it
- *  in the middle band, one on a phone. Shared by the image and video lanes:
- *  both size their galleries with `Masonry`. */
-export function useColumnCount(max: number): number {
+ *  in the middle band, `phone` (default 1) on a phone. Media galleries stay
+ *  at 1 on a phone (big previews); dense pickers like the model browser pass
+ *  `phone: 2` so a card can't swallow the viewport. Shared by the image and
+ *  video lanes: both size their galleries with `Masonry`. */
+export function useColumnCount(max: number, phone = 1): number {
   const [cols, setCols] = useState(max);
   useEffect(() => {
     const narrow = window.matchMedia("(max-width: 639px)");
     const medium = window.matchMedia("(max-width: 1023px)");
-    const update = () => setCols(narrow.matches ? 1 : medium.matches ? Math.max(1, Math.ceil(max / 2)) : max);
+    const update = () =>
+      setCols(narrow.matches ? Math.max(1, phone) : medium.matches ? Math.max(1, Math.ceil(max / 2)) : max);
     update();
     narrow.addEventListener("change", update);
     medium.addEventListener("change", update);
@@ -50,6 +53,6 @@ export function useColumnCount(max: number): number {
       narrow.removeEventListener("change", update);
       medium.removeEventListener("change", update);
     };
-  }, [max]);
+  }, [max, phone]);
   return cols;
 }

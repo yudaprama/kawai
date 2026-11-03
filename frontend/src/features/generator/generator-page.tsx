@@ -275,14 +275,21 @@ function BrowserCard({
   return (
     <div
       className={cn(
-        "group overflow-hidden rounded-[10px] border bg-secondary text-left transition-colors hover:brightness-110",
+        "group cursor-pointer overflow-hidden rounded-[10px] border bg-secondary text-left transition-colors hover:brightness-110",
         selected && "border-primary ring-1 ring-primary",
       )}
     >
       <div className="relative w-full overflow-hidden bg-background">
         <button className="block w-full cursor-pointer" onClick={() => onSelect(row)} type="button">
           {gallery[at] ? (
-            <img alt={row.name} className="block h-auto w-full" loading="lazy" src={gallery[at]} />
+            // A uniform 4:5 crop on a phone — natural-aspect covers there
+            // (often 2:3 or taller) made one card taller than the viewport.
+            <img
+              alt={row.name}
+              className="block h-auto w-full max-sm:aspect-[4/5] max-sm:object-cover"
+              loading="lazy"
+              src={gallery[at]}
+            />
           ) : (
             <div className="flex min-h-40 w-full items-center justify-center">
               <ModelTile eco={eco} size={72} />
@@ -295,7 +302,10 @@ function BrowserCard({
             <Button
               aria-label="Previous image"
               className="hit-44 absolute top-1/2 left-1.5 z-10 size-6 -translate-y-1/2 rounded-full bg-black/50 text-white hover:bg-black/70"
-              onClick={() => setIdx((at - 1 + gallery.length) % gallery.length)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIdx((at - 1 + gallery.length) % gallery.length);
+              }}
               size="icon"
               variant="ghost"
             >
@@ -304,7 +314,10 @@ function BrowserCard({
             <Button
               aria-label="Next image"
               className="hit-44 absolute top-1/2 right-1.5 z-10 size-6 -translate-y-1/2 rounded-full bg-black/50 text-white hover:bg-black/70"
-              onClick={() => setIdx((at + 1) % gallery.length)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIdx((at + 1) % gallery.length);
+              }}
               size="icon"
               variant="ghost"
             >
@@ -318,8 +331,11 @@ function BrowserCard({
           </>
         )}
       </div>
-      <div className="flex flex-col gap-1 p-2.5">
-        <div className="flex items-start justify-between gap-2">
+      {/* Select-on-tap for the whole card: the info block is a real button so
+          the card is tappable below the cover AND keyboard operable (the
+          carousel arrows stop propagation, so paging never selects). */}
+      <button className="flex w-full flex-col gap-1 p-2.5 text-left" onClick={() => onSelect(row)} type="button">
+        <div className="flex w-full items-start justify-between gap-2">
           <span className="text-foreground line-clamp-1 text-[0.8125rem] font-semibold">{row.name}</span>
           {selected && <Icon className="mt-0.5 size-3.5 shrink-0" name="check" />}
         </div>
@@ -336,7 +352,7 @@ function BrowserCard({
             {row.baseModel}
           </span>
         )}
-      </div>
+      </button>
     </div>
   );
 }
@@ -373,7 +389,9 @@ function ModelBrowser({
   loraCount: number;
 }) {
   const { t } = useI18n();
-  const cols = useColumnCount(3);
+  // 2 columns on a phone — 1 let a single portrait cover swallow the whole
+  // dialog (the browser dialog spans the viewport width there).
+  const cols = useColumnCount(3, 2);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sort, setSort] = useState("Highest Rated");
@@ -486,7 +504,7 @@ function ModelBrowser({
 
   return (
     <DialogContent
-      className="flex h-[min(80dvh,44rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
+      className="flex h-[calc(100dvh-2rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] flex-col gap-0 overflow-hidden p-0 sm:h-[min(80dvh,44rem)] sm:max-w-4xl"
       onOpenAutoFocus={(e) => e.preventDefault()}
     >
       <DialogHeader className="shrink-0 space-y-0 border-b px-4 py-3">
@@ -511,11 +529,11 @@ function ModelBrowser({
               value={query}
             />
           </div>
-          <div className={SEGMENTED_LIST}>
+          <div className={cn(SEGMENTED_LIST, "max-sm:w-full")}>
             {(["Checkpoint", "LORA"] as const).map((tt) => (
               <button
                 aria-pressed={type === tt}
-                className={segmentClass(type === tt)}
+                className={cn(segmentClass(type === tt), "max-sm:flex-1")}
                 key={tt}
                 onClick={() => onTypeChange(tt)}
                 type="button"
@@ -525,7 +543,7 @@ function ModelBrowser({
             ))}
           </div>
           <Select onValueChange={setSort} value={sort}>
-            <SelectTrigger className="h-8 w-[170px] rounded-[8px] text-xs max-md:h-11">
+            <SelectTrigger className="h-8 w-[170px] rounded-[8px] text-xs max-md:h-11 max-sm:w-full">
               {sortOptions.find((o) => o.value === sort)?.label}
             </SelectTrigger>
             <SelectContent className="z-[60] rounded-[8px]" position="popper">
@@ -543,11 +561,11 @@ function ModelBrowser({
           {loading ? (
             // Skeleton rows, not one centered spinner: the grid's shape is the
             // whole point of this browser, so reserve it while the page loads.
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
               {Array.from({ length: 6 }, (_, i) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length placeholder set, never reordered
                 <div className="overflow-hidden rounded-[10px] border" key={i}>
-                  <Skeleton className="aspect-[4/3] w-full rounded-none" />
+                  <Skeleton className="aspect-[4/5] w-full rounded-none sm:aspect-[4/3]" />
                   <div className="flex flex-col gap-1.5 p-2.5">
                     <Skeleton className="h-3 w-3/4" />
                     <Skeleton className="h-2.5 w-1/2" />
