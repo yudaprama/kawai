@@ -1094,10 +1094,6 @@ pub async fn plan_task(
             .map(|r| {
                 r.with_output_cap(4_000)
                     .with_agent("planner")
-                    // Planner rounds emit short JSON — thinking only burns the
-                    // output cap (measured: ~111 s of reasoning with zero
-                    // content tokens before the thinking-off retry).
-                    .with_thinking_disabled()
                     .with_conversation(format!("kawai-session-{session_id}"))
                     .with_user(user_id)
             })
@@ -2972,8 +2968,7 @@ async fn llm_route_resolve(
     let owned: remote_llm::RemoteLlm = pool.clone();
     let resolver = owned
         .with_output_cap(160)
-        .with_agent("route-resolver")
-        .with_thinking_disabled();
+        .with_agent("route-resolver");
     let mut stream = match resolver.stream(ROUTER_RESOLVER_PROMPT, goal, &menu).await {
         Ok(s) => s,
         Err(_) => return (None, remote_llm::RemoteUsage::default()),
@@ -4648,8 +4643,6 @@ async fn revise_plan(
             let mut r = r
                 .with_output_cap(4_000)
                 .with_agent("planner")
-                // Same reasoning-burns-the-cap shape as the planner loop.
-                .with_thinking_disabled()
                 .with_conversation(format!("kawai-session-{session_id}"))
                 .with_user(user_id);
             if let Some(rs) = run_span {
@@ -5391,11 +5384,6 @@ async fn synthesize_final_answer(
             .map(|r| {
                 r.with_output_cap(4_000)
                     .with_agent("deliverable-writer")
-                    // The writer's measured failure mode is identical to the
-                    // planner's: thinking burns the whole output cap with zero
-                    // content (98 s wasted on a run that then succeeded in
-                    // 40 s with thinking off).
-                    .with_thinking_disabled()
                     .with_conversation(format!("kawai-session-{session_id}"))
                     .with_user(user_id)
                     // DAG: the deliverable consumes the planner's plan —
@@ -5526,9 +5514,6 @@ async fn synthesize_deck(
             .map(|r| {
                 r.with_output_cap(16_000)
                     .with_agent("deck-writer")
-                    // Structured JSON slides — same reasoning-burns-the-cap
-                    // shape as the markdown writer.
-                    .with_thinking_disabled()
                     .with_conversation(format!("kawai-session-{session_id}"))
                     .with_user(user_id)
                     .with_parent_agent("planner")

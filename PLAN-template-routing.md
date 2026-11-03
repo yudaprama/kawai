@@ -233,7 +233,7 @@ Field baru + `execute_supervisor_plan`/`_handler` memilih builder. Belum ada rou
 
 ### Fase 6 — Router LLM di grey band
 
-Satu completion (`with_output_cap(~200)`, `with_thinking_disabled()`), dievaluasi hanya terhadap fixture yang benar-benar jatuh di grey band. Targetnya "LLM benar pada kasus yang memang router deterministik tidak bisa putuskan" — bukan "LLM benar pada semua".
+Satu completion (`with_output_cap(~200)`), dievaluasi hanya terhadap fixture yang benar-benar jatuh di grey band. Targetnya "LLM benar pada kasus yang memang router deterministik tidak bisa putuskan" — bukan "LLM benar pada semua".
 
 ### Fase 7 — `route_log` + verify
 
