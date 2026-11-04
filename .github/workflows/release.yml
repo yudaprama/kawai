@@ -360,10 +360,11 @@ jobs:
       # validation reject the prebuilt LiteRT-LM dylibs (different Team IDs) and
       # the app aborts at launch with "Library not loaded: @rpath/liblitert-lm.dylib".
       #
-      # `headless-chrome` compiles the CDP-client crate into the desktop
-      # bundles. It does NOT ship a browser: at runtime it resolves the user's
-      # installed Chrome/Chromium (and degrades when absent). Deliberately
-      # absent from the Android release set — see release-android.yml.
+      # The headless_chrome CDP-client crate rides the security feature via
+      # lonkero (target-gated dep: compile-time excluded on Android — see
+      # release-android.yml). It does NOT ship a browser: at runtime it
+      # resolves the user's installed Chrome/Chromium (and degrades when
+      # absent).
 
       - name: Build .app (with litert + office)
         uses: tauri-apps/tauri-action@v0

@@ -6178,7 +6178,6 @@ dependencies = [
  "futures-core",
  "futures-util",
  "geospace",
- "headless_chrome",
  "hex",
  "iana-time-zone",
  "jni 0.22.4",

@@ -23,24 +23,22 @@ name: release-android
 # workflow_dispatch(tag) re-runs it for one tag (failed upload, new internal
 # rollout).
 #
-# Feature set: `--features release-android` — the Cargo.toml alias (litert,
-# tts, binance, accounting, security on top of default `desktop`). The
-# desktop release ships the SAME set plus `headless-chrome` (its
-# `release-desktop` alias) — impossible here: no Chromium executable exists
-# in the Android app sandbox (Chrome ships as an APK; targetSdk 29+ forbids
-# exec from writable dirs), so lonkero's headless-Chrome paths are
-# compile-time excluded. `litert` is why this builds
+# Feature set: `--features release-android` — the Cargo.toml alias, identical
+# to `release-desktop` (litert, tts, binance, accounting, security on top of
+# default `desktop`). The platform difference lives inside lonkero, not in
+# the feature list: no Chromium executable exists in the Android app sandbox
+# (Chrome ships as an APK; targetSdk 29+ forbids exec from writable dirs), so
+# its headless-Chrome paths are compile-time excluded. `litert` is why this builds
 # aarch64 ONLY: the LiteRT-LM C library is built for android_arm64
 # (`bazel build //c:litert-lm --config=android_arm64`, staged into jniLibs by
 # scripts/stage-litert-android.sh) and armeabi-v7a can neither link it nor fit
 # a GB-scale model in a 32-bit address space. Every Android phone that can run
 # API 24+ from the last decade is arm64-capable; Play requires 64-bit anyway.
 #
-# The desktop feature `headless-chrome` is deliberately NOT in this set: the
-# crate is only a CDP client — it needs a Chromium executable to spawn, and
-# none exists in the Android app sandbox (Chrome ships as an APK; targetSdk
-# 29+ forbids exec from writable dirs; no standalone headless Chromium is
-# published for android_arm64). Scanner-grade browser automation is a
+# lonkero's headless-Chrome paths (browser crawl, auth login, PDF report) are
+# compile-time excluded here: the crate is only a CDP client — it needs a
+# Chromium executable to spawn, and no standalone headless Chromium is
+# published for android_arm64. Scanner-grade browser automation is a
 # desktop/web-build surface only.
 #
 # On-device inference also needs a `.litertlm` model file in <app_data>/models
