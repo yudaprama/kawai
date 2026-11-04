@@ -171,6 +171,21 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
 
+      # The security feature's vendored OpenSSL build (lonkero → native-tls →
+      # openssl-sys) runs `make` with binutils resolved by the cc crate. tauri's
+      # android toolchain wires CC/AR but not RANLIB, and cc's fallback is the
+      # bare cross-prefix name (`aarch64-linux-android-ranlib`), which the NDK
+      # does not ship (it has `llvm-ranlib`) — make dies with "not found".
+      # Export the cc-crate env vars explicitly, exactly what cargo-ndk does
+      # (the cargo-ndk-based CI checks pass for this reason).
+      - name: Export NDK binutils for cc-crate builds (vendored OpenSSL)
+        run: |
+          BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          {
+            echo "AR_aarch64_linux_android=$BIN/llvm-ar"
+            echo "RANLIB_aarch64_linux_android=$BIN/llvm-ranlib"
+          } >> "$GITHUB_ENV"
+
       # cargo-mobile2 force-symlinks the NDK sysroot's libc++_shared.so into
       # jniLibs on EVERY rust build (src/android/jnilibs.rs symlink_lib — no
       # existence check), so it can replace a stripped copy with an unstripped
