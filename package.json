@@ -23,7 +23,7 @@
     "tauri:android:apk": "bash scripts/tauri.sh android build --target aarch64 --apk --debug",
     "bundle:litert": "bash scripts/bundle-litert-dylibs.sh",
     "tauri:build:litert": "bash scripts/bundle-litert-dylibs.sh && tauri build -- --features litert --config .github/tauri-litert.json",
-    "tauri:build:litert-office": "bash scripts/bundle-litert-dylibs.sh && tauri build -- --features litert,office --config .github/tauri-litert.json",
+    "tauri:build:litert-office": "bash scripts/bundle-litert-dylibs.sh && tauri build -- --features release-desktop --config .github/tauri-litert.json",
     "jscpd": "jscpd frontend/src --config .jscpd.json --reporters console",
     "jscpd:rust": "jscpd src-tauri/src crates kawai-tools --config .jscpd.json --reporters console"
   },

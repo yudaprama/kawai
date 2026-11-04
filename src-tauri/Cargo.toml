@@ -208,9 +208,11 @@ binance = ["dep:binance", "kawai-agent/binance"]
 # Accounting agent (builtin.accounting): local double-entry ledger + GST
 # via accounting-tools (vendored accounting-core). No external services.
 accounting = ["dep:accounting-tools"]
-# Security agent (builtin.security): lonkero scan engine in-process. Desktop
-# first — the engine compiles for Android but scans are heavy for a phone,
-# and its headless-Chrome paths are already non-Android-gated.
+# Security agent (builtin.security): lonkero scan engine in-process. Ships on
+# desktop AND Android: lonkero's headless-Chrome paths (browser-dependent
+# crawl/auth/PDF-report) are compile-time excluded on Android, and the
+# openssl chain is vendored for the android target. Authenticated-scan login
+# and PDF report generation degrade to erroring stubs there by design.
 security = ["dep:security-tools"]
 # MEXC: the fill-sync tool rides the accounting agent's toolset (the books are
 # the accounting agent's job), so the books read one venue-generic fill history.
@@ -232,6 +234,23 @@ headless-chrome = ["dep:headless_chrome"]
 # the OCR engine (ocr-rs) — no ONNX Runtime, no espeak-ng. Models
 # (~191 MB fp16) download on first use.
 tts = ["dep:supertonic"]
+# ── Canonical release feature sets ──────────────────────────────────────────
+# Single source of truth for every release bundler and its CI compile gate:
+# release.yml (macOS/Linux/Windows) and package.json's tauri:build:litert-office
+# pass `--features release-desktop`; release-android.yml, ci.yml android-check
+# and android-smoke.yml pass `--features release-android`. Shipping a new agent
+# tier to the release apps is ONE edit here — never a hand-edit of seven
+# workflow lines.
+# `office`, `graph`, `mexc` and the tauri shell ride the `desktop` default, so
+# they are uniform on every platform without being listed. `monad` stays out of
+# both sets (regulatory — see release.yml). The sets differ ONLY in
+# headless-chrome, which is desktop-only because no Chromium executable exists
+# in the Android app sandbox (Chrome ships as an APK; targetSdk 29+ forbids
+# exec from writable dirs). security ships on Android too: lonkero's
+# headless-Chrome paths are compile-time excluded there (target-gated dep in
+# crates/lonkero), and its openssl chain is vendored for the android target.
+release-desktop = ["litert", "tts", "binance", "accounting", "security", "headless-chrome"]
+release-android = ["litert", "tts", "binance", "accounting", "security"]
 
 [[bin]]
 name = "kawai"

@@ -186,8 +186,11 @@ jobs:
         # security + headless-chrome compile ONLY here and in the release
         # bundlers (crates/lonkero is a nested submodule, fetched above) —
         # without this line a break in the security toolset surfaces first in
-        # a release run. `monad` stays out: nothing currently builds it on CI.
-        run: cargo check --features litert,office,binance,graph,web,accounting,mexc,tts,security,headless-chrome
+        # a release run. `release-desktop` keeps this gate automatically equal
+        # to what the desktop bundlers ship; `web` adds the server surface.
+        # `monad` stays out (regulatory — not in release bundles; it compiles
+        # only in linux-smoke's monad_wallet_smoke).
+        run: cargo check --features release-desktop,web
         working-directory: src-tauri
 
       # Data analysis agent (polars + office_oxide xlsx bridge) is always
@@ -392,8 +395,9 @@ jobs:
         if: steps.cargo-ndk.outputs.cache-hit != 'true'
         run: cargo install cargo-ndk --locked
 
-      # Feature set = EXACTLY what release-android ships (default `desktop` +
-      # litert, tts, binance, accounting, mexc) on its single ABI. `check`
+      # Feature set = EXACTLY what release-android ships (the Cargo.toml
+      # `release-android` alias on top of default `desktop`) on its single ABI.
+      # `check`
       # compiles Rust + runs bindgen against the nested C headers — no
       # liblitert-lm.so is needed (release builds it separately and stages it
       # into jniLibs); cognee-litert-lm's build.rs resolves the clang sysroot
@@ -403,7 +407,7 @@ jobs:
       # dumps all env vars to stdout.
       - name: cargo ndk check (aarch64, release feature set)
         working-directory: src-tauri
-        run: cargo ndk -t arm64-v8a -P 24 check --features litert,tts,binance,accounting,mexc
+        run: cargo ndk -t arm64-v8a -P 24 check --features release-android
 
   # ── Android on-device smoke ───────────────────────────────────────────────
   # Lives in android-smoke.yml (manual dispatch on a self-hosted runner): it

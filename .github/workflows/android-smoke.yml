@@ -200,8 +200,9 @@ jobs:
           cp bazel-bin/c/liblitert-lm.so ../../native/aarch64-linux-android/
           cp prebuilt/android_arm64/*.so ../../native/aarch64-linux-android/
 
-      # Feature set = EXACTLY what release-android ships (default `desktop` +
-      # litert, tts, binance, accounting, mexc); --no-default-features does
+      # Feature set = EXACTLY what release-android ships (the Cargo.toml
+      # `release-android` alias on top of default `desktop`);
+      # --no-default-features does
       # NOT compile (lib code outside the feature gates needs office/graph
       # deps). Links against native/aarch64-linux-android/, where the step
       # above staged the .so (the dir cognee-litert-lm's build.rs resolves
@@ -214,7 +215,7 @@ jobs:
         working-directory: src-tauri
         env:
           RUSTFLAGS: -L native=${{ env.ANDROID_NDK_HOME }}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/aarch64-linux-android
-        run: cargo ndk -t arm64-v8a -P 24 build --release --example local_llm_smoke --features litert,tts,binance,accounting,mexc
+        run: cargo ndk -t arm64-v8a -P 24 build --release --example local_llm_smoke --features release-android
 
       # Headless boot: HVF-accelerated arm64 guest. `-port 5556` fixes the
       # serial (emulator-5556) so every later adb call can pin -s. wipe-data

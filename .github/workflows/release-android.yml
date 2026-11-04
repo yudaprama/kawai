@@ -23,8 +23,13 @@ name: release-android
 # workflow_dispatch(tag) re-runs it for one tag (failed upload, new internal
 # rollout).
 #
-# Feature set: SAME as the desktop release — default `desktop` (office, graph,
-# mexc) + litert, tts, binance, accounting. `litert` is why this builds
+# Feature set: `--features release-android` — the Cargo.toml alias (litert,
+# tts, binance, accounting, security on top of default `desktop`). The
+# desktop release ships the SAME set plus `headless-chrome` (its
+# `release-desktop` alias) — impossible here: no Chromium executable exists
+# in the Android app sandbox (Chrome ships as an APK; targetSdk 29+ forbids
+# exec from writable dirs), so lonkero's headless-Chrome paths are
+# compile-time excluded. `litert` is why this builds
 # aarch64 ONLY: the LiteRT-LM C library is built for android_arm64
 # (`bazel build //c:litert-lm --config=android_arm64`, staged into jniLibs by
 # scripts/stage-litert-android.sh) and armeabi-v7a can neither link it nor fit
@@ -301,12 +306,12 @@ jobs:
           # Read at compile time (option_env!) — this is how a release APK
           # under test opts into INFO; a phone has no shell to export into.
           KAWAI_LOKI_LEVEL: ${{ inputs.loki_level || 'warn' }}
-        run: bun tauri android build --target aarch64 --features litert,tts,binance,accounting,mexc --config "$RUNNER_TEMP/tauri-android-version.json"
+        run: bun tauri android build --target aarch64 --features release-android --config "$RUNNER_TEMP/tauri-android-version.json"
 
       - name: Build universal APK (sideload)
         env:
           KAWAI_LOKI_LEVEL: ${{ inputs.loki_level || 'warn' }}
-        run: bun tauri android build --target aarch64 --features litert,tts,binance,accounting,mexc --apk --config "$RUNNER_TEMP/tauri-android-version.json"
+        run: bun tauri android build --target aarch64 --features release-android --apk --config "$RUNNER_TEMP/tauri-android-version.json"
 
       # Native libraries are stored UNCOMPRESSED in an APK (extractNativeLibs
       # =false) and AGP passes prebuilt jniLibs through untouched, so the Rust
