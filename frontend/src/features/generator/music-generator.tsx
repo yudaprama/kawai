@@ -29,29 +29,19 @@ import {
   type MusicScoreMode,
 } from "./music-ecosystems";
 import {
-  KeyStatusNotices,
   PresetSkeletonGrid,
   type GenerationJob,
   laneStatusKey,
   type LaneResultEntry,
   readFileAsDataUrl,
   useCivitaiKeyStatus,
-  useEcoGroups,
   usePresetGallery,
   useWorkflowLane,
 } from "./civitai-shared";
 import { GenerateFooter } from "./generate-footer";
-import {
-  ChoiceChip,
-  detailLine,
-  EcoPicker,
-  GeneratorLayout,
-  JobCard,
-  resultMeta,
-  ResultsPaneTabs,
-  useResultsPaneTab,
-} from "./generator-shell";
+import { ChoiceChip, detailLine, GeneratorLayout, JobCard, resultMeta } from "./generator-shell";
 import { ResultActions, ResultTile, mediaToken } from "./result-actions";
+import { EcoFormLead, ResultsGrid, ResultsPaneHeader, useGeneratorResultsPane } from "./shared";
 import type { MusicGenParams } from "@/generated/api-types";
 
 /** Civitai musicGen request — the generated wire contract
@@ -428,14 +418,22 @@ export function MusicGenerator() {
     // Fetch exactly once — the signed URL expires after download.
     fetchSaved: (st, workflowId) => call<SavedAudio>("civitai_music_fetch", { workflowId, audioUrl: st.audioUrl }),
   });
-  const { cancel, cost, costError, elapsed, job, removeEntry, results, status, submit, submitting } = lane;
-  /** Results ↔ community prompts: both stay reachable whatever the lane holds. */
-  const pane = useResultsPaneTab({ busy: job != null, count: results.length });
   const {
-    groups: ecoGroups,
-    open: ecoOpen,
-    setOpen: setEcoOpen,
-  } = useEcoGroups(MUSIC_ECOSYSTEMS, ecoId, switchEcosystem);
+    cancel,
+    cost,
+    costError,
+    elapsed,
+    job,
+    pane,
+    ecoGroups,
+    ecoOpen,
+    removeEntry,
+    results,
+    setEcoOpen,
+    status,
+    submit,
+    submitting,
+  } = useGeneratorResultsPane(lane, MUSIC_ECOSYSTEMS, ecoId, switchEcosystem);
 
   async function pickCover(file: File | undefined) {
     if (!file) return;
@@ -491,14 +489,13 @@ export function MusicGenerator() {
 
   const form = (
     <div className="flex flex-col gap-3 p-3">
-      <EcoPicker
-        ecoAriaLabel={t("videoGenerator.ecosystem")}
+      <EcoFormLead
+        configured={configured}
         ecoGroups={ecoGroups}
         ecoLabel={eco.label}
         ecoOpen={ecoOpen}
         onEcoOpenChange={setEcoOpen}
       />
-      <KeyStatusNotices configured={configured} />
 
       {/* Model — civitai's resource row: card art + model name (the audio
           ecosystems are all modelLocked — pinned server-side, nothing to
@@ -1027,14 +1024,7 @@ export function MusicGenerator() {
         />
       }
       form={form}
-      header={
-        <ResultsPaneTabs
-          active={pane.active}
-          onChange={pane.set}
-          resultsLabel={t("generator.resultsCount", { count: results.length })}
-          templatesLabel={t("musicGenerator.templates")}
-        />
-      }
+      header={<ResultsPaneHeader count={results.length} pane={pane} templatesLabel={t("musicGenerator.templates")} />}
     >
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 pb-24 lg:overscroll-contain lg:pb-3">
         {job && (
@@ -1057,16 +1047,13 @@ export function MusicGenerator() {
             onApplyStarter={applyMusicStarter}
           />
         ) : (
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {results.map((entry) => (
-              <MusicResultCard
-                entry={entry}
-                key={entry.fileId}
-                onRemove={() => removeEntry(entry)}
-                onReuse={() => reuseEntry(entry)}
-              />
-            ))}
-          </div>
+          <ResultsGrid
+            Card={MusicResultCard}
+            className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3"
+            entries={results}
+            onRemove={removeEntry}
+            onReuse={reuseEntry}
+          />
         )}
       </div>
     </GeneratorLayout>

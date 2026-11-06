@@ -1,10 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
-import { call, errText } from "@/lib/api";
+import { call } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+import {
+  failureRows,
+  num,
+  str,
+  parseJsonObject,
+  useRunLog,
+  OfferTable,
+  ArmBar,
+  ArmButtons,
+  SelectAllButton,
+} from "./offer-shared";
 import { MatchCount, SelectMatchingButton, SymbolSearch } from "./workbench-ui";
 
 /** Dispatch key of the screener tool — identifies a screener run's step in
@@ -110,9 +121,6 @@ export interface ScreenerOffer {
   rankedOn: number | null;
   hits: ScreenedHit[];
 }
-
-const num = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) ? x : null);
-const str = (x: unknown): string | null => (typeof x === "string" ? x : null);
 
 /** Screen direction, duplicated from the engine's catalog
  * (`screener::SCREENS`). Only the two directional values are listed: a
@@ -309,35 +317,21 @@ export function placementSummary(raw: string): {
   failures: { symbol: string; error: string }[];
   naked: { symbol: string; error: string }[];
 } | null {
-  let v: unknown;
-  try {
-    v = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (typeof v !== "object" || v == null || Array.isArray(v)) return null;
-  const o = v as Record<string, unknown>;
-  const opened = num(o.opened);
-  const failed = num(o.failed);
+  const v = parseJsonObject(raw);
+  if (v == null) return null;
+  const opened = num(v.opened);
+  const failed = num(v.failed);
   if (opened == null || failed == null) return null;
-  const rows = (key: string) =>
-    o[key] && Array.isArray(o[key])
-      ? (o[key] as unknown[])
-          .filter((x): x is Record<string, unknown> => typeof x === "object" && x != null)
-          .map((r) => ({
-            symbol: str(r.symbol) ?? "",
-            error: str(r.error) ?? "no reason given",
-          }))
-      : [];
+  const errorOf = (r: Record<string, unknown>) => str(r.error) ?? "no reason given";
   return {
-    venue: str(o.venue),
+    venue: str(v.venue),
     opened,
     failed,
-    unprotected: num(o.unprotected) ?? 0,
-    noTp: num(o.noTakeProfit) ?? 0,
-    note: str(o.note) ?? "",
-    failures: rows("failures"),
-    naked: rows("unprotectedPositions"),
+    unprotected: num(v.unprotected) ?? 0,
+    noTp: num(v.noTakeProfit) ?? 0,
+    note: str(v.note) ?? "",
+    failures: failureRows(v, "failures", errorOf),
+    naked: failureRows(v, "unprotectedPositions", errorOf),
   };
 }
 
@@ -415,7 +409,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
   const [notionals, setNotionals] = useState<Record<string, number>>({});
   /** "bulk" | `row:${key}` — only one arm at a time. */
   const [armedKey, setArmedKey] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { log, busy, run } = useRunLog();
   const [query, setQuery] = useState("");
   const [minScore, setMinScore] = useState<number>(0);
   /** Keyed by `${symbol}|${screen}` — the pre-approval stop fold per hit. */
@@ -425,8 +419,6 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
   /** Whether the approval also places the standard-style take-profit ladder.
    * Default ON: an entry without a target is half a trade. */
   const [withTp, setWithTp] = useState(true);
-  const logIdRef = useRef(0);
-  const [log, setLog] = useState<{ id: number; label: string; raw?: string; error?: string }[]>([]);
 
   // Read every step in parallel: the offer merges them into one hit list, so
   // a partial failure degrades to fewer rows rather than an empty panel.
@@ -463,19 +455,14 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
         return;
       }
       setOutputs(results);
-      // The stop preview rides the same read: once the merged offer exists,
-      // fold the engine's stop policy over fresh public candles for the top
-      // of the ranking — the numbers the user reasons about BEFORE arming an
-      // order. Keyless and read-only; a failure degrades to "—" cells, never
-      // to a broken panel.
-      const parsed = parseScreenerOffer(results);
-      if (parsed == null || parsed.hits.length === 0) return;
-      // A MEXC run offers nothing to place, so the Binance stop preview has
-      // nothing to annotate — skip the fetch entirely.
-      if (parsed.venue === "mexc") {
+      /** Fold the engine's stop policy over fresh public candles for the top
+       * of the ranking, keyed per (symbol, screen) — the numbers the user
+       * reasons about BEFORE arming an order. Keyless and read-only; a
+       * failure degrades to "—" cells, never to a broken panel. */
+      const loadStopPreviews = async (endpoint: string, parsed: ScreenerOffer) => {
         setPreviewPending(true);
         try {
-          const out = await call<string>("mexc_screened_stop_preview", {
+          const out = await call<string>(endpoint, {
             picks: previewTargets(parsed.hits),
             interval: parsed.interval,
             risk: "standard",
@@ -490,27 +477,17 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
         } finally {
           if (alive) setPreviewPending(false);
         }
-        return;
-      }
-      setPreviewPending(true);
-      try {
-        const out = await call<string>("binance_screened_stop_preview", {
-          picks: previewTargets(parsed.hits),
-          interval: parsed.interval,
-          risk: "standard",
-        });
-        if (!alive) return;
-        const rows = JSON.parse(out) as {
-          previews?: (StopPreview & { symbol: string; screen: string })[];
-        };
-        const map: Record<string, StopPreview> = {};
-        for (const p of rows.previews ?? []) map[`${p.symbol}|${p.screen}`] = p;
-        setPreviews(map);
-      } catch {
-        if (alive) setPreviewFailed(true);
-      } finally {
-        if (alive) setPreviewPending(false);
-      }
+      };
+      // The stop preview rides the same read: once the merged offer exists,
+      // it runs for the top of the ranking.
+      const parsed = parseScreenerOffer(results);
+      if (parsed == null || parsed.hits.length === 0) return;
+      // A MEXC run offers nothing to place, so it previews through the MEXC
+      // endpoint; Binance hits preview through the Binance one.
+      await loadStopPreviews(
+        parsed.venue === "mexc" ? "mexc_screened_stop_preview" : "binance_screened_stop_preview",
+        parsed,
+      );
     });
     return () => {
       alive = false;
@@ -634,33 +611,23 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
    * used; the risk preset is the engine's standard default. */
   const execute = async (label: string, hits: ScreenedHit[]) => {
     if (busy || hits.length === 0) return;
-    setBusy(true);
     setArmedKey(null);
-    try {
-      const endpoint = offer.venue === "mexc" ? "mexc_open_screened_positions" : "binance_open_screened_positions";
-      const payload: Record<string, unknown> = {
-        picks: hits.map((h) => ({
-          symbol: h.symbol,
-          // The screen, never a side: the engine derives the direction from it.
-          screen: h.screen,
-          notional: notionals[rowKey(h)] ?? DEFAULT_NOTIONAL,
-        })),
-        interval: offer.interval,
-        risk: "standard",
-      };
-      if (offer.venue !== "mexc") payload.takeProfit = withTp;
-      const out = await call<string>(endpoint, payload);
-      const id = ++logIdRef.current;
-      setLog((l) => [...l, { id, label, raw: out }]);
-      // The rows that were approved are now positions — leaving them ticked
-      // would let a second click re-send them.
-      setSelected(new Set());
-    } catch (e) {
-      const id = ++logIdRef.current;
-      setLog((l) => [...l, { id, label, error: errText(e) }]);
-    } finally {
-      setBusy(false);
-    }
+    const endpoint = offer.venue === "mexc" ? "mexc_open_screened_positions" : "binance_open_screened_positions";
+    const payload: Record<string, unknown> = {
+      picks: hits.map((h) => ({
+        symbol: h.symbol,
+        // The screen, never a side: the engine derives the direction from it.
+        screen: h.screen,
+        notional: notionals[rowKey(h)] ?? DEFAULT_NOTIONAL,
+      })),
+      interval: offer.interval,
+      risk: "standard",
+    };
+    if (offer.venue !== "mexc") payload.takeProfit = withTp;
+    const out = await run(label, () => call<string>(endpoint, payload));
+    // The rows that were approved are now positions — leaving them ticked
+    // would let a second click re-send them.
+    if (out != null) setSelected(new Set());
   };
 
   // Engine/screen vocabulary is snake_case; spaced out so it reads as a word
@@ -804,139 +771,123 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
             selectedInView={selectedInView}
           />
         )}
-        <div className="border-border/60 max-h-96 overflow-y-auto rounded-md border">
-          <table className="w-full border-collapse font-mono text-[0.6875rem]">
-            <thead className="bg-background sticky top-0 z-10">
-              <tr className="text-muted-foreground border-border/60 border-b text-left">
-                <th className="p-1.5">
+        <OfferTable
+          ariaLabel="Select all hits"
+          allSelected={allSelected}
+          toggleAll={toggleAll}
+          busy={busy}
+          header={
+            <>
+              <th className="p-1.5">Setup</th>
+              <th
+                className="p-1.5 text-right"
+                title="The protective stop the engine's policy folds over fresh candles for this setup — its distance IS 1R. Execution re-folds the level at order time."
+              >
+                Stop (1R)
+              </th>
+              <th
+                className="p-1.5 text-right"
+                title="How strongly the setup fired, 0–100 — the screener's own conviction score"
+              >
+                Score
+              </th>
+              <th className="p-1.5 text-right" title="Price at the moment of the scan — the order fills at market">
+                Last
+              </th>
+              <th
+                className="p-1.5 text-right"
+                title="The 24-hour change when the scan ran, for context on where the setup fired"
+              >
+                24h
+              </th>
+              <th className="p-1.5 text-right" title="Position size in USDT — the amount committed per position">
+                Size (USDT)
+              </th>
+              <th className="p-1.5" aria-label="Approve row" />
+            </>
+          }
+        >
+          {matching.map((h) => {
+            const k = rowKey(h);
+            return (
+              <tr
+                key={k}
+                className={cn(
+                  "border-border/40 hover:bg-muted/20 border-b last:border-b-0",
+                  selected.has(k) && "bg-primary/5",
+                )}
+              >
+                <td className="p-1.5">
                   <input
                     type="checkbox"
-                    checked={allSelected}
-                    onChange={toggleAll}
+                    checked={selected.has(k)}
+                    onChange={() => toggleRow(k)}
                     disabled={busy}
-                    aria-label="Select all hits"
+                    aria-label={`Select ${h.symbol} ${human(h.screen)}`}
                     className="accent-primary"
                   />
-                </th>
-                <th className="p-1.5">Symbol</th>
-                <th className="p-1.5">Side</th>
-                <th className="p-1.5">Setup</th>
-                <th
-                  className="p-1.5 text-right"
-                  title="The protective stop the engine's policy folds over fresh candles for this setup — its distance IS 1R. Execution re-folds the level at order time."
+                </td>
+                <td className="text-foreground p-1.5">{h.symbol}</td>
+                <td className={cn("p-1.5", h.direction === "long" ? "text-success" : "text-destructive")}>
+                  {h.direction === "long" ? "long" : "short"}
+                </td>
+                <td className="text-muted-foreground p-1.5">{human(h.screen)}</td>
+                <td className="p-1.5 text-right">{previewCell(k)}</td>
+                <td className="text-foreground p-1.5 text-right tabular-nums">{Math.round(h.score)}</td>
+                <td className="text-foreground p-1.5 text-right tabular-nums">{usd(h.last)}</td>
+                <td
+                  className={cn(
+                    "p-1.5 text-right tabular-nums",
+                    h.change24hPct >= 0 ? "text-success" : "text-destructive",
+                  )}
                 >
-                  Stop (1R)
-                </th>
-                <th
-                  className="p-1.5 text-right"
-                  title="How strongly the setup fired, 0–100 — the screener's own conviction score"
-                >
-                  Score
-                </th>
-                <th className="p-1.5 text-right" title="Price at the moment of the scan — the order fills at market">
-                  Last
-                </th>
-                <th
-                  className="p-1.5 text-right"
-                  title="The 24-hour change when the scan ran, for context on where the setup fired"
-                >
-                  24h
-                </th>
-                <th className="p-1.5 text-right" title="Position size in USDT — the amount committed per position">
-                  Size (USDT)
-                </th>
-                <th className="p-1.5" aria-label="Approve row" />
+                  {h.change24hPct >= 0 ? "+" : ""}
+                  {h.change24hPct.toFixed(2)}%
+                </td>
+                <td className="p-1.5 text-right">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={NOTIONAL_MIN}
+                    max={NOTIONAL_MAX}
+                    step={5}
+                    value={notionals[k] ?? DEFAULT_NOTIONAL}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      if (Number.isFinite(v) && v > 0) setNotional(k, Math.min(v, NOTIONAL_MAX));
+                    }}
+                    disabled={busy}
+                    aria-label={`Size in USDT for ${h.symbol}`}
+                    className="border-input bg-input/20 h-6 w-20 rounded border px-1.5 text-right text-base tabular-nums outline-none focus-visible:border-ring disabled:opacity-50 md:text-xs max-md:h-9"
+                  />
+                </td>
+                <td className="p-1.5">
+                  {selected.has(k) ? (
+                    armedKey === `row:${k}` ? (
+                      <span className="flex items-center gap-1">
+                        <Button
+                          disabled={busy}
+                          onClick={() => void execute(h.symbol, [h])}
+                          size="sm"
+                          variant="destructive"
+                        >
+                          Confirm
+                        </Button>
+                        <Button disabled={busy} onClick={() => setArmedKey(null)} size="sm" variant="outline">
+                          Cancel
+                        </Button>
+                      </span>
+                    ) : (
+                      <Button disabled={busy} onClick={() => setArmedKey(`row:${k}`)} size="sm" variant="destructive">
+                        Open
+                      </Button>
+                    )
+                  ) : null}
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {matching.map((h) => {
-                const k = rowKey(h);
-                return (
-                  <tr
-                    key={k}
-                    className={cn(
-                      "border-border/40 hover:bg-muted/20 border-b last:border-b-0",
-                      selected.has(k) && "bg-primary/5",
-                    )}
-                  >
-                    <td className="p-1.5">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(k)}
-                        onChange={() => toggleRow(k)}
-                        disabled={busy}
-                        aria-label={`Select ${h.symbol} ${human(h.screen)}`}
-                        className="accent-primary"
-                      />
-                    </td>
-                    <td className="text-foreground p-1.5">{h.symbol}</td>
-                    <td className={cn("p-1.5", h.direction === "long" ? "text-success" : "text-destructive")}>
-                      {h.direction === "long" ? "long" : "short"}
-                    </td>
-                    <td className="text-muted-foreground p-1.5">{human(h.screen)}</td>
-                    <td className="p-1.5 text-right">{previewCell(k)}</td>
-                    <td className="text-foreground p-1.5 text-right tabular-nums">{Math.round(h.score)}</td>
-                    <td className="text-foreground p-1.5 text-right tabular-nums">{usd(h.last)}</td>
-                    <td
-                      className={cn(
-                        "p-1.5 text-right tabular-nums",
-                        h.change24hPct >= 0 ? "text-success" : "text-destructive",
-                      )}
-                    >
-                      {h.change24hPct >= 0 ? "+" : ""}
-                      {h.change24hPct.toFixed(2)}%
-                    </td>
-                    <td className="p-1.5 text-right">
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        min={NOTIONAL_MIN}
-                        max={NOTIONAL_MAX}
-                        step={5}
-                        value={notionals[k] ?? DEFAULT_NOTIONAL}
-                        onChange={(e) => {
-                          const v = Number(e.target.value);
-                          if (Number.isFinite(v) && v > 0) setNotional(k, Math.min(v, NOTIONAL_MAX));
-                        }}
-                        disabled={busy}
-                        aria-label={`Size in USDT for ${h.symbol}`}
-                        className="border-input bg-input/20 h-6 w-20 rounded border px-1.5 text-right text-base tabular-nums outline-none focus-visible:border-ring disabled:opacity-50 md:text-xs max-md:h-9"
-                      />
-                    </td>
-                    <td className="p-1.5">
-                      {selected.has(k) ? (
-                        armedKey === `row:${k}` ? (
-                          <span className="flex items-center gap-1">
-                            <Button
-                              disabled={busy}
-                              onClick={() => void execute(h.symbol, [h])}
-                              size="sm"
-                              variant="destructive"
-                            >
-                              Confirm
-                            </Button>
-                            <Button disabled={busy} onClick={() => setArmedKey(null)} size="sm" variant="outline">
-                              Cancel
-                            </Button>
-                          </span>
-                        ) : (
-                          <Button
-                            disabled={busy}
-                            onClick={() => setArmedKey(`row:${k}`)}
-                            size="sm"
-                            variant="destructive"
-                          >
-                            Open
-                          </Button>
-                        )
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+            );
+          })}
+        </OfferTable>
         {matching.length === 0 && (
           <div className="text-muted-foreground px-3 py-6 text-center text-xs">
             No hit matches{q.length > 0 ? ` "${query.trim()}"` : ""}
@@ -988,28 +939,23 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
         </dl>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {!allSelected && !noneSelected && !busy && (
-          <Button onClick={toggleAll} size="sm" variant="outline">
-            Select all {offer.hits.length}
-          </Button>
-        )}
+      <ArmBar>
+        <SelectAllButton
+          visible={!allSelected && !noneSelected && !busy}
+          onClick={toggleAll}
+          count={offer.hits.length}
+        />
         {armedKey === "bulk" ? (
           <span className="flex flex-wrap items-center gap-2">
             <span className="text-foreground font-mono text-[0.6875rem]">
               Open {selectedHits.length} position{selectedHits.length === 1 ? "" : "s"} for {usd(selectedNotional)}?
             </span>
-            <Button
-              disabled={busy}
-              onClick={() => void execute("selected", selectedHits)}
-              size="sm"
-              variant="destructive"
-            >
-              Confirm
-            </Button>
-            <Button disabled={busy} onClick={() => setArmedKey(null)} size="sm" variant="outline">
-              Cancel
-            </Button>
+            <ArmButtons
+              busy={busy}
+              destructive
+              onConfirm={() => void execute("selected", selectedHits)}
+              onCancel={() => setArmedKey(null)}
+            />
           </span>
         ) : (
           <Button
@@ -1030,7 +976,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
               : `Open ${selectedHits.length} position${selectedHits.length === 1 ? "" : "s"} (${usd(selectedNotional)})`}
           </Button>
         )}
-      </div>
+      </ArmBar>
 
       {log.map((entry) => {
         const summary = placementSummary(entry.raw ?? "");

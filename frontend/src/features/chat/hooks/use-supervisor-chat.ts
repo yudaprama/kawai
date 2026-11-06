@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatStatus, UIMessage } from "@/lib/ai-types";
 import type { ChatSession } from "@/lib/api";
 import { useAuth } from "@/features/auth/use-auth";
+import { setTokenBalanceOwner } from "@/features/topup/use-token-balance";
 import { useChatModel } from "./use-chat-model";
 import { useChatSessions } from "./use-chat-sessions";
 export interface SupervisorConfirmation {
@@ -65,7 +66,12 @@ export function useSupervisorChat(userId?: string | null) {
   const { userId: authUserId, authError, logout } = useAuth();
   const effectiveUserId = userId ?? authUserId;
   useEffect(() => {
-    if (effectiveUserId) patch({ userId: effectiveUserId });
+    if (effectiveUserId) {
+      patch({ userId: effectiveUserId });
+      // The offline balance snapshot is per-account (browser profiles on
+      // kawai-web switch identities) — scope it BEFORE anything can read it.
+      setTokenBalanceOwner(effectiveUserId);
+    }
     if (authError) patch({ authError });
   }, [effectiveUserId, authError, patch]);
 

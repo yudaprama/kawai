@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
-import { call, errText } from "@/lib/api";
+import { call } from "@/lib/api";
 
 import {
   fmtMoney,
@@ -15,6 +15,17 @@ import {
 } from "@/components/ai-elements/tool-renderers/shared";
 import { cn } from "@/lib/utils";
 
+import {
+  failureRows,
+  num,
+  str,
+  parseJsonObject,
+  useRunLog,
+  OfferTable,
+  ArmBar,
+  ArmButtons,
+  SelectAllButton,
+} from "./offer-shared";
 import { MatchCount, SelectMatchingButton, SymbolSearch } from "./workbench-ui";
 
 /** Which exchange's book an audit graded. The risk POLICY is venue-neutral
@@ -166,9 +177,6 @@ export interface AuditOffer {
   tps: OfferTpRow[];
   rows: OfferRow[];
 }
-
-const num = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) ? x : null);
-const str = (x: unknown): string | null => (typeof x === "string" ? x : null);
 
 /** Parse the audit step's full output into the offer. The step body is the
  * tool's JSON emit: `summary` counts + echoed `params` + the per-position
@@ -419,33 +427,21 @@ export function placementSummary(raw: string): {
   note: string;
   failures: { symbol: string; error: string }[];
 } | null {
-  let v: unknown;
-  try {
-    v = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (typeof v !== "object" || v == null || !("protected" in v) || !("failed" in v)) return null;
+  const v = parseJsonObject(raw);
+  if (v == null || !("protected" in v) || !("failed" in v)) return null;
   const placed = num(v.protected);
   const failed = num(v.failed);
   if (placed == null || failed == null) return null;
   const note = "note" in v ? str(v.note) : null;
-  const failures =
-    "failures" in v && Array.isArray(v.failures)
-      ? v.failures
-          .filter((f): f is Record<string, unknown> => typeof f === "object" && f != null)
-          .map((f) => ({
-            symbol: "symbol" in f ? (str(f.symbol) ?? "") : "",
-            // The rejection reason rides `error`, or — when the grader had no
-            // level to place — its first note.
-            error:
-              "error" in f && typeof f.error === "string"
-                ? f.error
-                : "notes" in f && Array.isArray(f.notes) && typeof f.notes[0] === "string"
-                  ? f.notes[0]
-                  : "rejected without a reason",
-          }))
-      : [];
+  // The rejection reason rides `error`, or — when the grader had no level to
+  // place — its first note.
+  const failures = failureRows(v, "failures", (f) =>
+    typeof f.error === "string"
+      ? f.error
+      : "notes" in f && Array.isArray(f.notes) && typeof f.notes[0] === "string"
+        ? f.notes[0]
+        : "rejected without a reason",
+  );
   return { placed, failed, note: note ?? "", failures };
 }
 
@@ -465,25 +461,12 @@ export function tightenSummary(raw: string): {
   failures: { symbol: string; error: string }[];
   stale: { symbol: string; error: string }[];
 } | null {
-  let v: unknown;
-  try {
-    v = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (typeof v !== "object" || v == null || !("tightened" in v) || !("failed" in v)) return null;
+  const v = parseJsonObject(raw);
+  if (v == null || !("tightened" in v) || !("failed" in v)) return null;
   const tightened = num(v.tightened);
   const failed = num(v.failed);
   if (tightened == null || failed == null) return null;
-  const failures =
-    "failures" in v && Array.isArray(v.failures)
-      ? v.failures
-          .filter((f): f is Record<string, unknown> => typeof f === "object" && f != null)
-          .map((f) => ({
-            symbol: "symbol" in f ? (str(f.symbol) ?? "") : "",
-            error: "error" in f && typeof f.error === "string" ? f.error : "rejected without a reason",
-          }))
-      : [];
+  const failures = failureRows(v, "failures");
   // Per moved position, the orders the move could NOT confirm canceled.
   const stale =
     "positions" in v && Array.isArray(v.positions)
@@ -545,10 +528,7 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   /** "bulk" | `row:${symbol}` — only one arm at a time. */
   const [armedKey, setArmedKey] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  /** One entry per executed approval, newest last. */
-  const [log, setLog] = useState<{ id: number; label: string; raw?: string; error?: string }[]>([]);
-  const logIdRef = useRef(0);
+  const { log, busy, run } = useRunLog();
   /** Find-a-position. A 182-row book in a 24rem scroll box is unsearchable by
    * scrolling, and hunting for one symbol is the most common thing a user does
    * here. Filters the VISIBLE list only — it never touches the selection. */
@@ -624,7 +604,6 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
    * approved whole-book selection is never silently truncated. */
   const executeRows = async (label: string, rows: OfferRow[]) => {
     if (busy || rows.length === 0) return;
-    setBusy(true);
     setArmedKey(null);
     // A row can carry more than one side (a stop AND a take-profit, or a
     // tighten AND a take-profit), so each op gets the symbols that actually
@@ -635,7 +614,7 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
     const tpSymbols = rows.filter((r) => r.tp != null).map((r) => r.symbol);
     const p = offer.params;
     const ops = PLACEMENT_OPS[venue];
-    try {
+    await run(label, async () => {
       const out: string[] = [];
       if (ops.tighten != null && tightenSymbols.length > 0) {
         out.push(
@@ -667,14 +646,8 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
           }),
         );
       }
-      const id = ++logIdRef.current;
-      setLog((l) => [...l, { id, label, raw: out.join("\n\n") }]);
-    } catch (e) {
-      const id = ++logIdRef.current;
-      setLog((l) => [...l, { id, label, error: errText(e) }]);
-    } finally {
-      setBusy(false);
-    }
+      return out.join("\n\n");
+    });
   };
 
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(offer.rows.map((r) => r.symbol)));
@@ -798,205 +771,189 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
             )}
           </div>
         )}
-        <div className="border-border/60 max-h-96 overflow-y-auto rounded-md border">
-          <table className="w-full border-collapse font-mono text-[0.6875rem]">
-            <thead className="bg-background sticky top-0 z-10">
-              <tr className="text-muted-foreground border-border/60 border-b text-left">
-                <th className="p-1.5">
+        <OfferTable
+          ariaLabel="Select all positions"
+          allSelected={allSelected}
+          toggleAll={toggleAll}
+          busy={busy}
+          header={
+            <>
+              {/* Notional, not coin count: 0.002 BTC and 5,491 ZORA are not
+                  comparable, and the raw counts inverted the risk order the
+                  backend actually ranked by. */}
+              <th className="p-1.5 text-right">Notional</th>
+              <th
+                className="p-1.5 text-right"
+                title="The unrealized profit or loss on the position right now — the scope the “Dalam untung” filter reads"
+              >
+                P&amp;L
+              </th>
+              <th className="p-1.5 text-right" title="The price right now — the number every level is measured against">
+                Mark
+              </th>
+              <th className="p-1.5" title="Where the position closes automatically if the price moves against you">
+                Stop (exit at a loss)
+              </th>
+              <th
+                className="p-1.5"
+                title="Where the position closes automatically at a profit, and how much of it closes there"
+              >
+                Targets (exit at a profit)
+              </th>
+              <th
+                className="p-1.5 text-right"
+                title="For every 1 put at risk at the stop, how much the first profit target pays back"
+              >
+                Risk : Reward
+              </th>
+              <th className="p-1.5" aria-label="Approve row" />
+            </>
+          }
+        >
+          {matching.map((r) => {
+            const rowKey = `row:${r.symbol}`;
+            return (
+              <tr
+                key={r.symbol}
+                className={cn(
+                  "border-border/40 hover:bg-muted/20 border-b last:border-b-0",
+                  selected.has(r.symbol) && "bg-primary/5",
+                )}
+              >
+                <td className="p-1.5">
                   <input
                     type="checkbox"
-                    checked={allSelected}
-                    onChange={toggleAll}
+                    checked={selected.has(r.symbol)}
+                    onChange={() => toggleRow(r.symbol)}
                     disabled={busy}
-                    aria-label="Select all positions"
+                    aria-label={`Select ${r.symbol}`}
                     className="accent-primary"
                   />
-                </th>
-                <th className="p-1.5">Symbol</th>
-                <th className="p-1.5">Side</th>
-                {/* Notional, not coin count: 0.002 BTC and 5,491 ZORA are not
-                    comparable, and the raw counts inverted the risk order the
-                    backend actually ranked by. */}
-                <th className="p-1.5 text-right">Notional</th>
-                <th
-                  className="p-1.5 text-right"
-                  title="The unrealized profit or loss on the position right now — the scope the “Dalam untung” filter reads"
+                </td>
+                <td className="text-foreground p-1.5">{r.symbol}</td>
+                <td className="text-muted-foreground p-1.5">{side(r.long)}</td>
+                <td className="text-foreground p-1.5 text-right tabular-nums">{fmtMoney(r.notional)}</td>
+                {/* What the "Dalam untung" scope filters on, shown signed so
+                    a green number can't be misread as a green-tinted
+                    position value. */}
+                <td
+                  className={cn(
+                    "p-1.5 text-right tabular-nums",
+                    r.pnl > 0 ? "text-success" : r.pnl < 0 ? "text-destructive" : "text-muted-foreground",
+                  )}
                 >
-                  P&amp;L
-                </th>
-                <th
-                  className="p-1.5 text-right"
-                  title="The price right now — the number every level is measured against"
-                >
-                  Mark
-                </th>
-                <th className="p-1.5" title="Where the position closes automatically if the price moves against you">
-                  Stop (exit at a loss)
-                </th>
-                <th
-                  className="p-1.5"
-                  title="Where the position closes automatically at a profit, and how much of it closes there"
-                >
-                  Targets (exit at a profit)
-                </th>
-                <th
-                  className="p-1.5 text-right"
-                  title="For every 1 put at risk at the stop, how much the first profit target pays back"
-                >
-                  Risk : Reward
-                </th>
-                <th className="p-1.5" aria-label="Approve row" />
-              </tr>
-            </thead>
-            <tbody>
-              {matching.map((r) => {
-                const rowKey = `row:${r.symbol}`;
-                return (
-                  <tr
-                    key={r.symbol}
-                    className={cn(
-                      "border-border/40 hover:bg-muted/20 border-b last:border-b-0",
-                      selected.has(r.symbol) && "bg-primary/5",
-                    )}
-                  >
-                    <td className="p-1.5">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(r.symbol)}
-                        onChange={() => toggleRow(r.symbol)}
-                        disabled={busy}
-                        aria-label={`Select ${r.symbol}`}
-                        className="accent-primary"
-                      />
-                    </td>
-                    <td className="text-foreground p-1.5">{r.symbol}</td>
-                    <td className="text-muted-foreground p-1.5">{side(r.long)}</td>
-                    <td className="text-foreground p-1.5 text-right tabular-nums">{fmtMoney(r.notional)}</td>
-                    {/* What the "Dalam untung" scope filters on, shown signed so
-                        a green number can't be misread as a green-tinted
-                        position value. */}
-                    <td
-                      className={cn(
-                        "p-1.5 text-right tabular-nums",
-                        r.pnl > 0 ? "text-success" : r.pnl < 0 ? "text-destructive" : "text-muted-foreground",
-                      )}
-                    >
-                      {r.pnl === 0 ? "—" : fmtSigned(r.pnl)}
-                    </td>
-                    <td className="text-muted-foreground p-1.5 text-right tabular-nums">
-                      {r.mark > 0 ? fmtPrice(r.mark) : "—"}
-                    </td>
-                    {/* A null `sl` means either "a stop already rests" or "the
-                        engine found no valid level" — assert the fact that
-                        holds for both rather than guessing the reason. */}
-                    <td className="p-1.5">
-                      {r.sl != null ? (
-                        <>
-                          <span className="text-foreground">{fmtPrice(r.sl.price)}</span>{" "}
-                          <span className="text-muted-foreground">
-                            · {human(r.sl.method)}
-                            {r.sl.distancePct != null && ` (${fmtPct(r.sl.distancePct)}%)`}
-                          </span>
-                          {r.profitStop && (
-                            <span
-                              className="text-success ml-1 text-[10px]"
-                              title="Approving places this stop at or beyond entry — the trade can no longer turn into a loss."
-                            >
-                              · locks profit
-                            </span>
-                          )}
-                        </>
-                      ) : r.tighten != null ? (
-                        // A resting stop the engine wants TIGHTER. Both levels
-                        // are shown, from → to, because the whole point of the
-                        // row is the move: an arrow with only the destination
-                        // would leave the operator unable to judge it.
-                        <>
-                          <span className="text-muted-foreground line-through">{fmtPrice(r.tighten.from)}</span>{" "}
-                          <span className="text-foreground">→ {fmtPrice(r.tighten.to)}</span>{" "}
-                          <span className="text-success">· {human(r.tighten.method)}</span>
-                          {r.profitStop && (
-                            <span
-                              className="text-success ml-1 text-[10px]"
-                              title="This move lands the stop at or beyond entry — the trade can no longer turn into a loss."
-                            >
-                              · locks profit
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        // A resting stop at/beyond entry grades `ok` and has no
-                        // side to fill, so without the flag this cell would
-                        // read as the generic "already tight". The lock is the
-                        // whole message: the trade cannot lose, and the only
-                        // move left is to trail it higher.
+                  {r.pnl === 0 ? "—" : fmtSigned(r.pnl)}
+                </td>
+                <td className="text-muted-foreground p-1.5 text-right tabular-nums">
+                  {r.mark > 0 ? fmtPrice(r.mark) : "—"}
+                </td>
+                {/* A null `sl` means either "a stop already rests" or "the
+                    engine found no valid level" — assert the fact that
+                    holds for both rather than guessing the reason. */}
+                <td className="p-1.5">
+                  {r.sl != null ? (
+                    <>
+                      <span className="text-foreground">{fmtPrice(r.sl.price)}</span>{" "}
+                      <span className="text-muted-foreground">
+                        · {human(r.sl.method)}
+                        {r.sl.distancePct != null && ` (${fmtPct(r.sl.distancePct)}%)`}
+                      </span>
+                      {r.profitStop && (
                         <span
-                          className={
-                            r.locked ? "text-success text-[0.625rem]" : "text-muted-foreground/50 text-[0.625rem]"
-                          }
+                          className="text-success ml-1 text-[10px]"
+                          title="Approving places this stop at or beyond entry — the trade can no longer turn into a loss."
                         >
-                          {r.locked
-                            ? "profit locked — trail it higher"
-                            : r.pnl > 0
-                              ? "stop is already tight"
-                              : "no stop to place"}
+                          · locks profit
                         </span>
                       )}
-                    </td>
-                    <td className="p-1.5">{tpCell(r.tp)}</td>
-                    <td className="text-muted-foreground p-1.5 text-right tabular-nums">
-                      {(() => {
-                        // Prefer the engine's resting-pair figure; otherwise
-                        // derive the ratio this approval would create, measured
-                        // from ENTRY (the anchor the 1R/2R rungs use) rather
-                        // than the mark, which has already run past a deep loss.
-                        const rr =
-                          r.riskReward ??
-                          placedRR(
-                            r.sl?.price ?? null,
-                            r.tp?.rungs[0]?.price ?? r.tp?.trailingExit?.price ?? r.tp?.bandExit?.price ?? null,
-                            r.entry > 0 ? r.entry : r.mark,
-                          );
-                        return rr !== null ? fmtRR(rr) : "—";
-                      })()}
-                    </td>
-                    <td className="p-1.5 text-right whitespace-nowrap">
-                      {armedKey === rowKey ? (
-                        <span className="inline-flex items-center gap-1">
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => void executeRows(r.symbol, [r])}
-                            className="bg-primary text-primary-foreground rounded px-1.5 py-0.5 font-bold uppercase"
-                          >
-                            Confirm
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => setArmedKey(null)}
-                            className="border-border text-muted-foreground rounded border px-1.5 py-0.5 uppercase"
-                          >
-                            Cancel
-                          </button>
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => setArmedKey(rowKey)}
-                          className="border-border text-muted-foreground hover:border-[var(--tea-color-border-focus)] hover:text-foreground rounded border px-1.5 py-0.5 uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                    </>
+                  ) : r.tighten != null ? (
+                    // A resting stop the engine wants TIGHTER. Both levels
+                    // are shown, from → to, because the whole point of the
+                    // row is the move: an arrow with only the destination
+                    // would leave the operator unable to judge it.
+                    <>
+                      <span className="text-muted-foreground line-through">{fmtPrice(r.tighten.from)}</span>{" "}
+                      <span className="text-foreground">→ {fmtPrice(r.tighten.to)}</span>{" "}
+                      <span className="text-success">· {human(r.tighten.method)}</span>
+                      {r.profitStop && (
+                        <span
+                          className="text-success ml-1 text-[10px]"
+                          title="This move lands the stop at or beyond entry — the trade can no longer turn into a loss."
                         >
-                          Approve
-                        </button>
+                          · locks profit
+                        </span>
                       )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                    </>
+                  ) : (
+                    // A resting stop at/beyond entry grades `ok` and has no
+                    // side to fill, so without the flag this cell would
+                    // read as the generic "already tight". The lock is the
+                    // whole message: the trade cannot lose, and the only
+                    // move left is to trail it higher.
+                    <span
+                      className={r.locked ? "text-success text-[0.625rem]" : "text-muted-foreground/50 text-[0.625rem]"}
+                    >
+                      {r.locked
+                        ? "profit locked — trail it higher"
+                        : r.pnl > 0
+                          ? "stop is already tight"
+                          : "no stop to place"}
+                    </span>
+                  )}
+                </td>
+                <td className="p-1.5">{tpCell(r.tp)}</td>
+                <td className="text-muted-foreground p-1.5 text-right tabular-nums">
+                  {(() => {
+                    // Prefer the engine's resting-pair figure; otherwise
+                    // derive the ratio this approval would create, measured
+                    // from ENTRY (the anchor the 1R/2R rungs use) rather
+                    // than the mark, which has already run past a deep loss.
+                    const rr =
+                      r.riskReward ??
+                      placedRR(
+                        r.sl?.price ?? null,
+                        r.tp?.rungs[0]?.price ?? r.tp?.trailingExit?.price ?? r.tp?.bandExit?.price ?? null,
+                        r.entry > 0 ? r.entry : r.mark,
+                      );
+                    return rr !== null ? fmtRR(rr) : "—";
+                  })()}
+                </td>
+                <td className="p-1.5 text-right whitespace-nowrap">
+                  {armedKey === rowKey ? (
+                    <span className="inline-flex items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void executeRows(r.symbol, [r])}
+                        className="bg-primary text-primary-foreground rounded px-1.5 py-0.5 font-bold uppercase"
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setArmedKey(null)}
+                        className="border-border text-muted-foreground rounded border px-1.5 py-0.5 uppercase"
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setArmedKey(rowKey)}
+                      className="border-border text-muted-foreground hover:border-[var(--tea-color-border-focus)] hover:text-foreground rounded border px-1.5 py-0.5 uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Approve
+                    </button>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </OfferTable>
         {matching.length === 0 && (
           <div className="text-muted-foreground px-3 py-6 text-center text-xs">
             No position matches{q.length > 0 ? ` "${query.trim()}"` : ""}
@@ -1042,12 +999,12 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
         </dl>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {!allSelected && !noneSelected && !busy && (
-          <Button onClick={toggleAll} size="sm" variant="outline">
-            Select all {offer.rows.length}
-          </Button>
-        )}
+      <ArmBar>
+        <SelectAllButton
+          visible={!allSelected && !noneSelected && !busy}
+          onClick={toggleAll}
+          count={offer.rows.length}
+        />
         {armedKey === "bulk" ? (
           <span className="flex flex-wrap items-center gap-2">
             <span className="text-foreground font-mono text-[0.6875rem]">
@@ -1057,12 +1014,11 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
               on {selectedRows.length} position{selectedRows.length === 1 ? "" : "s"} ({fmtMoney(selectedNotional)}{" "}
               exposure)?
             </span>
-            <Button disabled={busy} onClick={() => void executeRows("selected", selectedRows)} size="sm">
-              Confirm
-            </Button>
-            <Button disabled={busy} onClick={() => setArmedKey(null)} size="sm" variant="outline">
-              Cancel
-            </Button>
+            <ArmButtons
+              busy={busy}
+              onConfirm={() => void executeRows("selected", selectedRows)}
+              onCancel={() => setArmedKey(null)}
+            />
           </span>
         ) : (
           <Button disabled={busy || selectedRows.length === 0} onClick={() => setArmedKey("bulk")} size="sm">
@@ -1085,7 +1041,7 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
                   .join(" + ")}
           </Button>
         )}
-      </div>
+      </ArmBar>
 
       {log.map((entry) => (
         <div key={entry.id} className="space-y-0.5">
@@ -1115,6 +1071,19 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
         </span>
       </p>
     </div>
+  );
+}
+
+/** The `<symbol> — <error>` rows the stale and failure disclosures render. */
+function FailureList({ rows }: { rows: { symbol: string; error: string }[] }) {
+  return (
+    <ul className="space-y-1 px-2.5 py-1.5 font-mono text-[0.6875rem]">
+      {rows.map((f) => (
+        <li key={`${f.symbol}:${f.error}`} className="text-muted-foreground">
+          <span className="text-foreground">{f.symbol || "position"}</span> — {f.error}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -1169,13 +1138,7 @@ function PlacementResult({ raw }: { raw: string }) {
                     {tighten.stale.length} old stop{tighten.stale.length === 1 ? "" : "s"} could not be confirmed
                     canceled
                   </summary>
-                  <ul className="space-y-1 px-2.5 py-1.5 font-mono text-[0.6875rem]">
-                    {tighten.stale.map((f) => (
-                      <li key={`${f.symbol}:${f.error}`} className="text-muted-foreground">
-                        <span className="text-foreground">{f.symbol || "position"}</span> — {f.error}
-                      </li>
-                    ))}
-                  </ul>
+                  <FailureList rows={tighten.stale} />
                   <p className="text-muted-foreground px-2.5 pb-1.5 font-mono text-[0.625rem]">
                     Both stops are reduce-only, so the tighter one fires first — check the resting orders on the
                     exchange and cancel the older one by hand.
@@ -1187,13 +1150,7 @@ function PlacementResult({ raw }: { raw: string }) {
                   <summary className="text-destructive cursor-pointer px-2 py-1 font-mono text-[0.625rem] select-none">
                     Why {tighten.failures.length} move{tighten.failures.length === 1 ? "" : "s"} failed
                   </summary>
-                  <ul className="space-y-1 px-2.5 py-1.5 font-mono text-[0.6875rem]">
-                    {tighten.failures.map((f) => (
-                      <li key={`${f.symbol}:${f.error}`} className="text-muted-foreground">
-                        <span className="text-foreground">{f.symbol || "position"}</span> — {f.error}
-                      </li>
-                    ))}
-                  </ul>
+                  <FailureList rows={tighten.failures} />
                 </details>
               )}
             </span>
@@ -1227,13 +1184,7 @@ function PlacementResult({ raw }: { raw: string }) {
                 <summary className="text-destructive cursor-pointer px-2 py-1 font-mono text-[0.625rem] select-none">
                   Why {summary.failures.length} order{summary.failures.length === 1 ? "" : "s"} failed
                 </summary>
-                <ul className="space-y-1 px-2.5 py-1.5 font-mono text-[0.6875rem]">
-                  {summary.failures.map((f) => (
-                    <li key={`${f.symbol}:${f.error}`} className="text-muted-foreground">
-                      <span className="text-foreground">{f.symbol || "position"}</span> — {f.error}
-                    </li>
-                  ))}
-                </ul>
+                <FailureList rows={summary.failures} />
               </details>
             )}
           </span>

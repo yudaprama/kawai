@@ -31,23 +31,13 @@ import {
   type LaneResultEntry,
   readFileAsDataUrl,
   useCivitaiKeyStatus,
-  useEcoGroups,
   useWorkflowLane,
 } from "./civitai-shared";
 import { GenerateFooter } from "./generate-footer";
 import { ResultActions, ResultTile, mediaToken } from "./result-actions";
 import { FrameSlot } from "./video-generator";
-import {
-  ChoiceChip,
-  detailLine,
-  EcoPicker,
-  GeneratorLayout,
-  JobCard,
-  resultMeta,
-  ResultsPaneTabs,
-  ToggleRow,
-  useResultsPaneTab,
-} from "./generator-shell";
+import { ChoiceChip, detailLine, EcoPicker, GeneratorLayout, JobCard, resultMeta, ToggleRow } from "./generator-shell";
+import { ModelChoiceChips, ResultsGrid, ResultsPaneHeader, useGeneratorResultsPane } from "./shared";
 import type { Model3dGenParams } from "@/generated/api-types";
 import type { Model3dStatusView, SavedModel3d } from "@/lib/api";
 
@@ -390,14 +380,22 @@ export function Model3dGenerator() {
         extraUrls: st.extras ?? [],
       }),
   });
-  const { cancel, cost, costError, elapsed, job, removeEntry, results, status, submit, submitting } = lane;
-  /** Results ↔ starter suggestions: both stay reachable whatever the lane holds. */
-  const pane = useResultsPaneTab({ busy: job != null, count: results.length });
   const {
-    groups: ecoGroups,
-    open: ecoOpen,
-    setOpen: setEcoOpen,
-  } = useEcoGroups(MODEL3D_ECOSYSTEMS, ecoId, switchEcosystem);
+    cancel,
+    cost,
+    costError,
+    elapsed,
+    job,
+    pane,
+    ecoGroups,
+    ecoOpen,
+    removeEntry,
+    results,
+    setEcoOpen,
+    status,
+    submit,
+    submitting,
+  } = useGeneratorResultsPane(lane, MODEL3D_ECOSYSTEMS, ecoId, switchEcosystem);
 
   async function pickImage(file: File | undefined) {
     if (!file) return;
@@ -712,19 +710,7 @@ export function Model3dGenerator() {
       {/* Model version — hunyuan only. */}
       {isHunyuan && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("generator.model")}</Label>
-          <div className="flex flex-wrap gap-1.5">
-            {eco.models.map((m) => (
-              <ChoiceChip
-                active={modelVersion === m.key}
-                className="px-3"
-                key={m.key}
-                onClick={() => setModelVersion(m.key)}
-              >
-                {m.label}
-              </ChoiceChip>
-            ))}
-          </div>
+          <ModelChoiceChips activeKey={modelVersion} models={eco.models} onSelect={setModelVersion} />
         </div>
       )}
 
@@ -836,14 +822,7 @@ export function Model3dGenerator() {
         />
       }
       form={form}
-      header={
-        <ResultsPaneTabs
-          active={pane.active}
-          onChange={pane.set}
-          resultsLabel={t("generator.resultsCount", { count: results.length })}
-          templatesLabel={t("model3dGenerator.templates")}
-        />
-      }
+      header={<ResultsPaneHeader count={results.length} pane={pane} templatesLabel={t("model3dGenerator.templates")} />}
     >
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 pb-24 lg:overscroll-contain lg:pb-3">
         {job && (
@@ -862,16 +841,13 @@ export function Model3dGenerator() {
         {pane.active === "templates" ? (
           <Model3dStarterList ecosystem={ecoId} onApply={applyModel3dStarter} />
         ) : (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-            {results.map((entry) => (
-              <Model3dResultCard
-                entry={entry}
-                key={entry.fileId}
-                onRemove={() => removeEntry(entry)}
-                onReuse={() => reuseEntry(entry)}
-              />
-            ))}
-          </div>
+          <ResultsGrid
+            Card={Model3dResultCard}
+            className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4"
+            entries={results}
+            onRemove={removeEntry}
+            onReuse={reuseEntry}
+          />
         )}
       </div>
     </GeneratorLayout>

@@ -1183,8 +1183,12 @@ pub async fn topup_qris_cancel(
 /// Current token balance (0 for an account that never topped up).
 #[tauri::command]
 pub async fn topup_balance(session: State<'_, Session>) -> Result<logic::topup::Balance, String> {
+    let user_id = session_user_id(&session)?;
     let token = session_bearer(&session)?;
-    logic::topup::topup_balance(&token).await
+    // Cached variant: every real worker read refreshes the offline snapshot,
+    // so a top-up followed by an immediate network loss still gates on the
+    // new balance. Same fn the gate uses — one writer shape, one table.
+    logic::topup::topup_balance_cached(&user_id, &token).await
 }
 
 /// Balance ledger history, newest first — top-ups positive, usage debits

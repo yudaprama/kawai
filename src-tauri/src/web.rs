@@ -1899,10 +1899,13 @@ async fn topup_qris_cancel_handler(
 }
 
 async fn topup_balance_handler(
+    user: Extension<String>,
     headers: HeaderMap,
 ) -> Result<Json<logic::topup::Balance>, (StatusCode, String)> {
     let token = cookie_bearer(&headers)?;
-    logic::topup::topup_balance(&token)
+    // Cached variant: refresh the offline snapshot on every real read (see
+    // the desktop twin in commands.rs).
+    logic::topup::topup_balance_cached(&user.0, &token)
         .await
         .map(Json)
         .map_err(err500)

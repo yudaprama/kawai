@@ -19,7 +19,12 @@ import type {
   SupervisorStep,
 } from "@/features/chat/hooks/use-supervisor-plan";
 import { emitOpenTopup } from "@/features/topup/open-topup";
-import { peekFreshTokenBalance, publishTokenBalance, refreshTokenBalance } from "@/features/topup/use-token-balance";
+import {
+  peekFreshTokenBalance,
+  peekPersistedTokenBalance,
+  publishTokenBalance,
+  refreshTokenBalance,
+} from "@/features/topup/use-token-balance";
 import { hydrateStep, planRecordInterrupted, type PersistedPlanRecord } from "@/features/chat/hooks/supervisor-types";
 import { getLocale, translate } from "@/lib/i18n";
 
@@ -179,6 +184,36 @@ export const DELIVERABLE_STEP_ID = "__deliverable";
 export const DELIVERABLE_TOOL = "deliverable_writer";
 export function isDeliverableStep(s: SupervisorStep): boolean {
   return s.stepId === DELIVERABLE_STEP_ID || s.tool === DELIVERABLE_TOOL;
+}
+
+/** One run at a time — the same gate every submit path enforces. A second
+ *  submit that slips through would append a phantom "running" record that
+ *  never starts and never errors. Throws so the caller's remaining steps
+ *  (and its follow-up/quote arming) stay untouched for the retry. */
+function ensureIdleRun(status: string, setSessionError: (msg: string) => void): void {
+  if (["running", "stopping", "awaitingConfirmation"].includes(status)) {
+    const msg = "A run is already in progress — stop it or wait for it to finish before submitting.";
+    setSessionError(msg);
+    throw new Error(msg);
+  }
+}
+
+/** The fixed pipelines' shared launch tail: append the run record, fire the
+ *  caller's navigation hook (opts.onStart), persist the user goal into the
+ *  session transcript, hand off to the supervisor stream, then re-read the
+ *  balance — the debit already happened inside preflightRun. */
+function launchFixedRun(
+  beginRun: (goal: string, quoted: boolean) => void,
+  goal: string,
+  sid: number,
+  launch: (sid: number) => void,
+  opts?: { onStart?: () => void },
+): void {
+  beginRun(goal, false);
+  opts?.onStart?.();
+  void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
+  launch(sid);
+  void refreshTokenBalance();
 }
 
 /** Waves (dispatch order from `dependsOn`) — same derivation the plan card
@@ -615,24 +650,41 @@ export function useWorkbench() {
       // Fast path: the rail chip / Top Up page already holds a fresh balance —
       // skip the 337ms gate read entirely. Cold cache falls through to the
       // read (fail-closed); the server-side gate in `plan_task` stays the
-      // enforcement either way.
+      // enforcement either way. When the READ fails (offline), the last
+      // persisted snapshot keeps the submit alive — the server gate applies
+      // the same snapshot + ledger grace and still rejects if the credit is
+      // exhausted, so this can only defer a rejection, never bypass one.
       const cached = peekFreshTokenBalance();
       let tokens: number;
+      let readFromWorker = true;
       if (cached != null) {
         tokens = cached;
+        // A cache-served value may be an offline-republished snapshot or an
+        // optimistic estimate — it is not a worker read; never re-persist it.
+        readFromWorker = false;
       } else {
         try {
           ({ tokens } = await call<TopupBalance>("topup_balance"));
         } catch (err) {
-          const msg = `Saldo tidak terbaca — coba lagi (${errText(err)})`;
-          toast(msg);
-          throw new Error(msg);
+          const offline = peekPersistedTokenBalance();
+          if (offline != null) {
+            // Re-publish for the chip WITHOUT persisting — the snapshot's
+            // `at` is the last real worker read and its freshness must not
+            // reset on every offline submit.
+            tokens = offline.tokens;
+            readFromWorker = false;
+            toast("Offline — memakai saldo cache; diverifikasi saat online");
+          } else {
+            const msg = `Saldo tidak terbaca — coba lagi (${errText(err)})`;
+            toast(msg);
+            throw new Error(msg);
+          }
         }
       }
       // The gate's read doubles as the shared chip's freshest PRE-debit
       // value — it lands before `plan_task` debits, so the run below
       // re-reads once it resolves.
-      publishTokenBalance(tokens);
+      publishTokenBalance(tokens, readFromWorker);
       if (tokens <= 0) {
         const msg = "Token habis — isi ulang lewat Top Up";
         toast(msg);
@@ -695,11 +747,7 @@ export function useWorkbench() {
       // (drafting), but a submit during run/stopping/confirmation rejects
       // with the reason — the draft survives for the retry (PromptInput
       // clears only on resolution).
-      if (["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)) {
-        const msg = "A run is already in progress — stop it or wait for it to finish before submitting.";
-        setSessionError(msg);
-        throw new Error(msg);
-      }
+      ensureIdleRun(supervisor.status, setSessionError);
       setLastUserText(trimmed);
       // Pin the explicit target BEFORE any await — the planner must quote
       // exactly what the user armed, not whatever completes later.
@@ -804,11 +852,13 @@ export function useWorkbench() {
       // All gates passed — consume the follow-up/quote arming after them so
       // a blocked submit leaves both intact for the retry.
       const goal = `Analyze ${sym}${tradeDate ? ` as of ${tradeDate}` : ""} — full ${assetClass === "crypto" ? "crypto" : assetClass === "commodity" ? "commodity" : assetClass === "forex" ? "forex" : "stock"}-research pipeline`;
-      beginRun(goal, false);
-      opts?.onStart?.();
-      void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
-      supervisor.runDesk({ ticker: sym, tradeDate, analysts, domain: assetClass }, sid);
-      void refreshTokenBalance();
+      launchFixedRun(
+        beginRun,
+        goal,
+        sid,
+        (s) => supervisor.runDesk({ ticker: sym, tradeDate, analysts, domain: assetClass }, s),
+        opts,
+      );
     },
     [supervisor, preflightRun, beginRun],
   );
@@ -835,11 +885,7 @@ export function useWorkbench() {
       // All gates passed — consume the follow-up/quote arming after them so
       // a blocked submit leaves both intact for the retry.
       const goal = `YouTube video analysis — ${link}`.slice(0, 140);
-      beginRun(goal, false);
-      opts?.onStart?.();
-      void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
-      supervisor.runYoutube({ url: link }, sid);
-      void refreshTokenBalance();
+      launchFixedRun(beginRun, goal, sid, (s) => supervisor.runYoutube({ url: link }, s), opts);
     },
     [supervisor, preflightRun, beginRun],
   );
@@ -861,13 +907,7 @@ export function useWorkbench() {
         onStart?: () => void;
       },
     ) => {
-      // One run at a time — the same gate the composer's run() enforces (see
-      // runScreener): a second submit would leave a phantom "running" record.
-      if (["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)) {
-        const msg = "A run is already in progress — stop it or wait for it to finish before submitting.";
-        setSessionError(msg);
-        throw new Error(msg);
-      }
+      ensureIdleRun(supervisor.status, setSessionError);
       // Balance gate + lazy session — the shared fail-closed pre-flight.
       const sid = await preflightRun(
         `Futures risk audit — ${interval}/${risk}`.slice(0, 80),
@@ -880,11 +920,13 @@ export function useWorkbench() {
         limit >= 500
           ? `Futures risk audit — ${interval} candles, ${risk} stops, the whole book${scope}`.slice(0, 140)
           : `Futures risk audit — ${interval} candles, ${risk} stops, top ${limit} positions${scope}`.slice(0, 140);
-      beginRun(goal, false);
-      opts?.onStart?.();
-      void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
-      supervisor.runBinanceAudit({ interval, risk, limit, market }, sid);
-      void refreshTokenBalance();
+      launchFixedRun(
+        beginRun,
+        goal,
+        sid,
+        (s) => supervisor.runBinanceAudit({ interval, risk, limit, market }, s),
+        opts,
+      );
     },
     [supervisor, preflightRun, beginRun],
   );
@@ -910,11 +952,7 @@ export function useWorkbench() {
         limit >= 500
           ? `Futures risk audit (MEXC) — ${interval} candles, ${risk} stops, the whole book`.slice(0, 140)
           : `Futures risk audit (MEXC) — ${interval} candles, ${risk} stops, top ${limit} positions`.slice(0, 140);
-      beginRun(goal, false);
-      opts?.onStart?.();
-      void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
-      supervisor.runMexcAudit({ interval, risk, limit }, sid);
-      void refreshTokenBalance();
+      launchFixedRun(beginRun, goal, sid, (s) => supervisor.runMexcAudit({ interval, risk, limit }, s), opts);
     },
     [supervisor, preflightRun, beginRun],
   );
@@ -945,11 +983,13 @@ export function useWorkbench() {
         "Couldn't start the performance review",
       );
       const goal = `Trading performance review — ${period}${label}`.slice(0, 140);
-      beginRun(goal, false);
-      opts?.onStart?.();
-      void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
-      supervisor.runTradingPerformance({ period, venue: opts?.venue }, sid);
-      void refreshTokenBalance();
+      launchFixedRun(
+        beginRun,
+        goal,
+        sid,
+        (s) => supervisor.runTradingPerformance({ period, venue: opts?.venue }, s),
+        opts,
+      );
     },
     [supervisor, preflightRun, beginRun],
   );
@@ -966,11 +1006,7 @@ export function useWorkbench() {
     ) => {
       const sid = await preflightRun(`Monthly close — ${period}`.slice(0, 80), "Couldn't start the monthly close");
       const goal = `Monthly close — ${period}`.slice(0, 140);
-      beginRun(goal, false);
-      opts?.onStart?.();
-      void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
-      supervisor.runMonthlyClose({ period }, sid);
-      void refreshTokenBalance();
+      launchFixedRun(beginRun, goal, sid, (s) => supervisor.runMonthlyClose({ period }, s), opts);
     },
     [supervisor, preflightRun, beginRun],
   );
@@ -997,15 +1033,10 @@ export function useWorkbench() {
         onStart?: () => void;
       },
     ) => {
-      // One run at a time — the same gate the composer's run() enforces. A
-      // second submit that slips through would append a "running" record and
-      // then be dropped silently by runCryptoScreener (streamCtrl already
-      // busy): a phantom run that never starts and never errors.
-      if (["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)) {
-        const msg = "A run is already in progress — stop it or wait for it to finish before submitting.";
-        setSessionError(msg);
-        throw new Error(msg);
-      }
+      // One run at a time — ensureIdleRun. A second submit that slips
+      // through would be dropped silently by runCryptoScreener (streamCtrl
+      // already busy): a phantom run that never starts and never errors.
+      ensureIdleRun(supervisor.status, setSessionError);
       // Balance gate + lazy session — the shared fail-closed pre-flight.
       const sid = await preflightRun(
         `Crypto screener — ${universe}/${interval}`.slice(0, 80),
@@ -1028,11 +1059,13 @@ export function useWorkbench() {
         `Crypto screener — ${venue === "mexc" ? "MEXC" : "Binance"} ${universe} ${interval} candles: ${screens.join(", ")}${
           narrowing ? ` · structure: ${narrowing}` : ""
         }`.slice(0, 140);
-      beginRun(goal, false);
-      opts?.onStart?.();
-      void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
-      supervisor.runCryptoScreener({ screens, universe, interval, venue, topN, scanSize, structure }, sid);
-      void refreshTokenBalance();
+      launchFixedRun(
+        beginRun,
+        goal,
+        sid,
+        (s) => supervisor.runCryptoScreener({ screens, universe, interval, venue, topN, scanSize, structure }, s),
+        opts,
+      );
     },
     [supervisor, preflightRun, beginRun],
   );
@@ -1058,18 +1091,16 @@ export function useWorkbench() {
           return target;
         }
       })();
-      if (["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)) {
-        const msg = "A run is already in progress — stop it or wait for it to finish before submitting.";
-        setSessionError(msg);
-        throw new Error(msg);
-      }
+      ensureIdleRun(supervisor.status, setSessionError);
       const sid = await preflightRun(`Security audit — ${host}`.slice(0, 80), "Couldn't start the security audit");
       const goal = `Security audit — ${host}${categories?.length ? ` · ${categories.join(", ")}` : ""}`.slice(0, 140);
-      beginRun(goal, false);
-      opts?.onStart?.();
-      void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
-      supervisor.runSecurityAudit({ target, categories, intensity }, sid);
-      void refreshTokenBalance();
+      launchFixedRun(
+        beginRun,
+        goal,
+        sid,
+        (s) => supervisor.runSecurityAudit({ target, categories, intensity }, s),
+        opts,
+      );
     },
     [supervisor, preflightRun, beginRun],
   );

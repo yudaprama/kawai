@@ -20,7 +20,9 @@ export type QuoteState = "idle" | "pending" | "quoted" | "failed";
 export function publishMediaDebit(debitedTokens: number): void {
   const current = peekFreshTokenBalance();
   if (current === null) return;
-  publishTokenBalance(Math.max(0, current - debitedTokens));
+  // persist=false: an OPTIMISTIC estimate must not re-stamp the persisted
+  // snapshot's freshness — the next real worker read corrects the chip.
+  publishTokenBalance(Math.max(0, current - debitedTokens), false);
 }
 
 /**

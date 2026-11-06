@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Copy/Paste Detector Report</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background: #f7fafc; color: #2d3748; }
+    a { color: #3182ce; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .header { background: #fff; box-shadow: 0 1px 3px 0 rgba(0,0,0,.1), 0 1px 2px 0 rgba(0,0,0,.06); padding: 1rem 0; }
+    .header-inner { max-width: 80rem; margin: 0 auto; padding: 0 1rem; }
+    .header h1 { font-size: 1.875rem; font-weight: 600; color: #2d3748; margin: 0; }
+    .main { max-width: 80rem; margin: 2rem auto; padding: 0 1rem; }
+    .card { background: #fff; box-shadow: 0 1px 3px 0 rgba(0,0,0,.1), 0 1px 2px 0 rgba(0,0,0,.06); border-radius: 0.25rem; padding: 1.5rem; margin-bottom: 2rem; }
+    h2 { font-size: 1.5rem; font-weight: 600; color: #4a5568; margin: 0 0 1rem 0; }
+    .dashboard { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+    .stat-card { padding: 1rem; border-radius: 0.25rem; text-align: center; }
+    .stat-card h3 { font-size: 1.125rem; font-weight: 600; margin: 0 0 0.5rem 0; }
+    .stat-card .val { font-size: 2.25rem; font-weight: 700; }
+    .stat-blue { background: #bee3f8; color: #2a4365; }
+    .stat-green { background: #c6f6d5; color: #276749; }
+    .stat-yellow { background: #fefcbf; color: #975a16; }
+    .stat-red { background: #fed7d7; color: #9b2c2c; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th { background: #edf2f7; color: #718096; text-transform: uppercase; font-size: 0.75rem; font-weight: 600; padding: 0.75rem 1.5rem; text-align: left; }
+    tbody td { padding: 0.75rem 1.5rem; border-bottom: 1px solid #edf2f7; font-size: 0.875rem; }
+    tbody tr:hover { background: #f7fafc; }
+    .clone-section { margin-bottom: 2rem; }
+    .clone-section h2 { border-bottom: 2px solid #edf2f7; padding-bottom: 0.5rem; }
+    .clone-item { padding: 1rem 0; border-bottom: 1px solid #edf2f7; }
+    .clone-item:last-child { border-bottom: none; }
+    .clone-info { color: #718096; font-size: 0.875rem; margin-bottom: 0.25rem; }
+    .toggle-btn { background: #a0aec0; color: #fff; border: none; padding: 0.125rem 0.5rem; font-size: 0.75rem; border-radius: 0.25rem; cursor: pointer; margin-left: 0.5rem; }
+    .toggle-btn:focus { outline: none; }
+    .code-block { background: #f7fafc; border: 1px solid #edf2f7; border-radius: 0.25rem; padding: 1rem; margin-top: 0.5rem; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 0.875rem; color: #2d3748; white-space: pre-wrap; overflow-x: auto; display: none; }
+    .code-block.visible { display: block; }
+    .no-dupes { color: #27ae60; font-weight: 700; font-size: 1.125rem; }
+    .footer { margin-top: 3rem; padding: 2rem 0; border-top: 1px solid #e0e0e0; text-align: center; font-family: -apple-system, sans-serif; color: #666; }
+    .footer p { margin: 0.5rem 0; font-size: 0.875rem; }
+    .footer a { color: #0066cc; }
+    .footer .small { font-size: 0.75rem; color: #999; }
+    @media (max-width: 768px) { .dashboard { grid-template-columns: repeat(2, 1fr); } }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <h1>jscpd - copy/paste report</h1>
+    </div>
+  </header>
+
+  <div class="main">
+    <div class="card">
+      <section>
+        <h2>Dashboard</h2>
+        <div class="dashboard">
+          <div class="stat-card stat-blue">
+            <h3>Total Files</h3>
+            <div class="val">187</div>
+          </div>
+          <div class="stat-card stat-green">
+            <h3>Total Lines of Code</h3>
+            <div class="val">40862</div>
+          </div>
+          <div class="stat-card stat-yellow">
+            <h3>Number of Clones</h3>
+            <div class="val">30</div>
+          </div>
+          <div class="stat-card stat-red">
+            <h3>Duplicated Lines</h3>
+            <div class="val">329 (0.81%)</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="card">
+      <section>
+        <h2>Formats with Duplications</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Format</th>
+              <th>Files</th>
+              <th>Lines</th>
+              <th>Clones</th>
+              <th>Duplicated Lines</th>
+              <th>Duplicated Tokens</th>
+            </tr>
+          </thead>
+          <tbody>
+            
+            <tr>
+              <td><a href="#tsx-clones">tsx</a></td>
+              <td>105</td>
+              <td>28568</td>
+              <td>27</td>
+              <td>298 (1.04%)</td>
+              <td>1779 (1.01%)</td>
+            </tr>
+            
+            <tr>
+              <td><a href="#typescript-clones">typescript</a></td>
+              <td>82</td>
+              <td>12294</td>
+              <td>3</td>
+              <td>31 (0.25%)</td>
+              <td>167 (0.27%)</td>
+            </tr>
+            
+            <tr style="font-weight: 700;">
+              <td>Total</td>
+              <td>187</td>
+              <td>40862</td>
+              <td>30</td>
+              <td>329 (0.81%)</td>
+              <td>1946 (0.82%)</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
+
+    
+    
+    <div class="card">
+      <section class="clone-section">
+        <a name="tsx-clones"></a>
+        <h2>tsx</h2>
+        <div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/credentials/credential-card.tsx (Line 68:38 - Line 80:8),
+              features/credentials/credential-card.tsx (Line 86:40 - Line 96:8)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-1')">Show code</button>
+            </div>
+            <pre id="code-tsx-1" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/generator/civitai-shared.tsx (Line 479:23 - Line 495:6),
+              features/generator/generator-page.tsx (Line 1003:45 - Line 1019:4)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-2')">Show code</button>
+            </div>
+            <pre id="code-tsx-2" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/generator/generator-page.tsx (Line 244:11 - Line 260:9),
+              features/generator/model3d-generator.tsx (Line 142:15 - Line 167:9)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-3')">Show code</button>
+            </div>
+            <pre id="code-tsx-3" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/generator/generator-page.tsx (Line 245:16 - Line 255:2),
+              features/generator/music-generator.tsx (Line 160:9 - Line 170:2)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-4')">Show code</button>
+            </div>
+            <pre id="code-tsx-4" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/generator/generator-page.tsx (Line 1463:19 - Line 1470:13),
+              features/generator/music-generator.tsx (Line 869:18 - Line 876:13)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-5')">Show code</button>
+            </div>
+            <pre id="code-tsx-5" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/generator/model3d-generator.tsx (Line 141:13 - Line 167:9),
+              features/generator/video-generator.tsx (Line 296:18 - Line 311:9)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-6')">Show code</button>
+            </div>
+            <pre id="code-tsx-6" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/generator/model3d-generator.tsx (Line 390:35 - Line 400:20),
+              features/generator/video-generator.tsx (Line 522:69 - Line 532:20)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-7')">Show code</button>
+            </div>
+            <pre id="code-tsx-7" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/generator/model3d-generator.tsx (Line 391:7 - Line 400:20),
+              features/generator/music-generator.tsx (Line 429:113 - Line 438:20)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-8')">Show code</button>
+            </div>
+            <pre id="code-tsx-8" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/generator/model3d-generator.tsx (Line 713:18 - Line 719:25),
+              features/generator/video-generator.tsx (Line 692:30 - Line 698:25)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-9')">Show code</button>
+            </div>
+            <pre id="code-tsx-9" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/generator/model3d-generator.tsx (Line 833:81 - Line 844:29),
+              features/generator/music-generator.tsx (Line 1024:57 - Line 1035:29)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-10')">Show code</button>
+            </div>
+            <pre id="code-tsx-10" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/generator/model3d-generator.tsx (Line 833:81 - Line 844:29),
+              features/generator/video-generator.tsx (Line 1001:57 - Line 1012:29)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-11')">Show code</button>
+            </div>
+            <pre id="code-tsx-11" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/generator/model3d-generator.tsx (Line 868:17 - Line 879:2),
+              features/generator/music-generator.tsx (Line 1063:17 - Line 1074:2)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-12')">Show code</button>
+            </div>
+            <pre id="code-tsx-12" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/generator/model3d-generator.tsx (Line 868:17 - Line 879:2),
+              features/generator/video-generator.tsx (Line 1036:17 - Line 1047:2)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-13')">Show code</button>
+            </div>
+            <pre id="code-tsx-13" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/generator/music-generator.tsx (Line 489:19 - Line 508:82),
+              features/generator/video-generator.tsx (Line 629:19 - Line 645:82)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-14')">Show code</button>
+            </div>
+            <pre id="code-tsx-14" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/workbench/components/binance-audit-form.tsx (Line 169:11 - Line 177:14),
+              features/workbench/components/crypto-screener-form.tsx (Line 216:13 - Line 224:16)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-15')">Show code</button>
+            </div>
+            <pre id="code-tsx-15" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/workbench/components/binance-audit-offer.tsx (Line 167:17 - Line 184:7),
+              features/workbench/components/crypto-screener-offer.tsx (Line 111:20 - Line 121:6)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-16')">Show code</button>
+            </div>
+            <pre id="code-tsx-16" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/workbench/components/binance-audit-offer.tsx (Line 420:11 - Line 428:47),
+              features/workbench/components/binance-audit-offer.tsx (Line 466:8 - Line 474:47)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-17')">Show code</button>
+            </div>
+            <pre id="code-tsx-17" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/workbench/components/binance-audit-offer.tsx (Line 420:11 - Line 428:44),
+              features/workbench/components/crypto-screener-offer.tsx (Line 310:8 - Line 318:44)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-18')">Show code</button>
+            </div>
+            <pre id="code-tsx-18" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/workbench/components/binance-audit-offer.tsx (Line 432:44 - Line 444:18),
+              features/workbench/components/binance-audit-offer.tsx (Line 477:51 - Line 484:75)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-19')">Show code</button>
+            </div>
+            <pre id="code-tsx-19" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/workbench/components/binance-audit-offer.tsx (Line 671:65 - Line 680:8),
+              features/workbench/components/crypto-screener-offer.tsx (Line 657:28 - Line 668:8)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-20')">Show code</button>
+            </div>
+            <pre id="code-tsx-20" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/workbench/components/binance-audit-offer.tsx (Line 799:16 - Line 811:32),
+              features/workbench/components/crypto-screener-offer.tsx (Line 805:12 - Line 817:32)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-21')">Show code</button>
+            </div>
+            <pre id="code-tsx-21" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/workbench/components/binance-audit-offer.tsx (Line 1040:106 - Line 1048:31),
+              features/workbench/components/crypto-screener-offer.tsx (Line 986:13 - Line 994:31)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-22')">Show code</button>
+            </div>
+            <pre id="code-tsx-22" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/workbench/components/binance-audit-offer.tsx (Line 1060:105 - Line 1068:36),
+              features/workbench/components/crypto-screener-offer.tsx (Line 1007:13 - Line 1016:30)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-23')">Show code</button>
+            </div>
+            <pre id="code-tsx-23" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/workbench/components/binance-audit-offer.tsx (Line 1173:35 - Line 1178:24),
+              features/workbench/components/binance-audit-offer.tsx (Line 1191:38 - Line 1196:24)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-24')">Show code</button>
+            </div>
+            <pre id="code-tsx-24" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/workbench/components/crypto-screener-offer.tsx (Line 478:70 - Line 484:108),
+              features/workbench/components/crypto-screener-offer.tsx (Line 497:71 - Line 504:74)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-25')">Show code</button>
+            </div>
+            <pre id="code-tsx-25" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/workbench/components/crypto-screener-offer.tsx (Line 484:109 - Line 492:10),
+              features/workbench/components/crypto-screener-offer.tsx (Line 505:9 - Line 513:8)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-26')">Show code</button>
+            </div>
+            <pre id="code-tsx-26" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/workbench/components/deliverable-viewer.tsx (Line 600:20 - Line 614:13),
+              features/workbench/components/deliverable-viewer.tsx (Line 1047:22 - Line 1063:13)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-tsx-27')">Show code</button>
+            </div>
+            <pre id="code-tsx-27" class="code-block"></pre>
+          </div>
+          
+        </div>
+      </section>
+    </div>
+    
+    <div class="card">
+      <section class="clone-section">
+        <a name="typescript-clones"></a>
+        <h2>typescript</h2>
+        <div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/chat/hooks/supervisor-types.ts (Line 181:9 - Line 192:2),
+              features/chat/hooks/use-supervisor-plan.ts (Line 172:10 - Line 185:2)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-typescript-1')">Show code</button>
+            </div>
+            <pre id="code-typescript-1" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/workbench/hooks/use-workbench.ts (Line 857:21 - Line 872:38),
+              features/workbench/hooks/use-workbench.ts (Line 993:53 - Line 1010:38)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-typescript-2')">Show code</button>
+            </div>
+            <pre id="code-typescript-2" class="code-block"></pre>
+          </div>
+          
+          <div class="clone-item">
+            <div class="clone-info">
+              features/workbench/hooks/use-workbench.ts (Line 1029:50 - Line 1034:18),
+              features/workbench/hooks/use-workbench.ts (Line 1067:98 - Line 1071:18)
+            </div>
+            <div>
+              <button class="toggle-btn" onclick="toggle('code-typescript-3')">Show code</button>
+            </div>
+            <pre id="code-typescript-3" class="code-block"></pre>
+          </div>
+          
+        </div>
+      </section>
+    </div>
+    
+    
+  </div>
+
+  <div class="footer">
+    <p>Generated by <a href="https://jscpd.dev" target="_blank">jscpd</a> v0.1.7 by <a href="https://github.com/kucherenko" target="_blank">Andrey Kucherenko</a></p>
+    <p><a href="https://www.npmjs.com/package/jscpd" target="_blank"><img src="https://img.shields.io/npm/dw/jscpd.svg?style=flat-square" alt="npm weekly downloads" style="vertical-align: middle;"></a></p>
+  </div>
+
+  <script>
+    function toggle(id) {
+      var el = document.getElementById(id);
+      if (el) { el.classList.toggle('visible'); }
+    }
+  </script>
+</body>
+</html>

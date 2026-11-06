@@ -2,13 +2,9 @@ import { useEffect, useState } from "react";
 
 import { Icon } from "@/components/shared/icon";
 import { call } from "@/lib/api";
-import { cn } from "@/lib/utils";
 
+import { CandlesField, chip } from "./offer-shared";
 import { Field } from "./workbench-ui";
-
-/** Candle intervals the stop fold accepts (mirrors the backend's
- * `AUDIT_INTERVALS`). Anything else falls back to `4h` server-side. */
-const INTERVALS = ["15m", "1h", "4h", "1d", "1w"] as const;
 
 /** Stop-distance presets (mirrors the backend's `AUDIT_RISKS`). */
 const RISKS = [
@@ -132,13 +128,6 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
     if (disabled || missingOwnKeys) return;
     onSubmit(interval, risk, limit, market, venue);
   };
-  const chip = (active: boolean) =>
-    cn(
-      "rounded-md border px-2.5 py-1 font-mono text-[0.6875rem] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-      active
-        ? "border-primary/60 bg-primary/10 text-primary"
-        : "border-border text-muted-foreground hover:border-[var(--tea-color-border-focus)] hover:text-foreground",
-    );
 
   return (
     <div className="border-border/60 w-full rounded-xl border p-4">
@@ -165,20 +154,7 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
           ))}
         </Field>
 
-        <Field label="Candles">
-          {INTERVALS.map((iv) => (
-            <button
-              key={iv}
-              type="button"
-              disabled={disabled}
-              aria-pressed={interval === iv}
-              onClick={() => setInterval(iv)}
-              className={chip(interval === iv)}
-            >
-              {iv}
-            </button>
-          ))}
-        </Field>
+        <CandlesField disabled={disabled} interval={interval} onInterval={setInterval} />
 
         <Field label="Stop distance">
           {RISKS.map((r) => (

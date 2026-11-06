@@ -751,15 +751,18 @@ pub async fn plan_task(
     registry: &ToolRegistry,
     on_progress: impl Fn(SupervisorEvent),
 ) -> Result<(kawai_router::TaskPlan, remote_llm::RemoteUsage), String> {
-    // Fase 0a, server side — the balance gate is FAIL-CLOSED: a balance that
-    // cannot be read blocks the goal exactly like an empty one, because an
-    // unreadable balance means this run cannot be billed. Two cases block:
-    // worker error/HTTP failure, and tokens <= 0. The client pre-check in
+    // Fase 0a, server side — the balance gate (`billing_gate`). Online it is
+    // FAIL-CLOSED: a balance that cannot be read blocks the goal exactly like
+    // an empty one, because an unreadable balance means this run cannot be
+    // billed. Offline (worker UNREACHABLE, not answering 0) it falls back to
+    // the last successful snapshot minus locally-recorded ledger spend,
+    // within a TTL — bounded credit against a balance the worker verified on
+    // this device before; a zero snapshot still blocks, and no snapshot at
+    // all keeps the original fail-closed error. The client pre-check in
     // use-workbench.run() is UX only (toast + Top Up handoff) and is
     // bypassable; this call at the composition root is the enforcement both
     // transports share, and it runs BEFORE the planner so no token is spent
-    // on a goal that cannot be paid for. It runs BEFORE the planner so no
-    // token is spent on a goal that cannot be paid for.
+    // on a goal that cannot be paid for.
     //
     // The bearer comes from the TRANSPORT EDGE, not from reading the stored
     // `auth.token` file here: the web transport authenticates off the
@@ -773,11 +776,7 @@ pub async fn plan_task(
     // gate is the client's only billing involvement — usage itself is
     // debited server-side by the recap cron from telemetry (`user.id`).
     if let Some(token) = bearer {
-        match crate::logic::topup::topup_balance(token).await {
-            Ok(balance) if balance.tokens > 0 => {}
-            Ok(_) => return Err("Token habis — isi ulang lewat Top Up".to_string()),
-            Err(e) => return Err(format!("balance check failed: {e}")),
-        }
+        crate::logic::topup::billing_gate(user_id, token).await?;
     }
 
     // ── Template routing — layers 1 and 2 (PLAN-template-routing.md §2.5) ──
@@ -1088,16 +1087,27 @@ pub async fn plan_task(
 
     // The remote pool serves the planner with a tight per-call output cap:
     // the loop's rounds must stay short (the 2026-02 benchmark showed 14.6k
-    // output tokens = the whole 250 s latency).
+    // output tokens = the whole 250 s latency). A no-vault build (or every
+    // vault key empty) falls back to a LOCAL-ONLY pool: the on-device engine
+    // becomes the planner instead of the submit dying with "remote LLM is
+    // not configured" — the offline tier (`RemoteLlm::local_only`). Quality
+    // drops (E4B plans simpler than a frontier model) but goals keep
+    // resolving with zero connectivity.
     let remote = Some(
-        remote_llm::RemoteLlm::from_env()
-            .map(|r| {
-                r.with_output_cap(4_000)
-                    .with_agent("planner")
-                    .with_conversation(format!("kawai-session-{session_id}"))
-                    .with_user(user_id)
-            })
-            .ok_or_else(|| "remote LLM is not configured".to_string())?,
+        match remote_llm::RemoteLlm::from_env() {
+            Some(pool) => pool,
+            None => {
+                tracing::info!(
+                    component = "supervisor",
+                    "no vault keys configured — planner runs on the on-device engine (offline tier)"
+                );
+                remote_llm::RemoteLlm::local_only()
+            }
+        }
+        .with_output_cap(4_000)
+        .with_agent("planner")
+        .with_conversation(format!("kawai-session-{session_id}"))
+        .with_user(user_id),
     );
 
     on_progress(SupervisorEvent::PlanningStarted {});
@@ -4639,20 +4649,26 @@ async fn revise_plan(
         .map(|s| s.id.as_str())
         .collect();
     let remote = remote_llm::RemoteLlm::from_env()
-        .map(|r| {
-            let mut r = r
-                .with_output_cap(4_000)
-                .with_agent("planner")
-                .with_conversation(format!("kawai-session-{session_id}"))
-                .with_user(user_id);
-            if let Some(rs) = run_span {
-                if let Ok(guard) = rs.lock() {
-                    r.with_span_parent(&guard);
-                }
+        .unwrap_or_else(|| {
+            tracing::info!(
+                component = "supervisor",
+                "no vault keys configured — replan reviser runs on the on-device engine (offline tier)"
+            );
+            remote_llm::RemoteLlm::local_only()
+        });
+    let remote = {
+        let mut r = remote
+            .with_output_cap(4_000)
+            .with_agent("planner")
+            .with_conversation(format!("kawai-session-{session_id}"))
+            .with_user(user_id);
+        if let Some(rs) = run_span {
+            if let Ok(guard) = rs.lock() {
+                r.with_span_parent(&guard);
             }
-            r
-        })
-        .ok_or_else(|| "remote LLM is not configured".to_string())?;
+        }
+        r
+    };
     // Reviser gets the FULL catalog and a search-free prompt — the revision
     // loop has no search handler, so a `{"action":"search"}` reply is an
     // automatic dead end (observed live 2026: both corrective rounds burned).
@@ -5748,25 +5764,17 @@ pub fn execute_plan_stream_with_cancel(
         // The same balance gate the planner passed, enforced again here
         // because execution has an entry point that never re-enters
         // plan_task: Resume re-runs a stored plan straight through this
-        // function. Fail-closed like the planner's copy (a balance that
-        // cannot be read blocks exactly like an empty one) and it runs
-        // BEFORE PlanStarted, so a rejected run never looks like it began.
-        // Gate only — no debit here (billing is planner-token scoped today).
+        // function. One shared policy (`logic::topup::billing_gate`):
+        // fail-closed online, offline grace from the cached snapshot +
+        // ledger spend — and the gate's success path also fires the offline
+        // usage replay, so a Resume run after an outage settles the debt
+        // before running again. Runs BEFORE PlanStarted, so a rejected run
+        // never looks like it began. Gate only — no debit here (billing is
+        // planner-token scoped today).
         if let Some(token) = &bearer {
-            match crate::logic::topup::topup_balance(token).await {
-                Ok(balance) if balance.tokens > 0 => {}
-                Ok(_) => {
-                    yield SupervisorEvent::PlanFailed {
-                        error: "Token habis — isi ulang lewat Top Up".to_string(),
-                    };
-                    return;
-                }
-                Err(e) => {
-                    yield SupervisorEvent::PlanFailed {
-                        error: format!("balance check failed: {e}"),
-                    };
-                    return;
-                }
+            if let Err(err) = crate::logic::topup::billing_gate(&user_id, token).await {
+                yield SupervisorEvent::PlanFailed { error: err };
+                return;
             }
         }
         // ── The ONE hardening point for every entry path ────────────────
@@ -7684,8 +7692,9 @@ mod tests {
 
         // A greeting carrying content is NOT static — the canned reply must
         // never swallow it. Whatever comes back is planner-authored (a real
-        // pool plans the NVDA analysis) or the planner stage fails closed on
-        // a keyless build — never the direct_greeting stamp.
+        // pool plans the NVDA analysis) or the offline tier fails on the
+        // unloaded engine (no vault keys → local-only pool → Gemma 4 is not
+        // loaded in tests) — never the direct_greeting stamp.
         match plan_task(
             &user,
             session,
@@ -7706,8 +7715,8 @@ mod tests {
             }
             Err(err) => {
                 assert!(
-                    err.contains("remote LLM is not configured"),
-                    "unexpected planner failure: {err}"
+                    err.contains("local model error"),
+                    "expected the local-only planner to fail on the unloaded engine: {err}"
                 );
             }
         }

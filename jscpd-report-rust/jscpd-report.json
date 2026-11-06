@@ -1,0 +1,1125 @@
+{
+  "duplicates": [
+    {
+      "firstFile": {
+        "end": 192,
+        "endLoc": {
+          "column": 1,
+          "line": 192,
+          "position": 7262
+        },
+        "name": "features/chat/hooks/supervisor-types.ts",
+        "start": 181,
+        "startLoc": {
+          "column": 8,
+          "line": 181,
+          "position": 6653
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 12,
+      "secondFile": {
+        "end": 185,
+        "endLoc": {
+          "column": 1,
+          "line": 185,
+          "position": 7729
+        },
+        "name": "features/chat/hooks/use-supervisor-plan.ts",
+        "start": 172,
+        "startLoc": {
+          "column": 9,
+          "line": 172,
+          "position": 6954
+        }
+      },
+      "tokens": 50
+    },
+    {
+      "firstFile": {
+        "end": 80,
+        "endLoc": {
+          "column": 7,
+          "line": 80,
+          "position": 2989
+        },
+        "name": "features/credentials/credential-card.tsx",
+        "start": 68,
+        "startLoc": {
+          "column": 37,
+          "line": 68,
+          "position": 2624
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 96,
+        "endLoc": {
+          "column": 7,
+          "line": 96,
+          "position": 3396
+        },
+        "name": "features/credentials/credential-card.tsx",
+        "start": 86,
+        "startLoc": {
+          "column": 39,
+          "line": 86,
+          "position": 3159
+        }
+      },
+      "tokens": 57
+    },
+    {
+      "firstFile": {
+        "end": 495,
+        "endLoc": {
+          "column": 5,
+          "line": 495,
+          "position": 18343
+        },
+        "name": "features/generator/civitai-shared.tsx",
+        "start": 479,
+        "startLoc": {
+          "column": 22,
+          "line": 479,
+          "position": 17851
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 17,
+      "secondFile": {
+        "end": 1019,
+        "endLoc": {
+          "column": 3,
+          "line": 1019,
+          "position": 40920
+        },
+        "name": "features/generator/generator-page.tsx",
+        "start": 1003,
+        "startLoc": {
+          "column": 44,
+          "line": 1003,
+          "position": 40460
+        }
+      },
+      "tokens": 107
+    },
+    {
+      "firstFile": {
+        "end": 260,
+        "endLoc": {
+          "column": 8,
+          "line": 260,
+          "position": 9260
+        },
+        "name": "features/generator/generator-page.tsx",
+        "start": 244,
+        "startLoc": {
+          "column": 10,
+          "line": 244,
+          "position": 8812
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 17,
+      "secondFile": {
+        "end": 167,
+        "endLoc": {
+          "column": 8,
+          "line": 167,
+          "position": 6043
+        },
+        "name": "features/generator/model3d-generator.tsx",
+        "start": 142,
+        "startLoc": {
+          "column": 14,
+          "line": 142,
+          "position": 5217
+        }
+      },
+      "tokens": 61
+    },
+    {
+      "firstFile": {
+        "end": 255,
+        "endLoc": {
+          "column": 1,
+          "line": 255,
+          "position": 9064
+        },
+        "name": "features/generator/generator-page.tsx",
+        "start": 245,
+        "startLoc": {
+          "column": 15,
+          "line": 245,
+          "position": 8828
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 11,
+      "secondFile": {
+        "end": 170,
+        "endLoc": {
+          "column": 1,
+          "line": 170,
+          "position": 5767
+        },
+        "name": "features/generator/music-generator.tsx",
+        "start": 160,
+        "startLoc": {
+          "column": 8,
+          "line": 160,
+          "position": 5531
+        }
+      },
+      "tokens": 55
+    },
+    {
+      "firstFile": {
+        "end": 1470,
+        "endLoc": {
+          "column": 12,
+          "line": 1470,
+          "position": 60556
+        },
+        "name": "features/generator/generator-page.tsx",
+        "start": 1463,
+        "startLoc": {
+          "column": 18,
+          "line": 1463,
+          "position": 60083
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 8,
+      "secondFile": {
+        "end": 876,
+        "endLoc": {
+          "column": 12,
+          "line": 876,
+          "position": 35099
+        },
+        "name": "features/generator/music-generator.tsx",
+        "start": 869,
+        "startLoc": {
+          "column": 17,
+          "line": 869,
+          "position": 34626
+        }
+      },
+      "tokens": 56
+    },
+    {
+      "firstFile": {
+        "end": 167,
+        "endLoc": {
+          "column": 8,
+          "line": 167,
+          "position": 6043
+        },
+        "name": "features/generator/model3d-generator.tsx",
+        "start": 141,
+        "startLoc": {
+          "column": 12,
+          "line": 141,
+          "position": 5202
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 27,
+      "secondFile": {
+        "end": 311,
+        "endLoc": {
+          "column": 8,
+          "line": 311,
+          "position": 11581
+        },
+        "name": "features/generator/video-generator.tsx",
+        "start": 296,
+        "startLoc": {
+          "column": 17,
+          "line": 296,
+          "position": 11228
+        }
+      },
+      "tokens": 66
+    },
+    {
+      "firstFile": {
+        "end": 400,
+        "endLoc": {
+          "column": 19,
+          "line": 400,
+          "position": 14135
+        },
+        "name": "features/generator/model3d-generator.tsx",
+        "start": 390,
+        "startLoc": {
+          "column": 34,
+          "line": 390,
+          "position": 13746
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 11,
+      "secondFile": {
+        "end": 532,
+        "endLoc": {
+          "column": 19,
+          "line": 532,
+          "position": 20209
+        },
+        "name": "features/generator/video-generator.tsx",
+        "start": 522,
+        "startLoc": {
+          "column": 68,
+          "line": 522,
+          "position": 19824
+        }
+      },
+      "tokens": 70
+    },
+    {
+      "firstFile": {
+        "end": 400,
+        "endLoc": {
+          "column": 19,
+          "line": 400,
+          "position": 14135
+        },
+        "name": "features/generator/model3d-generator.tsx",
+        "start": 391,
+        "startLoc": {
+          "column": 6,
+          "line": 391,
+          "position": 13754
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 10,
+      "secondFile": {
+        "end": 438,
+        "endLoc": {
+          "column": 19,
+          "line": 438,
+          "position": 16372
+        },
+        "name": "features/generator/music-generator.tsx",
+        "start": 429,
+        "startLoc": {
+          "column": 112,
+          "line": 429,
+          "position": 15993
+        }
+      },
+      "tokens": 69
+    },
+    {
+      "firstFile": {
+        "end": 719,
+        "endLoc": {
+          "column": 24,
+          "line": 719,
+          "position": 27038
+        },
+        "name": "features/generator/model3d-generator.tsx",
+        "start": 713,
+        "startLoc": {
+          "column": 17,
+          "line": 713,
+          "position": 26736
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 7,
+      "secondFile": {
+        "end": 698,
+        "endLoc": {
+          "column": 24,
+          "line": 698,
+          "position": 27285
+        },
+        "name": "features/generator/video-generator.tsx",
+        "start": 692,
+        "startLoc": {
+          "column": 29,
+          "line": 692,
+          "position": 26983
+        }
+      },
+      "tokens": 50
+    },
+    {
+      "firstFile": {
+        "end": 844,
+        "endLoc": {
+          "column": 28,
+          "line": 844,
+          "position": 31780
+        },
+        "name": "features/generator/model3d-generator.tsx",
+        "start": 833,
+        "startLoc": {
+          "column": 80,
+          "line": 833,
+          "position": 31441
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 12,
+      "secondFile": {
+        "end": 1035,
+        "endLoc": {
+          "column": 28,
+          "line": 1035,
+          "position": 41680
+        },
+        "name": "features/generator/music-generator.tsx",
+        "start": 1024,
+        "startLoc": {
+          "column": 56,
+          "line": 1024,
+          "position": 41341
+        }
+      },
+      "tokens": 68
+    },
+    {
+      "firstFile": {
+        "end": 844,
+        "endLoc": {
+          "column": 28,
+          "line": 844,
+          "position": 31780
+        },
+        "name": "features/generator/model3d-generator.tsx",
+        "start": 833,
+        "startLoc": {
+          "column": 80,
+          "line": 833,
+          "position": 31441
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 12,
+      "secondFile": {
+        "end": 1012,
+        "endLoc": {
+          "column": 28,
+          "line": 1012,
+          "position": 39483
+        },
+        "name": "features/generator/video-generator.tsx",
+        "start": 1001,
+        "startLoc": {
+          "column": 56,
+          "line": 1001,
+          "position": 39144
+        }
+      },
+      "tokens": 68
+    },
+    {
+      "firstFile": {
+        "end": 879,
+        "endLoc": {
+          "column": 1,
+          "line": 879,
+          "position": 32944
+        },
+        "name": "features/generator/model3d-generator.tsx",
+        "start": 868,
+        "startLoc": {
+          "column": 16,
+          "line": 868,
+          "position": 32690
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 12,
+      "secondFile": {
+        "end": 1074,
+        "endLoc": {
+          "column": 1,
+          "line": 1074,
+          "position": 42948
+        },
+        "name": "features/generator/music-generator.tsx",
+        "start": 1063,
+        "startLoc": {
+          "column": 16,
+          "line": 1063,
+          "position": 42694
+        }
+      },
+      "tokens": 59
+    },
+    {
+      "firstFile": {
+        "end": 879,
+        "endLoc": {
+          "column": 1,
+          "line": 879,
+          "position": 32944
+        },
+        "name": "features/generator/model3d-generator.tsx",
+        "start": 868,
+        "startLoc": {
+          "column": 16,
+          "line": 868,
+          "position": 32690
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 12,
+      "secondFile": {
+        "end": 1047,
+        "endLoc": {
+          "column": 1,
+          "line": 1047,
+          "position": 40620
+        },
+        "name": "features/generator/video-generator.tsx",
+        "start": 1036,
+        "startLoc": {
+          "column": 16,
+          "line": 1036,
+          "position": 40366
+        }
+      },
+      "tokens": 59
+    },
+    {
+      "firstFile": {
+        "end": 508,
+        "endLoc": {
+          "column": 81,
+          "line": 508,
+          "position": 19352
+        },
+        "name": "features/generator/music-generator.tsx",
+        "start": 489,
+        "startLoc": {
+          "column": 18,
+          "line": 489,
+          "position": 18551
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 20,
+      "secondFile": {
+        "end": 645,
+        "endLoc": {
+          "column": 81,
+          "line": 645,
+          "position": 25158
+        },
+        "name": "features/generator/video-generator.tsx",
+        "start": 629,
+        "startLoc": {
+          "column": 18,
+          "line": 629,
+          "position": 24600
+        }
+      },
+      "tokens": 87
+    },
+    {
+      "firstFile": {
+        "end": 177,
+        "endLoc": {
+          "column": 13,
+          "line": 177,
+          "position": 7507
+        },
+        "name": "features/workbench/components/binance-audit-form.tsx",
+        "start": 169,
+        "startLoc": {
+          "column": 10,
+          "line": 169,
+          "position": 7225
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 9,
+      "secondFile": {
+        "end": 224,
+        "endLoc": {
+          "column": 15,
+          "line": 224,
+          "position": 9619
+        },
+        "name": "features/workbench/components/crypto-screener-form.tsx",
+        "start": 216,
+        "startLoc": {
+          "column": 12,
+          "line": 216,
+          "position": 9321
+        }
+      },
+      "tokens": 54
+    },
+    {
+      "firstFile": {
+        "end": 184,
+        "endLoc": {
+          "column": 6,
+          "line": 184,
+          "position": 8012
+        },
+        "name": "features/workbench/components/binance-audit-offer.tsx",
+        "start": 167,
+        "startLoc": {
+          "column": 16,
+          "line": 167,
+          "position": 7003
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 18,
+      "secondFile": {
+        "end": 121,
+        "endLoc": {
+          "column": 5,
+          "line": 121,
+          "position": 5557
+        },
+        "name": "features/workbench/components/crypto-screener-offer.tsx",
+        "start": 111,
+        "startLoc": {
+          "column": 19,
+          "line": 111,
+          "position": 5106
+        }
+      },
+      "tokens": 59
+    },
+    {
+      "firstFile": {
+        "end": 428,
+        "endLoc": {
+          "column": 46,
+          "line": 428,
+          "position": 19049
+        },
+        "name": "features/workbench/components/binance-audit-offer.tsx",
+        "start": 420,
+        "startLoc": {
+          "column": 10,
+          "line": 420,
+          "position": 18869
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 9,
+      "secondFile": {
+        "end": 474,
+        "endLoc": {
+          "column": 46,
+          "line": 474,
+          "position": 20781
+        },
+        "name": "features/workbench/components/binance-audit-offer.tsx",
+        "start": 466,
+        "startLoc": {
+          "column": 7,
+          "line": 466,
+          "position": 20601
+        }
+      },
+      "tokens": 53
+    },
+    {
+      "firstFile": {
+        "end": 428,
+        "endLoc": {
+          "column": 43,
+          "line": 428,
+          "position": 19046
+        },
+        "name": "features/workbench/components/binance-audit-offer.tsx",
+        "start": 420,
+        "startLoc": {
+          "column": 10,
+          "line": 420,
+          "position": 18869
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 9,
+      "secondFile": {
+        "end": 318,
+        "endLoc": {
+          "column": 43,
+          "line": 318,
+          "position": 13463
+        },
+        "name": "features/workbench/components/crypto-screener-offer.tsx",
+        "start": 310,
+        "startLoc": {
+          "column": 7,
+          "line": 310,
+          "position": 13286
+        }
+      },
+      "tokens": 51
+    },
+    {
+      "firstFile": {
+        "end": 444,
+        "endLoc": {
+          "column": 17,
+          "line": 444,
+          "position": 19788
+        },
+        "name": "features/workbench/components/binance-audit-offer.tsx",
+        "start": 432,
+        "startLoc": {
+          "column": 43,
+          "line": 432,
+          "position": 19264
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 484,
+        "endLoc": {
+          "column": 74,
+          "line": 484,
+          "position": 21300
+        },
+        "name": "features/workbench/components/binance-audit-offer.tsx",
+        "start": 477,
+        "startLoc": {
+          "column": 50,
+          "line": 477,
+          "position": 20953
+        }
+      },
+      "tokens": 91
+    },
+    {
+      "firstFile": {
+        "end": 680,
+        "endLoc": {
+          "column": 7,
+          "line": 680,
+          "position": 29974
+        },
+        "name": "features/workbench/components/binance-audit-offer.tsx",
+        "start": 671,
+        "startLoc": {
+          "column": 64,
+          "line": 671,
+          "position": 29796
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 10,
+      "secondFile": {
+        "end": 668,
+        "endLoc": {
+          "column": 7,
+          "line": 668,
+          "position": 27736
+        },
+        "name": "features/workbench/components/crypto-screener-offer.tsx",
+        "start": 657,
+        "startLoc": {
+          "column": 27,
+          "line": 657,
+          "position": 27428
+        }
+      },
+      "tokens": 53
+    },
+    {
+      "firstFile": {
+        "end": 811,
+        "endLoc": {
+          "column": 31,
+          "line": 811,
+          "position": 36829
+        },
+        "name": "features/workbench/components/binance-audit-offer.tsx",
+        "start": 799,
+        "startLoc": {
+          "column": 15,
+          "line": 799,
+          "position": 36247
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 13,
+      "secondFile": {
+        "end": 817,
+        "endLoc": {
+          "column": 31,
+          "line": 817,
+          "position": 35133
+        },
+        "name": "features/workbench/components/crypto-screener-offer.tsx",
+        "start": 805,
+        "startLoc": {
+          "column": 11,
+          "line": 805,
+          "position": 34551
+        }
+      },
+      "tokens": 61
+    },
+    {
+      "firstFile": {
+        "end": 1048,
+        "endLoc": {
+          "column": 30,
+          "line": 1048,
+          "position": 49136
+        },
+        "name": "features/workbench/components/binance-audit-offer.tsx",
+        "start": 1040,
+        "startLoc": {
+          "column": 105,
+          "line": 1040,
+          "position": 48877
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 9,
+      "secondFile": {
+        "end": 994,
+        "endLoc": {
+          "column": 30,
+          "line": 994,
+          "position": 43660
+        },
+        "name": "features/workbench/components/crypto-screener-offer.tsx",
+        "start": 986,
+        "startLoc": {
+          "column": 12,
+          "line": 986,
+          "position": 43401
+        }
+      },
+      "tokens": 56
+    },
+    {
+      "firstFile": {
+        "end": 1068,
+        "endLoc": {
+          "column": 35,
+          "line": 1068,
+          "position": 50187
+        },
+        "name": "features/workbench/components/binance-audit-offer.tsx",
+        "start": 1060,
+        "startLoc": {
+          "column": 104,
+          "line": 1060,
+          "position": 49932
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 9,
+      "secondFile": {
+        "end": 1016,
+        "endLoc": {
+          "column": 29,
+          "line": 1016,
+          "position": 44469
+        },
+        "name": "features/workbench/components/crypto-screener-offer.tsx",
+        "start": 1007,
+        "startLoc": {
+          "column": 12,
+          "line": 1007,
+          "position": 44202
+        }
+      },
+      "tokens": 52
+    },
+    {
+      "firstFile": {
+        "end": 1178,
+        "endLoc": {
+          "column": 23,
+          "line": 1178,
+          "position": 55691
+        },
+        "name": "features/workbench/components/binance-audit-offer.tsx",
+        "start": 1173,
+        "startLoc": {
+          "column": 34,
+          "line": 1173,
+          "position": 55406
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 6,
+      "secondFile": {
+        "end": 1196,
+        "endLoc": {
+          "column": 23,
+          "line": 1196,
+          "position": 56820
+        },
+        "name": "features/workbench/components/binance-audit-offer.tsx",
+        "start": 1191,
+        "startLoc": {
+          "column": 37,
+          "line": 1191,
+          "position": 56535
+        }
+      },
+      "tokens": 64
+    },
+    {
+      "firstFile": {
+        "end": 484,
+        "endLoc": {
+          "column": 107,
+          "line": 484,
+          "position": 20823
+        },
+        "name": "features/workbench/components/crypto-screener-offer.tsx",
+        "start": 478,
+        "startLoc": {
+          "column": 69,
+          "line": 478,
+          "position": 20551
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 7,
+      "secondFile": {
+        "end": 504,
+        "endLoc": {
+          "column": 73,
+          "line": 504,
+          "position": 21540
+        },
+        "name": "features/workbench/components/crypto-screener-offer.tsx",
+        "start": 497,
+        "startLoc": {
+          "column": 70,
+          "line": 497,
+          "position": 21270
+        }
+      },
+      "tokens": 60
+    },
+    {
+      "firstFile": {
+        "end": 492,
+        "endLoc": {
+          "column": 9,
+          "line": 492,
+          "position": 21132
+        },
+        "name": "features/workbench/components/crypto-screener-offer.tsx",
+        "start": 484,
+        "startLoc": {
+          "column": 108,
+          "line": 484,
+          "position": 20824
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 9,
+      "secondFile": {
+        "end": 513,
+        "endLoc": {
+          "column": 7,
+          "line": 513,
+          "position": 21842
+        },
+        "name": "features/workbench/components/crypto-screener-offer.tsx",
+        "start": 505,
+        "startLoc": {
+          "column": 8,
+          "line": 505,
+          "position": 21550
+        }
+      },
+      "tokens": 72
+    },
+    {
+      "firstFile": {
+        "end": 614,
+        "endLoc": {
+          "column": 12,
+          "line": 614,
+          "position": 27008
+        },
+        "name": "features/workbench/components/deliverable-viewer.tsx",
+        "start": 600,
+        "startLoc": {
+          "column": 19,
+          "line": 600,
+          "position": 26470
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 15,
+      "secondFile": {
+        "end": 1063,
+        "endLoc": {
+          "column": 12,
+          "line": 1063,
+          "position": 48573
+        },
+        "name": "features/workbench/components/deliverable-viewer.tsx",
+        "start": 1047,
+        "startLoc": {
+          "column": 21,
+          "line": 1047,
+          "position": 47905
+        }
+      },
+      "tokens": 121
+    },
+    {
+      "firstFile": {
+        "end": 872,
+        "endLoc": {
+          "column": 37,
+          "line": 872,
+          "position": 39530
+        },
+        "name": "features/workbench/hooks/use-workbench.ts",
+        "start": 857,
+        "startLoc": {
+          "column": 20,
+          "line": 857,
+          "position": 38772
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 16,
+      "secondFile": {
+        "end": 1010,
+        "endLoc": {
+          "column": 37,
+          "line": 1010,
+          "position": 45876
+        },
+        "name": "features/workbench/hooks/use-workbench.ts",
+        "start": 993,
+        "startLoc": {
+          "column": 52,
+          "line": 993,
+          "position": 44980
+        }
+      },
+      "tokens": 60
+    },
+    {
+      "firstFile": {
+        "end": 1034,
+        "endLoc": {
+          "column": 17,
+          "line": 1034,
+          "position": 47012
+        },
+        "name": "features/workbench/hooks/use-workbench.ts",
+        "start": 1029,
+        "startLoc": {
+          "column": 49,
+          "line": 1029,
+          "position": 46802
+        }
+      },
+      "format": "typescript",
+      "fragment": "",
+      "lines": 6,
+      "secondFile": {
+        "end": 1071,
+        "endLoc": {
+          "column": 17,
+          "line": 1071,
+          "position": 48594
+        },
+        "name": "features/workbench/hooks/use-workbench.ts",
+        "start": 1067,
+        "startLoc": {
+          "column": 97,
+          "line": 1067,
+          "position": 48393
+        }
+      },
+      "tokens": 57
+    }
+  ],
+  "statistics": {
+    "detectionDate": "2026-11-04T17:36:40.210Z",
+    "formats": {
+      "tsx": {
+        "clones": 27,
+        "duplicatedLines": 298,
+        "duplicatedTokens": 1779,
+        "lines": 28568,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 1.0431251750210024,
+        "percentageTokens": 1.0139236394102258,
+        "sources": 105,
+        "tokens": 175457
+      },
+      "typescript": {
+        "clones": 3,
+        "duplicatedLines": 31,
+        "duplicatedTokens": 167,
+        "lines": 12294,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 0.252155523019359,
+        "percentageTokens": 0.27383782897433795,
+        "sources": 82,
+        "tokens": 60985
+      }
+    },
+    "total": {
+      "clones": 30,
+      "duplicatedLines": 329,
+      "duplicatedTokens": 1946,
+      "lines": 40862,
+      "newClones": 0,
+      "newDuplicatedLines": 0,
+      "percentage": 0.805149038226225,
+      "percentageTokens": 0.8230348246081493,
+      "sources": 187,
+      "tokens": 236442
+    }
+  }
+}

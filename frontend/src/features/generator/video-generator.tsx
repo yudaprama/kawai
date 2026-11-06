@@ -34,14 +34,12 @@ import {
   videoResolutions,
 } from "./video-ecosystems";
 import {
-  KeyStatusNotices,
   PresetSkeletonGrid,
   type GenerationJob,
   type LaneResultEntry,
   laneStatusKey,
   readFileAsDataUrl,
   useCivitaiKeyStatus,
-  useEcoGroups,
   usePresetGallery,
   useWorkflowLane,
 } from "./civitai-shared";
@@ -50,15 +48,13 @@ import { ResultActions, ResultTile, mediaToken } from "./result-actions";
 import {
   ChoiceChip,
   detailLine,
-  EcoPicker,
   EmptyResults,
   GeneratorLayout,
   JobCard,
   resultMeta,
-  ResultsPaneTabs,
   ToggleRow,
-  useResultsPaneTab,
 } from "./generator-shell";
+import { EcoFormLead, ModelChoiceChips, ResultsGrid, ResultsPaneHeader, useGeneratorResultsPane } from "./shared";
 import type { VideoGenParams } from "@/generated/api-types";
 import type { SavedVideo, VideoStatusView, VideoTemplatePreset } from "@/lib/api";
 
@@ -522,14 +518,22 @@ export function VideoGenerator() {
         additionalUrls: (st.additional ?? []).map((c) => c.videoUrl),
       }),
   });
-  const { cancel, cost, costError, elapsed, job, removeEntry, results, status, submit, submitting } = lane;
-  /** Results ↔ community clips: both stay reachable whatever the lane holds. */
-  const pane = useResultsPaneTab({ busy: job != null, count: results.length });
   const {
-    groups: ecoGroups,
-    open: ecoOpen,
-    setOpen: setEcoOpen,
-  } = useEcoGroups(VIDEO_ECOSYSTEMS, ecoId, switchEcosystem);
+    cancel,
+    cost,
+    costError,
+    elapsed,
+    job,
+    pane,
+    ecoGroups,
+    ecoOpen,
+    removeEntry,
+    results,
+    setEcoOpen,
+    status,
+    submit,
+    submitting,
+  } = useGeneratorResultsPane(lane, VIDEO_ECOSYSTEMS, ecoId, switchEcosystem);
 
   async function setSourceVideoSlot(file: File | undefined) {
     if (!file) return;
@@ -631,14 +635,13 @@ export function VideoGenerator() {
 
   const form = (
     <div className="flex flex-col gap-3 p-3">
-      <EcoPicker
-        ecoAriaLabel={t("videoGenerator.ecosystem")}
+      <EcoFormLead
+        configured={configured}
         ecoGroups={ecoGroups}
         ecoLabel={eco.label}
         ecoOpen={ecoOpen}
         onEcoOpenChange={setEcoOpen}
       />
-      <KeyStatusNotices configured={configured} />
 
       {/* Workflow — txt2vid / img2vid segmented chips. */}
       <div className="flex flex-col gap-1.5">
@@ -691,19 +694,7 @@ export function VideoGenerator() {
       {/* Model chips — ecosystems with more than the default pick. */}
       {eco.models.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("generator.model")}</Label>
-          <div className="flex flex-wrap gap-1.5">
-            {eco.models.map((m) => (
-              <ChoiceChip
-                active={modelKey === m.key}
-                className="px-3"
-                key={m.key || "default"}
-                onClick={() => switchModel(m.key)}
-              >
-                {m.label}
-              </ChoiceChip>
-            ))}
-          </div>
+          <ModelChoiceChips activeKey={modelKey} models={eco.models} onSelect={switchModel} />
         </div>
       )}
 
@@ -1004,14 +995,7 @@ export function VideoGenerator() {
         />
       }
       form={form}
-      header={
-        <ResultsPaneTabs
-          active={pane.active}
-          onChange={pane.set}
-          resultsLabel={t("generator.resultsCount", { count: results.length })}
-          templatesLabel={t("videoGenerator.templates")}
-        />
-      }
+      header={<ResultsPaneHeader count={results.length} pane={pane} templatesLabel={t("videoGenerator.templates")} />}
     >
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 pb-24 lg:overscroll-contain lg:pb-3">
         {job && (
@@ -1030,16 +1014,13 @@ export function VideoGenerator() {
         {pane.active === "templates" ? (
           <VideoTemplateGallery onApply={applyVideoPreset} />
         ) : (
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {results.map((entry) => (
-              <VideoResultCard
-                entry={entry}
-                key={entry.fileId}
-                onRemove={() => removeEntry(entry)}
-                onReuse={() => reuseEntry(entry)}
-              />
-            ))}
-          </div>
+          <ResultsGrid
+            Card={VideoResultCard}
+            className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3"
+            entries={results}
+            onRemove={removeEntry}
+            onReuse={reuseEntry}
+          />
         )}
       </div>
     </GeneratorLayout>

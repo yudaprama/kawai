@@ -84,6 +84,12 @@ jobs:
       - name: Test frontend (vitest — pure helpers)
         run: bun run test
 
+      # Copy-paste growth gate: frontend clones (jscpd config in .jscpd.json,
+      # vendored dirs excluded). Fails above the threshold (2%); current
+      # baseline ~0.9%.
+      - name: Duplication gate (jscpd)
+        run: bunx jscpd frontend/src --threshold 2 --reporters console --silent
+
       - name: Build frontend (tsc -b + vite)
         run: bun run build
 

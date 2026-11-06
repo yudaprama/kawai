@@ -2,8 +2,8 @@ import { useState } from "react";
 
 import { Icon } from "@/components/shared/icon";
 import type { ScreenerStructureFilter } from "@/features/chat/hooks/use-supervisor-plan";
-import { cn } from "@/lib/utils";
 
+import { CandlesField, chip } from "./offer-shared";
 import { Field } from "./workbench-ui";
 
 /** The screens the fixed pipeline accepts (mirrors the backend's
@@ -24,10 +24,6 @@ const UNIVERSES = [
   { id: "usdm", label: "Perp (USDⓈ-M)" },
   { id: "spot", label: "Spot" },
 ] as const;
-
-/** Candle intervals the screens fold on. Anything else falls back to `1d`
- * server-side (and `1s` is spot-only — the backend rejects it for perp). */
-const INTERVALS = ["15m", "1h", "4h", "1d", "1w"] as const;
 
 /** Exchange the scan reads — mirrors the backend's `resolve_venue`. MEXC is
  * USDT-margined futures only; its hits open from the offer panel the same way
@@ -126,14 +122,6 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
     onSubmit(screens, universe, interval, venue, topN, scanSize, structure);
   };
 
-  const chip = (active: boolean) =>
-    cn(
-      "rounded-md border px-2.5 py-1 font-mono text-[0.6875rem] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-      active
-        ? "border-primary/60 bg-primary/10 text-primary"
-        : "border-border text-muted-foreground hover:border-[var(--tea-color-border-focus)] hover:text-foreground",
-    );
-
   return (
     <div className="border-border/60 w-full rounded-xl border p-4">
       <div className="mb-3 flex items-center gap-2">
@@ -212,20 +200,7 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
             ))}
           </Field>
 
-          <Field label="Candles">
-            {INTERVALS.map((iv) => (
-              <button
-                key={iv}
-                type="button"
-                disabled={disabled}
-                aria-pressed={interval === iv}
-                onClick={() => setInterval(iv)}
-                className={chip(interval === iv)}
-              >
-                {iv}
-              </button>
-            ))}
-          </Field>
+          <CandlesField disabled={disabled} interval={interval} onInterval={setInterval} />
 
           <Field label="Hits per setup">
             {TOP_NS.map((n) => (

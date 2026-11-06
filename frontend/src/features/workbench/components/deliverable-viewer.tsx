@@ -1,5 +1,5 @@
 import { Icon } from "@/components/shared/icon";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -525,6 +525,29 @@ function DeliverableBody({
  *  container's scrollTop and restores the new key's last position (0 for a
  *  key never visited). Reading a long deliverable survives a peek at a step
  *  report and back. Returns the ref to attach to the scrolling container. */
+/** Scroll-direction tracker for the phone composer signal (see onScrollShift):
+ *  emits "down"/"up" on steady drags and at the container's edges; a jump
+ *  >200px is a programmatic restore (scroll memory / doc switch) — resync
+ *  without toggling the composer. */
+function handleScrollShift(
+  onScrollShift: ((dir: "down" | "up") => void) | undefined,
+  lastScrollTop: { current: number },
+): (e: UIEvent<HTMLDivElement>) => void {
+  return (e) => {
+    const el = e.currentTarget;
+    const prev = lastScrollTop.current;
+    const at = el.scrollTop;
+    lastScrollTop.current = at;
+    if (onScrollShift == null) return;
+    // A jump is a programmatic restore (scroll memory / doc switch) —
+    // resync without toggling the composer.
+    if (Math.abs(at - prev) > 200) return;
+    if (at <= 4 || at + el.clientHeight >= el.scrollHeight - 4) onScrollShift("up");
+    else if (at > prev + 4) onScrollShift("down");
+    else if (at < prev - 4) onScrollShift("up");
+  };
+}
+
 function useScrollMemory(key: string) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const scrollTops = useRef<Map<string, number>>(new Map());
@@ -598,17 +621,7 @@ export function PastRunCanvas({
       <div
         className="h-full overflow-y-auto"
         key={run.id}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          const prev = lastScrollTop.current;
-          const at = el.scrollTop;
-          lastScrollTop.current = at;
-          if (onScrollShift == null) return;
-          if (Math.abs(at - prev) > 200) return;
-          if (at <= 4 || at + el.clientHeight >= el.scrollHeight - 4) onScrollShift("up");
-          else if (at > prev + 4) onScrollShift("down");
-          else if (at < prev - 4) onScrollShift("up");
-        }}
+        onScroll={handleScrollShift(onScrollShift, lastScrollTop)}
         ref={scrollRef}
       >
         <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 sm:space-y-6 sm:p-6">
@@ -1045,19 +1058,7 @@ export function DeliverableViewer({
       <div
         className="h-full overflow-y-auto"
         key={runIndex}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          const prev = lastScrollTop.current;
-          const at = el.scrollTop;
-          lastScrollTop.current = at;
-          if (onScrollShift == null) return;
-          // A jump is a programmatic restore (scroll memory / doc switch) —
-          // resync without toggling the composer.
-          if (Math.abs(at - prev) > 200) return;
-          if (at <= 4 || at + el.clientHeight >= el.scrollHeight - 4) onScrollShift("up");
-          else if (at > prev + 4) onScrollShift("down");
-          else if (at < prev - 4) onScrollShift("up");
-        }}
+        onScroll={handleScrollShift(onScrollShift, lastScrollTop)}
         ref={scrollRef}
       >
         <div aria-live="polite" className="sr-only" role="status">
