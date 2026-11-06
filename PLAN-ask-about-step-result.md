@@ -72,7 +72,7 @@ Frontend: render answer in modal / side panel below the step report
 3. Build the 1-step `TaskPlan`: one step, id `explain`, dispatch key `explain_step_result`, `arguments` = serialized `ExplainStepResultArgs`.
 4. Registry via `supervisor_toolset_with_explainer` → `build_registry_from_toolset`.
 5. Execute via `execute_plan_stream_with_cancel` (same scheduler lifecycle: `StepStarted` → `StepCompleted`, full-output persistence, memo).
-6. `user_goal` = the question; no billing bearer (internal call).
+6. `user_goal` = the question; billing bearer resolved at the transport edge (`session_bearer` / `cookie_bearer`) flows into the execution gate — the explainer is billable like every other submit.
 
 ---
 

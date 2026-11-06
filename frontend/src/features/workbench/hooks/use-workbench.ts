@@ -1170,7 +1170,9 @@ export function useWorkbench() {
 
   /** Ask a follow-up question about a specific step result.
    *  Streams a 1-step mini-plan with the explain_step_result tool; resolves
-   *  with the explanation text once the stream closes (null on failure).
+   *  with the explanation text once the stream closes, and THROWS with the
+   *  failure reason (billing gate, transport, StepNotFound) — resolves null
+   *  only when the stream closes without an answer.
    *  `planKeyOverride` reads a PAST run's step (its own plan key); omit it
    *  for the active run. */
   const askAboutResult = useCallback(
@@ -1181,6 +1183,11 @@ export function useWorkbench() {
         return null;
       }
       let answer: string | null = null;
+      // Billing-gate failures ride `planFailed` as an EVENT (the execution
+      // gate yields, not throws): capture and rethrow so the inline ask UI
+      // renders the real reason ("Token habis", "Jatah offline habis", …)
+      // instead of a generic retry line.
+      let failure: string | null = null;
       try {
         await callWithEvents<void, SupervisorEvent>(
           "ask_about_step_result",
@@ -1192,13 +1199,15 @@ export function useWorkbench() {
             } else if (event.type === "planCompleted") {
               // Raw-writer mini-plan: final_output is the FULL explanation.
               answer = event.finalOutput ?? answer;
+            } else if (event.type === "planFailed") {
+              failure = event.error;
             }
           },
         );
       } catch (err) {
-        console.error("[workbench] ask_about_step_result:", errText(err));
-        return null;
+        failure = errText(err);
       }
+      if (failure != null) throw new Error(failure);
       return answer;
     },
     [sessionId, supervisor.planKey],

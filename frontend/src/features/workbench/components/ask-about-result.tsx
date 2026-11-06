@@ -23,7 +23,9 @@ export function AskAboutResult({
   onAsk,
 }: {
   stepId: string;
-  /** Submits the question; resolves with the explanation (null on failure). */
+  /** Submits the question; resolves with the explanation, THROWS with the
+   *  failure reason (billing gate, transport), resolves null only when the
+   *  stream closes without an answer. */
   onAsk: (stepId: string, question: string) => Promise<string | null>;
 }) {
   const [state, setState] = useState<AskState>({ phase: "idle" });

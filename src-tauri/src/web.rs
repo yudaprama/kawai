@@ -3462,18 +3462,21 @@ struct AskAboutStepResultRequest {
 #[cfg(feature = "litert")]
 async fn ask_about_step_result_handler(
     Extension(user_id): Extension<String>,
+    headers: HeaderMap,
     Json(req): Json<AskAboutStepResultRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
     use futures_util::StreamExt;
     use tokio::sync::mpsc;
     use tokio_stream::wrappers::UnboundedReceiverStream;
 
+    let bearer = cookie_bearer(&headers)?;
     let logic_stream = logic::ask_about_step_result(
         &user_id,
         req.session_id,
         &req.plan_key,
         &req.step_id,
         &req.question,
+        Some(&bearer),
     )
     .await
     .map_err(err500)?;

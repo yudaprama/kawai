@@ -643,6 +643,9 @@ pub async fn delete_chat_session(user_id: &str, session_id: i64) -> Result<(), D
 /// Ask a follow-up question about a specific supervisor step result.
 /// Loads the step result from `supervisor_step_results` (by plan_key + step_id),
 /// then executes a 1-step mini-plan with the `explain_step_result` tool.
+/// BILLABLE: the explainer runs the remote pool, so `bearer` (resolved at the
+/// transport edge) flows into the execution gate — the same Fase 0a
+/// enforcement + offline tolerance every other submit gets.
 #[cfg(feature = "litert")]
 pub async fn ask_about_step_result(
     user_id: &str,
@@ -650,6 +653,7 @@ pub async fn ask_about_step_result(
     plan_key: &str,
     step_id: &str,
     question: &str,
+    bearer: Option<&str>,
 ) -> Result<impl Stream<Item = kawai_events::SupervisorEvent> + Send, crate::supervisor::SupervisorError> {
     use crate::supervisor::{SupervisorError, build_registry_from_toolset, execute_plan_stream_with_cancel, supervisor_toolset_with_explainer};
     use kawai_agent::ExplainStepResultArgs;
@@ -738,7 +742,7 @@ pub async fn ask_about_step_result(
         session_id,
         Some(question.to_string()), // user_goal = the question
         None,                       // internal call — no source video
-        None,                       // internal call — no billing bearer
+        bearer,                     // billing bearer — the explainer IS billable
         false,                      // fixed one-shot explainer — never revised
     ))
 }

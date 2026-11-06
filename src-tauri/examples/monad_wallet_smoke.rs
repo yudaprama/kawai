@@ -15,10 +15,12 @@
 //       Implies --with-wallet; needs testnet MON for gas; refuses to run when
 //       `monad_contracts::TESTNET` is false (mainnet) regardless of flags.
 //
-// Transport-skip (binance_smoke precedent): if the very first RPC probe cannot
-// reach the endpoint (region block / network outage), exit 0 with a SKIP
-// notice — a dead endpoint is not a code regression. Failures AFTER the first
-// probe succeeded are real and exit 1.
+// Skip, don't fail, on public-endpoint conditions (binance_smoke precedent):
+// if the very first RPC probe cannot reach the endpoint (region block /
+// network outage), exit 0 with a SKIP notice; a step the RPC answers with
+// HTTP 429 (rate limit) is skipped with a notice while the run continues —
+// CI load trips the endpoint's limiter, not our code. Other failures AFTER
+// the first probe succeeded are real and exit 1.
 use kawai_lib::logic::{monad, monad_contracts, monad_wallet};
 
 const USAGE: &str = "usage: monad_wallet_smoke [--with-wallet] [--self-transfer]";
@@ -33,6 +35,13 @@ fn transportish(err: &str) -> bool {
     ["451", "403", "geo", "legal", "connect", "timed out", "timeout", "dns", "unreachable"]
         .iter()
         .any(|m| e.contains(m))
+}
+
+/// The public Monad RPC rate-limits (HTTP 429) under CI load — a skipped
+/// step is the endpoint's limiter, not a code regression.
+fn rate_limited(err: &str) -> bool {
+    let e = err.to_ascii_lowercase();
+    e.contains("429") || e.contains("rate limit")
 }
 
 /// Wallet lifecycle over the OS keychain. `created_here` means the caller
@@ -62,7 +71,13 @@ async fn wallet_checks(created_here: bool, self_transfer: bool) -> Result<(), St
         println!("[monad_wallet_smoke] broadcast {}", tx.tx_hash);
         let mut receipt = None;
         for _ in 0..15 {
-            receipt = monad_wallet::transaction_receipt(&tx.tx_hash).await.map_err(|e| e.to_string())?;
+            receipt = match monad_wallet::transaction_receipt(&tx.tx_hash).await {
+                Ok(r) => r,
+                // Poll through endpoint rate limits — the tx is already
+                // broadcast; a 429 is the limiter, not a failed transfer.
+                Err(e) if rate_limited(&e.to_string()) => continue,
+                Err(e) => return Err(e.to_string()),
+            };
             if receipt.is_some() {
                 break;
             }
@@ -112,6 +127,13 @@ async fn main() {
             );
             std::process::exit(0);
         }
+        Err(e) if rate_limited(&e) => {
+            println!(
+                "[monad_wallet_smoke] SKIP: Monad RPC rate-limited on the first probe ({e}) — \
+                 limiter, not a code regression."
+            );
+            std::process::exit(0);
+        }
         Err(e) => die(&e),
     };
     // NETWORKS.md: testnet = 10143, mainnet = 143.
@@ -130,76 +152,91 @@ async fn main() {
     );
     checks += 1;
 
-    let stable =
-        match monad::erc20_info(Some(&rpc), monad_contracts::stablecoin()).await {
-            Ok(v) => v,
-            Err(e) => die(&format!("stablecoin erc20_info: {e}")),
-        };
-    if stable.decimals != 6 || stable.symbol.is_empty() {
-        die(&format!(
-            "stablecoin {} — expected 6 decimals and a symbol, got symbol={} decimals={}",
-            stable.address, stable.symbol, stable.decimals
-        ));
+    match monad::erc20_info(Some(&rpc), monad_contracts::stablecoin()).await {
+        Ok(v) => {
+            if v.decimals != 6 || v.symbol.is_empty() {
+                die(&format!(
+                    "stablecoin {} — expected 6 decimals and a symbol, got symbol={} decimals={}",
+                    v.address, v.symbol, v.decimals
+                ));
+            }
+            println!(
+                "[monad_wallet_smoke] stablecoin {} = {} ({} decimals)",
+                v.address, v.symbol, v.decimals
+            );
+        }
+        Err(e) if rate_limited(&e) => println!(
+            "[monad_wallet_smoke] stablecoin erc20_info skipped: endpoint rate-limited ({e})"
+        ),
+        Err(e) => die(&format!("stablecoin erc20_info: {e}")),
     }
-    println!(
-        "[monad_wallet_smoke] stablecoin {} = {} ({} decimals)",
-        stable.address, stable.symbol, stable.decimals
-    );
     checks += 1;
 
-    let kawai_token = match monad::erc20_info(Some(&rpc), monad_contracts::KAWAI).await {
-        Ok(v) => v,
+    match monad::erc20_info(Some(&rpc), monad_contracts::KAWAI).await {
+        Ok(v) => {
+            if v.decimals != 18 || v.symbol != "KAWAI" {
+                die(&format!(
+                    "KAWAI token {} — expected symbol KAWAI / 18 decimals, got {} / {}",
+                    v.address, v.symbol, v.decimals
+                ));
+            }
+            println!(
+                "[monad_wallet_smoke] KAWAI {} = {} ({} decimals)",
+                v.address, v.symbol, v.decimals
+            );
+        }
+        Err(e) if rate_limited(&e) => println!(
+            "[monad_wallet_smoke] KAWAI erc20_info skipped: endpoint rate-limited ({e})"
+        ),
         Err(e) => die(&format!("KAWAI erc20_info: {e}")),
-    };
-    if kawai_token.decimals != 18 || kawai_token.symbol != "KAWAI" {
-        die(&format!(
-            "KAWAI token {} — expected symbol KAWAI / 18 decimals, got {} / {}",
-            kawai_token.address, kawai_token.symbol, kawai_token.decimals
-        ));
     }
-    println!(
-        "[monad_wallet_smoke] KAWAI {} = {} ({} decimals)",
-        kawai_token.address, kawai_token.symbol, kawai_token.decimals
-    );
     checks += 1;
 
-    let vault_bal = match monad::erc20_balance(
+    match monad::erc20_balance(
         Some(&rpc),
         monad_contracts::stablecoin(),
         monad_contracts::vault(),
     )
     .await
     {
-        Ok(v) => v,
+        Ok(v) => println!(
+            "[monad_wallet_smoke] vault {} stablecoin balance: {} (raw {})",
+            v.wallet, v.formatted, v.raw
+        ),
+        Err(e) if rate_limited(&e) => println!(
+            "[monad_wallet_smoke] vault stablecoin balance skipped: endpoint rate-limited ({e})"
+        ),
         Err(e) => die(&format!("vault stablecoin balance: {e}")),
-    };
-    println!(
-        "[monad_wallet_smoke] vault {} stablecoin balance: {} (raw {})",
-        vault_bal.wallet, vault_bal.formatted, vault_bal.raw
-    );
-    checks += 1;
-
-    let gas = match monad::gas_estimate(Some(&rpc)).await {
-        Ok(v) => v,
-        Err(e) => die(&format!("gas_estimate: {e}")),
-    };
-    if gas.gas_price_gwei.parse::<f64>().unwrap_or(0.0) <= 0.0 {
-        die(&format!("gas price unusable: {}", gas.gas_price_gwei));
     }
-    println!(
-        "[monad_wallet_smoke] gas {} gwei (dynamic={})",
-        gas.gas_price_gwei, gas.is_dynamic_fee
-    );
     checks += 1;
 
-    let native = match monad::check_balance(Some(&rpc), monad_contracts::vault()).await {
-        Ok(v) => v,
+    match monad::gas_estimate(Some(&rpc)).await {
+        Ok(v) => {
+            if v.gas_price_gwei.parse::<f64>().unwrap_or(0.0) <= 0.0 {
+                die(&format!("gas price unusable: {}", v.gas_price_gwei));
+            }
+            println!(
+                "[monad_wallet_smoke] gas {} gwei (dynamic={})",
+                v.gas_price_gwei, v.is_dynamic_fee
+            );
+        }
+        Err(e) if rate_limited(&e) => {
+            println!("[monad_wallet_smoke] gas_estimate skipped: endpoint rate-limited ({e})")
+        }
+        Err(e) => die(&format!("gas_estimate: {e}")),
+    }
+    checks += 1;
+
+    match monad::check_balance(Some(&rpc), monad_contracts::vault()).await {
+        Ok(v) => println!(
+            "[monad_wallet_smoke] vault {} native balance: {} MON",
+            v.address, v.balance_mon
+        ),
+        Err(e) if rate_limited(&e) => {
+            println!("[monad_wallet_smoke] check_balance skipped: endpoint rate-limited ({e})")
+        }
         Err(e) => die(&format!("check_balance: {e}")),
-    };
-    println!(
-        "[monad_wallet_smoke] vault {} native balance: {} MON",
-        native.address, native.balance_mon
-    );
+    }
     checks += 1;
 
     // Device history file read (no wallet needed — reads a local JSON log).
@@ -256,31 +293,37 @@ async fn main() {
 
     // Wallet snapshot through the Multicall3 aggregate against the vault.
     let probe = serde_json::json!({ "address": monad_contracts::vault() });
-    let body = match tools.execute("monad_wallet_status", &probe.to_string()).await {
-        r if r.is_success() => r.text().unwrap_or_default().to_string(),
+    match tools.execute("monad_wallet_status", &probe.to_string()).await {
+        r if r.is_success() => {
+            let body = r.text().unwrap_or_default().to_string();
+            let v: serde_json::Value = serde_json::from_str(&body)
+                .unwrap_or_else(|e| die(&format!("wallet_status output not JSON: {e}: {body}")));
+            if v["tokens"].as_array().map(|a| a.len()) != Some(2) {
+                die(&format!("wallet_status expected 2 token slots: {body}"));
+            }
+            println!(
+                "[monad_wallet_smoke] wallet_status @ block {} — {} MON, slots {}",
+                v["blockNumber"],
+                v["balanceMon"],
+                v["tokens"]
+                    .as_array()
+                    .map(|a| a
+                        .iter()
+                        .map(|t| t["label"].as_str().unwrap_or("?"))
+                        .collect::<Vec<_>>()
+                        .join(","))
+                    .unwrap_or_default(),
+            );
+        }
+        r if rate_limited(&r.error_message().unwrap_or_default()) => println!(
+            "[monad_wallet_smoke] monad_wallet_status skipped: endpoint rate-limited ({})",
+            r.error_message().unwrap_or_default()
+        ),
         r => die(&format!(
             "monad_wallet_status via Multicall3: {}",
             r.error_message().unwrap_or_default()
         )),
-    };
-    let v: serde_json::Value = serde_json::from_str(&body)
-        .unwrap_or_else(|e| die(&format!("wallet_status output not JSON: {e}: {body}")));
-    if v["tokens"].as_array().map(|a| a.len()) != Some(2) {
-        die(&format!("wallet_status expected 2 token slots: {body}"));
     }
-    println!(
-        "[monad_wallet_smoke] wallet_status @ block {} — {} MON, slots {}",
-        v["blockNumber"],
-        v["balanceMon"],
-        v["tokens"]
-            .as_array()
-            .map(|a| a
-                .iter()
-                .map(|t| t["label"].as_str().unwrap_or("?"))
-                .collect::<Vec<_>>()
-                .join(","))
-            .unwrap_or_default(),
-    );
     checks += 1;
 
     // Bounded transfer-log scan (small window so the run stays quick).
@@ -309,7 +352,7 @@ async fn main() {
             // load; shrink-to-minimum already ran inside the tool. Skip, not
             // fail — the log scan needs a live endpoint, the wallet core
             // above does not.
-            if msg.contains("429") || msg.to_lowercase().contains("rate limit") {
+            if rate_limited(&msg) {
                 println!("[monad_wallet_smoke] monad_logs skipped: endpoint rate-limited ({msg})");
             } else {
                 die(&format!("monad_logs: {msg}"));
@@ -332,6 +375,10 @@ async fn main() {
             }
             println!("[monad_wallet_smoke] monad_tx_receipt pending path ok");
         }
+        r if rate_limited(&r.error_message().unwrap_or_default()) => println!(
+            "[monad_wallet_smoke] monad_tx_receipt skipped: endpoint rate-limited ({})",
+            r.error_message().unwrap_or_default()
+        ),
         r => die(&format!(
             "monad_tx_receipt: {}",
             r.error_message().unwrap_or_default()

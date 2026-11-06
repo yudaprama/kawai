@@ -2555,10 +2555,17 @@ pub async fn ask_about_step_result(
     session: State<'_, Session>,
 ) -> Result<(), String> {
     let user_id = session_user_id(&session)?;
-    let stream =
-        logic::ask_about_step_result(&user_id, session_id, &plan_key, &step_id, &question)
-            .await
-            .map_err(|e| e.to_string())?;
+    let bearer = session_bearer(&session)?;
+    let stream = logic::ask_about_step_result(
+        &user_id,
+        session_id,
+        &plan_key,
+        &step_id,
+        &question,
+        Some(&bearer),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     run_streaming(stream_id, on_event, &registry, stream, None).await
 }
 
