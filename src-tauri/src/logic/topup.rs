@@ -1,4 +1,4 @@
-//! QRIS top-up + token-balance worker proxies (PLAN-qris-topup.md Fase 3).
+//! QRIS top-up + token-balance worker proxies.
 //!
 //! Pure layer — `reqwest` only, no tauri/axum: BOTH transports (Tauri
 //! commands in `commands.rs`, Axum routes in `web.rs`) call these same fns.

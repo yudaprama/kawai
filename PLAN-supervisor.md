@@ -213,8 +213,8 @@ non-blocking — forward ke channel) dan diterjemahkan `supervisor.rs` menjadi
 | Artifact references | `arguments` accepts nested `{ "fromStep": ..., "output": ... }`; `resolve_args` resolves recursively before dispatch (fallback behavior below). |
 | Tool registry & planner prompt | `ToolKind` (`Pure`/`Subagent`) + `ToolMeta` (name, description, I/O schemas); `ToolRegistry` validates plans, renders the planner catalog, and adapts `ToolDispatch` → scheduler `StepDispatch`; `plan_prompt_with_tools` emits the full contract. The `auto` registry merges all domain toolsets (first-wins per tool name); explicit agent ids narrow to a domain. |
 | Composition root | `src-tauri/src/supervisor.rs` builds a per-session registry (requires `sessionId`, validated against the authenticated user's per-user DB), converts tool definitions to `ToolMeta`, dispatches via `ToolSet::execute`, and extracts typed artifacts from output envelopes. Exposed as `execute_supervisor_plan` on Tauri (`commands.rs`) + Axum SSE (`web.rs`), feature-gated behind `router + litert`. |
-| Plan review gate | `plan_task` results land in a frontend review panel first (run / discard / remove steps with transitive dependent pruning); execution starts only on approval. The backend stays the authority — validation failures never reach the gate. See PLAN-supervisor-ui-ux.md. |
-| Progress streaming | `SchedulerObserver`/`SchedulerEvent` → `SupervisorEvent` (Tauri Channel / Axum SSE): `PlanStarted` (full step structure), `StepStarted`, `ConfirmationRequested`, `StepCompleted` (typed artifact infos, ≤2000-char output preview), `StepFailed` (typed `FailureKind`), `StepSkipped`; rendered by `PlanProgressPanel`. |
+| Plan review gate | `plan_task` results land in a frontend review panel first (run / discard / remove steps with transitive dependent pruning); execution starts only on approval. The backend stays the authority — validation failures never reach the gate. |
+| Progress streaming | `SchedulerObserver`/`SchedulerEvent` → `SupervisorEvent` (Tauri Channel / Axum SSE): `PlanStarted` (full step structure), `StepStarted`, `ConfirmationRequested`, `StepCompleted` (typed artifact infos, ≤2000-char output preview), `StepFailed` (typed `FailureKind`), `StepSkipped`; rendered by `ProgressRail`. |
 | Confirmation gates | `ConfirmationRequested` carries `streamId + stepId`; gates park on oneshot channels in `PendingConfirmations`; the frontend responds via `respond_supervisor_confirmation` (Tauri + Axum). Stale senders are swept when a plan stream terminates. |
 | Cooperative cancellation | Transport token via `execute_plan_stream_with_cancel`: later waves never start; the plan stream terminates with a terminal failure event; in-flight tools finish first. |
 | Failure-driven replan | `StepFailed` carries a typed `FailureKind` (`timeout`/`confirmation`/`cancelled`/`tool`/`other`) set by the scheduler at each error site — no string heuristics. `replan_reason` checks `error_kind` directly to separate user decisions (confirmation rejected, cancelled) from auto-recoverable failures; non-user-decided failures ask the planner for a revised plan (`MAX_REPLANS = 1`, same validation contract). |
@@ -253,13 +253,9 @@ goal → plan_task → validated TaskPlan → execute_supervisor_plan → determ
 
 Session/history shell state lives in `useSupervisorChat`; execution state, plan progress, and confirmations live in `useSupervisorPlan`.
 
-The planner is remote-LLM-backed. The executor is Rust-only and performs no inference. Tool registries default to **`auto`**: a merged catalog of every available domain toolset (office → presentation → binance → analytics, first-wins per tool name), so the planner picks tools across domains and plans execute cross-domain. An explicit agent id (`builtin.office`, `builtin.presentation`, `builtin.binance`, `builtin.analytics`) narrows the catalog to that domain — the frontend rail is an optional hint, not a requirement. Analytics receives per-user SQL profiles through `effective_profiles(user_id)`.
+The planner is remote-LLM-backed. The executor is Rust-only and performs no inference. Tool registries default to **`auto`**: a merged catalog of every available domain toolset (catalog agents plus the supervisor-only domain toolsets in `supervisor.rs`, first-wins per tool name), so the planner picks tools across domains and plans execute cross-domain. An explicit agent id (`builtin.office`, `builtin.analytics`, …) narrows the catalog to that domain — the frontend rail is an optional hint, not a requirement. Analytics receives per-user SQL profiles through `effective_profiles(user_id)`.
 
 ### Known follow-ups
-
-UI/UX work for this surface (plan review gate, confirmation card, wave
-visualization, artifact language, replan versioning, resume affordances):
-see **PLAN-supervisor-ui-ux.md**.
 
 Enhancements and hardening, all open:
 
@@ -278,10 +274,10 @@ Enhancements and hardening, all open:
 |---|---|
 | `crates/router/` | Transport-agnostic plan types, validation, registry, scheduler, artifacts, and planner prompt |
 | `src-tauri/src/supervisor.rs` | Composition-root registry adapter, execution stream, confirmation state, Supervisor events, and tests |
-| `src-tauri/src/agent_registry.rs` | Domain toolset composition for office, presentation, analytics, and Binance |
+| `src-tauri/src/agent_registry.rs` | Catalog agent definitions (office, presentation, binance, analytics, entertainment, monad, accounting, security) |
 | `src-tauri/src/commands.rs` | Authenticated Tauri planner, executor, cancellation, and confirmation wrappers |
 | `src-tauri/src/web.rs` | Authenticated Axum planner/executor/confirmation transport wrappers |
 | `frontend/src/features/chat/hooks/use-supervisor-plan.ts` | Plan state (source of truth), plan creation, execution progress, confirmation actions, UI message projection, and persistence |
 | `frontend/src/features/chat/hooks/use-supervisor-chat.ts` | Session/history shell and auth bootstrap |
-| `frontend/src/features/chat/components/plan-progress-panel.tsx` | Live plan view: step structure (tool, task, dependencies), per-step status, and artifact rendering (file preview / structured / handle) |
+| `frontend/src/features/workbench/components/progress-rail.tsx` | Live plan view (`ProgressRail`/`StepTree`): step structure (tool, task, dependencies), per-step status, and artifact rendering (file preview / structured / handle) |
 | `.github/workflows/ci.yml` | Supervisor planner smoke coverage |

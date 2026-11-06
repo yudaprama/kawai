@@ -1,5 +1,5 @@
 /**
- * Canvas player for a YouTube Video Analysis run (PLAN-youtube-video-analysis).
+ * Canvas player for a YouTube Video Analysis run.
  *
  * Pure halves + one component:
  * - [`timestampSeconds`] / [`linkifyTimestamps`] — the deliverable markdown's

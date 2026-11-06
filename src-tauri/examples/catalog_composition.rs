@@ -41,7 +41,7 @@ pub const NON_DISPATCHABLE_TOOLS: &[&str] = &[
 ];
 
 /// Per-device tools: registered by the runtime from THIS machine's state
-/// (`cli_run` rides the live CLI inventory, PLAN-cli-tools.md) and therefore
+/// (`cli_run` rides the live CLI inventory) and therefore
 /// never representable in the globally-curated Turso catalog. The planner
 /// discovers them through the always-visible core tools + the <cli-tools>
 /// prompt block instead — keeping them out of the seed AND the drift
@@ -210,7 +210,7 @@ mod tests {
         // cli_run must never reach merged_definitions() — the catalog is
         // global curation, the CLI inventory is per-device state. If this
         // test fails, a dev machine's CLI set is about to be published to
-        // every user (PLAN-cli-tools.md).
+        // every user.
         assert_eq!(PER_DEVICE_TOOLS, &["cli_run"]);
         for &name in PER_DEVICE_TOOLS {
             assert!(!RPC_ONLY_TOOLS.contains(&name));

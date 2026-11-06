@@ -1,8 +1,7 @@
 # Wallet feature — end-to-end reference
 
 Satu halaman untuk paham fitur wallet Monad di kawai: arsitektur, siapa
-memegang key apa, daftar op, dan jaringan. Detail rencana/revisi:
-`PLAN-wallet-monad.md`. Alamat kontrak: `NETWORKS.md`.
+memegang key apa, daftar op, dan jaringan. Alamat kontrak: `NETWORKS.md`.
 
 ## Model keamanan (yang paling penting dimengerti)
 

@@ -537,7 +537,7 @@ pub async fn skill_list(
 
 /// Authenticated RPC: suggest short follow-up requests for a just-finished
 /// deliverable. Never fails — logic degrades to an empty vec, the frontend
-/// keeps its static chips (PLAN-followup-composer.md, Fase 3). The `Result`
+/// keeps its static chips. The `Result`
 /// is a Tauri requirement for async commands holding `State`; it is always
 /// `Ok`.
 #[tauri::command]
@@ -1125,7 +1125,7 @@ pub fn office_import_file(
     .map_err(|e| e.to_string())
 }
 
-/// ── QRIS top-up (PLAN-qris-topup.md Fase 3) — 5 auth-required thin ────────
+/// ── QRIS top-up — 5 auth-required thin ────────
 /// proxies to the worker. The bearer is the session's stored Ed25519 token;
 /// the frontend only sends op args (camelCase → snake_case params), never a
 /// token or user id.
@@ -2187,7 +2187,7 @@ pub async fn execute_supervisor_plan(
         .await
 }
 
-/// Stock Research (PLAN-stock-research): run the fixed stock-research pipeline
+/// Stock Research: run the fixed stock-research pipeline
 /// (selected analysts → bull/bear debate → research manager → trader → risk
 /// debate → risk manager → portfolio manager) and stream the same
 /// `SupervisorEvent` lifecycle the planner-driven runs emit.
@@ -2474,7 +2474,7 @@ pub async fn run_crypto_screener(
         .await
 }
 
-/// YouTube Video Analysis (PLAN-youtube-video-analysis): fetch the
+/// YouTube Video Analysis: fetch the
 /// transcript, build the FIXED map→compose→fact-check/analysis plan over it,
 /// and stream the same `SupervisorEvent` lifecycle the planner-driven runs
 /// emit. The fetch happens BEFORE the stream opens, so a bad URL or a

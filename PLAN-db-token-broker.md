@@ -1,7 +1,7 @@
 # Implementation Plan — DB Token Broker for sqld multi-device sync
 
 Status: **NOT STARTED** — this is the design document. Implementation follows the
-phases below. The live status lives in `AGENTS.md` → Roadmap → Open, item #3.
+phases below. The live status lives in `AGENTS.md` → Roadmap → Open, item #8.
 
 ## Decision context
 
@@ -352,7 +352,7 @@ batch migration during rollout.
 | Token replay | Short TTL (15 min default, max 24h); sqld validates `exp` on every request |
 | Cross-user access | sqld namespace isolation: `sub` → namespace; enforced by sqld, not app code |
 | MITM on token transfer | HTTPS required between client ↔ kawai-web and client ↔ sqld |
-| Local DB theft | Device-level encryption (future, item #4 in AGENTS.md roadmap) |
+| Local DB theft | Device-level encryption (future) |
 | sqld compromise | User data encrypted at rest (sqld feature); per-user DB file separation |
 
 ---

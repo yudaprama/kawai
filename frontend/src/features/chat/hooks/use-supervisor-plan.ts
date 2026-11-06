@@ -560,7 +560,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     [startStream],
   );
 
-  /** Stock Research (PLAN-stock-research): execute the FIXED stock-research
+  /** Stock Research: execute the FIXED stock-research
    *  pipeline — no planner, no review gate. Streams the same SupervisorEvent
    *  lifecycle as runPlan, so the Workbench rail/deliverable/reports render
    *  it unchanged. The caller has already persisted the user message and
@@ -585,7 +585,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     [startStream],
   );
 
-  /** YouTube Video Analysis (PLAN-youtube-video-analysis): execute the FIXED analysis
+  /** YouTube Video Analysis: execute the FIXED analysis
    *  pipeline — no planner, no review gate. Streams the same SupervisorEvent
    *  lifecycle as runPlan, so the Workbench rail/deliverable/reports render
    *  it unchanged. The caller has already persisted the user message and

@@ -1,4 +1,4 @@
-/** Ask About Step Result (PLAN-ask-about-step-result.md)
+/** Ask About Step Result
  *
  *  "Ask about this result" — a compact inline affordance on step reports
  *  that lets a non-technical user ask a follow-up question about the result

@@ -46,7 +46,7 @@ export interface StockResearchFormProps {
   onSubmit: (ticker: string, tradeDate: string | undefined, analysts: string[] | undefined, domain: DeskDomain) => void;
 }
 
-/** Stock/Crypto Research (PLAN-stock-research) entry form on the Workbench
+/** Stock/Crypto Research entry form on the Workbench
  *  landing. A ticker, an optional as-of date, and the analyst team — submit
  *  runs the FIXED research pipeline (analysts → debate → research manager →
  *  trader → risk debate → PM) through the supervisor scheduler. No planning

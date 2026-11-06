@@ -221,7 +221,7 @@ Detail endpoint & tabel: `kawai-server/worker/README.md`.
 |---|---|
 | Rust `cargo check` (desktop / desktop+web / web-only / kawai-web / `--features full`) | ✅ nol error |
 | Frontend `bun run build` (tsc -b + vite) | ✅ |
-| Worker `bun run typecheck` + e2e lokal idempotency (claim 2× → 1 row; confirm 2× → saldo naik 1×; confirm tx random → 404; debit over → 409) | ⏳ dijalankan pada integrasi akhir — lihat §11 `PLAN-qris-topup.md` |
+| Worker `bun run typecheck` + e2e lokal idempotency (claim 2× → 1 row; confirm 2× → saldo naik 1×; confirm tx random → 404; debit over → 409) | ✅ dijalankan pada integrasi akhir (skenario e2e tercatat di §8 Roadmap) |
 | E2E uang nyata (klaim → bayar → confirm → saldo naik 1×) | ⏳ setelah `QRIS_PAYLOAD` terisi + deploy |
 
 ---
@@ -260,10 +260,10 @@ Detail endpoint & tabel: `kawai-server/worker/README.md`.
       CRC tervalidasi).
 - [x] **Konfirmasi rentang/rate** — `MIN_BASE` 10_000 / `MAX_BASE` 99_000 /
       `BASE_STEP` 1_000 / `TOKENS_PER_IDR` 100 {IDR → token}, 2026-09-25
-      (`PLAN-qris-topup.md` §14).
+      (worker `qris.ts`).
 - [x] **Deploy worker + e2e pembayaran** — 2026-09-25: pembayaran QRIS nyata
       (Rp10.900) masuk, dikredit via `autoconfirm`, saldo +1.000.000,
-      retry idempoten terverifikasi (`PLAN-qris-topup.md` §14).
+      retry idempoten terverifikasi (worker `autoconfirm`).
 - [ ] Gateway QRIS **dinamis** (Midtrans/Xendit/DOKU/Tripay): API key +
       webhook → verifikasi otomatis tanpa admin (fase 2).
 - [ ] Rate-card per-model (saat ini 1:1 flat) — pinjam pola `metering/`

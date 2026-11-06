@@ -1813,7 +1813,7 @@ async fn graph_stats_handler(
 
 
 
-/// ── QRIS top-up (PLAN-qris-topup.md Fase 3) ────────────────────────────────
+/// ── QRIS top-up ─────────────────────────────────────────────────────────────
 /// Auth-required thin proxies sharing `logic::topup` with the Tauri commands.
 /// The worker bearer here is the RAW `kawai_session` cookie value (the
 /// Ed25519 token) read straight from the request headers; the middleware
@@ -2491,7 +2491,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/memory_scene_list", post(memory_scene_list_handler))
         .route("/api/memory_persona_generate", post(memory_persona_generate_handler))
         .route("/api/memory_persona_get", post(memory_persona_get_handler))
-        // QRIS top-up (PLAN-qris-topup.md Fase 3) — op name = path segment,
+        // QRIS top-up — op name = path segment,
         // the same 7 ops as the Tauri commands (POST on both transports).
         .route("/api/topup_qris_preview", post(topup_qris_preview_handler))
         .route("/api/topup_qris_claim", post(topup_qris_claim_handler))
@@ -2595,7 +2595,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
         post(generate_session_title_handler),
     );
 
-    // Follow-up composer chips (PLAN-followup-composer.md, Fase 3).
+    // Follow-up composer chips.
     let protected = protected.route("/api/suggest_followups", post(suggest_followups_handler));
     let protected = protected.route("/api/translate_deliverable", post(translate_deliverable_handler));
     let protected = protected.route("/api/deliverable_translations", post(deliverable_translations_handler));
@@ -2988,7 +2988,7 @@ fn prepared_sse(
     )
 }
 
-/// Stock Research (PLAN-stock-research): run the fixed stock-research pipeline
+/// Stock Research: run the fixed stock-research pipeline
 /// for one ticker and stream the same `SupervisorEvent` lifecycle.
 #[cfg(feature = "litert")]
 #[derive(Deserialize)]
@@ -3051,7 +3051,7 @@ async fn run_stock_research_handler(
     ))
 }
 
-/// YouTube Video Analysis (PLAN-youtube-video-analysis): fetch the
+/// YouTube Video Analysis: fetch the
 /// transcript, build the FIXED map→compose→fact-check/analysis plan over it,
 /// stream the same `SupervisorEvent` lifecycle. The transcript fetch happens
 /// BEFORE the stream opens, so a bad URL or a transcript-less video is a 4xx

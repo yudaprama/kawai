@@ -4,7 +4,7 @@
 //! the REAL registry (`kawai_lib::templates::registry()`) and prints the
 //! confusion matrix. **No provider, no network, no model** — the router is a
 //! pure function, so this is the gate that must pass before an LLM router pass
-//! is added (Fase 6 of `PLAN-template-routing.md`).
+//! is added.
 //!
 //! Usage:
 //! ```sh
@@ -35,7 +35,7 @@ const FIXTURES: &[(&str, &str)] = &[
     ("rekomendasi bullish ETH", "template"),
     ("analisis teknikal EURUSD", "template"),
     ("risk review saham MSFT", "template"),
-    // ── THE BLACK HOLE CLASS (PLAN-template-routing.md): valid ticker
+    // ── THE BLACK HOLE CLASS: valid ticker
     // shapes, wrong market. Membership in the exchange listing — not shape —
     // is the gate; these must fall to the planner, which answers them from
     // web/knowledge instead of running a futures pipeline on an IDX bank.

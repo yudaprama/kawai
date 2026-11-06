@@ -1,4 +1,4 @@
-// H1 orchestration-quality eval (PLAN-local-llm-orchestrator.md L12/H9): a
+// H1 orchestration-quality eval: a
 // fixed 20-scenario office workload run against a .litertlm model, scored on
 // tool selection, arguments, aliases, ordering, and refusal shape. One model
 // load, one conversation reset per scenario. Baseline: E4B 20/20 (100%).

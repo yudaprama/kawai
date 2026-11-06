@@ -132,9 +132,10 @@ them.
 - **Form column — prompt first.** The `Eco | <ecosystem>` picker (the lane's
   only mode-specific control left in the form), then the workflow/engine
   pick, then the **prompt**, then the rest. The prompt is the one required
-  field and the reason the user opened the panel; it used to render eighth,
-  below the model and LoRA pickers, where a 400px column pushed it out of
-  view. Model/LoRA chips, aspect-ratio chips, quantity and `Advanced` follow.
+  field and the reason the user opened the panel; it renders high in the
+  column, below the mode-specific pickers but above the chips and steppers,
+  so a 400px column never pushes it out of view. Model/LoRA chips,
+  aspect-ratio chips, quantity and `Advanced` follow.
   Picker ordering is the one exception — a lane's mode or model-version
   switch decides *which* prompt fields exist, so it must precede the prompt.
 - **Controls.** Single-select choices are `ChoiceChip`s (carrying

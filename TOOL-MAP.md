@@ -10,7 +10,7 @@ per-category crate. Agent definitions (`builtin.office`, `builtin.presentation`,
 `builtin.analytics`, `builtin.binance`) build their toolsets via `build_tools`; the merged
 `auto` registry (first-wins per name) is what the supervisor actually dispatches against. The
 planner never sees the full catalog — it discovers tools through ≤2 search rounds against the
-tool catalog DB (shared Turso), with a small core whitelist always visible.
+tool catalog DB (shared sqld), with a small core whitelist always visible.
 
 ---
 
@@ -21,7 +21,7 @@ AgentTool impl (crates/*)               →  kawai_tools::ToolSet (type-erased, 
 build_tools(context, remote_configured) →  per-agent ToolSet (agent_registry.rs composes)
 ToolRegistry (crates/router)            →  merged `auto` catalog, first-wins per NAME
 supervisor.rs build_supervisor_registry →  what plan_task validates & execute dispatches
-tool-catalog (Turso + embedded replica)   →  planner discovery (vector+BM25/RRF search)
+tool-catalog (sqld + embedded replica)   →  planner discovery (vector+BM25/RRF search)
 ```
 
 Rules that hold for every tool:
@@ -603,27 +603,31 @@ Full inventory: `grep -rhoE 'const NAME: &'"'"'static str = "[a-z_0-9]+"' crates
 ## 8. Planner discovery — `crates/foundation/tool-catalog`
 
 - The planner prompt carries **no** catalog: only the core whitelist (§1).
-- Tool discovery = ≤2 bounded search rounds against the shared Turso catalog, read
-  through a **per-device embedded replica** (vector + BM25 fused via RRF); 1 corrective
-  round on plan validation failure; hard cap 6 LLM calls per `plan_task`. The replica
-  keeps discovery working offline; `sync_shared_catalog` converges it in the background
-  (startup prefetch + a row-count freshness gate).
+- Tool discovery = ≤2 bounded search rounds against the shared sqld catalog, read
+  through a **per-device embedded replica** (vector + BM25 fused via RRF; vector side is
+  an exact cosine scan over the catalog rows — brute force is the real search path);
+  1 corrective round on plan validation failure; hard cap 6 LLM calls per `plan_task`.
+  The replica keeps discovery working offline; `sync_shared_catalog` converges it in
+  the background (startup prefetch + a row-count freshness gate).
 - The emitted plan is validated against the **full local `ToolRegistry`** (structure, dispatch
   keys, confirmation policy, per-step args vs each tool's `input_schema`) — fail-fast before
-  execution. Design + benchmark: `PLAN-planner-search-loop.md`.
-- Credentials: `KAWAI_TURSO_DB_URL` / `KAWAI_TURSO_AUTH_TOKEN` (nama lama, tetap dipakai)
-  → baked constants dari `kawai-vault/constants` bila env kosong. DB:
-  `libsql://libsql://kawai-tool-catalog-yudapramad.aws-ap-south-1.turso.io`.
-- **Akses**: client (semua device) memakai token dengan `perm=[all: data_read]` — enforced
-  server-side (`SQLITE_AUTH` untuk setiap write). Hanya token **admin**
-  (`KAWAI_TURSO_WRITE_TOKEN`, tidak pernah di-bake) yang boleh seed/prune. Token read-only
-  di-mint dengan `turso db tokens create kawai-tool-catalog -p 'all:data_read'` — **jangan
-  `-r`**: token itu (claim `a: "ro"`) ditolak server dengan `JWT error: InvalidToken`.
+  execution.
+- Host: **sqld self-hosted** di `127.0.0.1:8084` (instance `toolcatalog`, data
+  `~/.kawai/sqld/toolcatalog/`, dijalankan `scripts/sqld/run-local.sh`). Katalog adalah
+  satu DB yang sepenuhnya re-seedable dari repo — tidak ada state yang tidak bisa
+  dibangun ulang. Kredensial: `KAWAI_TURSO_DB_URL` / `KAWAI_TURSO_AUTH_TOKEN` (nama env
+  lama, tetap dipakai kode; nilai URL kini `http://127.0.0.1:8084`) → baked constants
+  dari `kawai-vault/constants` bila env kosong.
+- **Akses**: auth = satu kunci JWT Ed25519 (`SQLD_AUTH_JWT_KEY_FILE`, raw base64url;
+  format PEM gagal `JwtInvalid`). sqld TANPA per-token permissions — token valid =
+  full read/write. `KAWAI_TURSO_WRITE_TOKEN` (= SEED token) tetap dipakai seeder untuk
+  seed/prune; mitigasi akses tulis: DB bisa selalu di-reseed dari repo.
 
 ## 9. Seeder & drift gate
 
-- **Prasyarat**: tidak ada proses lokal. DB sudah-hosted; yang dibutuhkan token admin
-  (`KAWAI_TURSO_WRITE_TOKEN`) untuk menulis.
+- **Prasyarat**: sqld lokal berjalan (`scripts/sqld/run-local.sh start`, dengan JWT auth
+  aktif — lihat header script). Yang dibutuhkan token seed (`KAWAI_TURSO_WRITE_TOKEN`)
+  untuk menulis.
 - **Seed** (insert + update, idempotent upsert; `--prune` menghapus baris basi):
   `cargo run --release --manifest-path src-tauri/Cargo.toml --example seed_tool_catalog
   --features litert,binance,monad -- --prune` — proses berat (kompilasi besar +
@@ -678,7 +682,7 @@ The viewer always fetches the full body for an opened report:
 `useWorkbench.loadFullOutput(stepId, planKey)` calls the op once per opened
 step (per-instance cache in `useStepReport`) and re-renders with the full
 text — see `DeliverableViewer` and `PastRunCanvas`. Past runs read through
-their OWN `planKey`; a record without one (legacy) passes `""`, which hits
+their OWN `planKey`; a record without one passes `""`, which hits
 `supervisor::step_output`'s session-scope fallback (newest rows for that step
 id, still user-scoped — a same-id step from a newer run can win). The
 JSON-repair in `parseMaybeJson` remains as the safety net for fetch failures —

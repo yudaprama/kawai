@@ -1,5 +1,5 @@
 /**
- * Shared app-token balance (Fase 0a/0b, PLAN-qris-topup.md) — ONE read path
+ * Shared app-token balance (Fase 0a/0b) — ONE read path
  * for the whole frontend: the rail's balance chip, the Top Up page and the
  * goal-submit gate all consume this store instead of issuing independent
  * `topup_balance` reads.

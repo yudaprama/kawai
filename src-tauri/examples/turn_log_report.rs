@@ -110,7 +110,7 @@ async fn main() {
         }
     }
 
-    // ── Planner lens (PLAN-planner-subagent.md §6) ────
+    // ── Planner lens ────
     // Plan/revise volume, revise rate, plan errors, and whether planned
     // sessions went on to synthesize. Over-planning per TURN is not measurable
     // from turn_log (no turn id / tool-call rows) — the closest honest proxy

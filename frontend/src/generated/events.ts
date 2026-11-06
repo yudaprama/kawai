@@ -12,8 +12,7 @@ export type ArtifactInfo = {
 	filename: string | null,
 	/**
 	 *  Human-readable one-liner for the progress UI — the frontend never
-	 *  renders raw handles or a generic "structured result" (see
-	 *  PLAN-supervisor-ui-ux.md R5).
+	 *  renders raw handles or a generic "structured result".
 	 */
 	label: string | null,
 };

@@ -1,5 +1,5 @@
-//! Headless smoke for tool-call usage attribution (PLAN-tool-usage-charging.md
-//! Fase 1). Enters the supervisor's `ToolCharge` scope around a `reason`
+//! Headless smoke for tool-call usage attribution.
+//! Enters the supervisor's `ToolCharge` scope around a `reason`
 //! one-shot — exactly what the `ToolDispatch` closure does around a plan
 //! step — and asserts the LIVE call lands in the usage ledger WITH the scope's
 //! tool name and the scope's user even though the pool itself carries none

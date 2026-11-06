@@ -1,8 +1,6 @@
 # Plan — Kawai Workbench: the work-centric primary surface
 
-Status: **SHIPPED (S1)** — the Workbench is the app's only surface (landing hero composer → two-pane run view, deliverable-writer synthesis, planner progress streaming). S2 backlog: tool-args + per-step LLM-usage timeline events, deliverable persistence to the office store, planner-authored agent names. (Supersedes the
-trading-desk framing in `PLAN-analysis-desk.md`; that file's pipeline content
-remains as a future domain pack, not the product.)
+Status: **SHIPPED (S1)** — the Workbench is the app's only surface (landing hero composer → two-pane run view, deliverable-writer synthesis, planner progress streaming). S2 backlog: tool-args + per-step LLM-usage timeline events, deliverable persistence to the office store, planner-authored agent names.
 
 ## The UX thesis (what "adopting TradingAgents' UX" means here)
 

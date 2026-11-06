@@ -542,7 +542,7 @@ async fn attached_files_block(user_id: &str, session_id: i64) -> String {
 /// a query filter that matched nothing, then re-planned the extraction and
 /// crashed the run on a PNG. Best-effort — a read failure degrades to an
 /// empty block, planning never fails on it.
-/// Last N agent experiences (PLAN-personal-context §2.2) as a planner-context
+/// Last N agent experiences as a planner-context
 /// block — the planner avoids repeating tool sequences that already ran (and
 /// sees recorded lessons). Ranked by recency + goal overlap; best-effort.
 const PLANNER_EXPERIENCES: usize = 3;
@@ -779,7 +779,7 @@ pub async fn plan_task(
         crate::logic::topup::billing_gate(user_id, token).await?;
     }
 
-    // ── Template routing — layers 1 and 2 (PLAN-template-routing.md §2.5) ──
+    // ── Template routing — layers 1 and 2 ──
     //
     // Layer 1 (deterministic, this block): the keyword gate claims goals it
     // is SURE about and skips the planner entirely. Three deliberate
@@ -1276,7 +1276,7 @@ via the always-available `session_step_results` tool. If the goal depends on det
                     }
                     remote_llm::RemoteEvent::Done { usage: u, provider, .. } => {
                         // #5 observability: which candidate served the round
-                        // (latency tuning data — see PLAN-planner-search-loop.md).
+                        // (latency tuning data).
                         tracing::info!(component = "supervisor", user_id = %user_id, round = calls, provider = %provider, "planning round served");
                         // Live progress for the transport layer (desktop Channel /
                         // web log) — the planning phase is otherwise silent for
@@ -1430,8 +1430,7 @@ via the always-available `session_step_results` tool. If the goal depends on det
                         // Usage is debited server-side: the local recap
                         // cron reads token counters from Grafana telemetry
                         // (`user.id` attribution) and posts deltas to the
-                        // worker — the client never debits
-                        // (PLAN-qris-topup.md §15).
+                        // worker — the client never debits.
                         return Ok((plan, usage));
                     }
                     Err(plan_err) => {
@@ -2060,7 +2059,7 @@ const PLAN_CORE_TOOLS: [&str; 4] = [
     "memory_search",
     "web_search",
     "session_step_results",
-    // Per-device CLI executor (PLAN-cli-tools.md). Present in the registry
+    // Per-device CLI executor. Present in the registry
     // only when the machine's CLI inventory is non-empty — the filter below
     // drops it otherwise, exactly like the feature-gated domains.
     "cli_run",
@@ -2876,7 +2875,7 @@ pub async fn build_registry_for_plan(
     }
 }
 
-// ── Template symbol-universe eligibility (PLAN-template-routing.md) ─────────
+// ── Template symbol-universe eligibility ─────────
 
 type UniverseCell = std::sync::RwLock<Option<(std::time::Instant, kawai_router::MarketUniverse)>>;
 
@@ -2938,7 +2937,7 @@ async fn usdm_universe_cached() -> Option<kawai_router::MarketUniverse> {
     Some(u)
 }
 
-/// Layer-2 route resolver (PLAN-template-routing.md §2.5): one small
+/// Layer-2 route resolver: one small
 /// completion that decides — with real language understanding — whether a
 /// grey-band goal matches a registered pipeline, resolving company names to
 /// exchange symbols on the way ("micron" → MU). Output is FORCED JSON and
@@ -3302,7 +3301,7 @@ fn log_fixed_run(run: &FixedRun, user_id: &str, session_id: i64) {
     );
 }
 
-/// Stock Research (PLAN-stock-research) over one ticker. Validates the
+/// Stock Research over one ticker. Validates the
 /// domain/analysts BEFORE the plan exists — a drifted input is a plain op
 /// error, never a silently wrong 15-LLM-call run.
 #[cfg(feature = "litert")]
@@ -3354,7 +3353,7 @@ pub async fn prepare_desk_run(
     Ok(run)
 }
 
-/// YouTube Video Analysis (PLAN-youtube-video-analysis): fetch the
+/// YouTube Video Analysis: fetch the
 /// transcript, then build the FIXED map→compose→fact-check/analysis plan.
 /// The fetch happens BEFORE any plan exists, so a bad URL or a
 /// transcript-less video rejects the op cleanly.
@@ -3778,7 +3777,7 @@ pub(crate) async fn build_registry_from_toolset(
                 preview_chars(&args, 200)
             );
             let started = std::time::Instant::now();
-            // Usage attribution scope (PLAN-tool-usage-charging.md Fase 1):
+            // Usage attribution scope:
             // every remote LLM call inside this tool (a `reason` one-shot, a
             // subagent round) folds its provider-reported usage into
             // `step_charge` and lands its ledger row with this tool's name —
@@ -3832,7 +3831,7 @@ pub(crate) async fn build_registry_from_toolset(
             )
             .await;
 
-            // Fase 2 surcharge (PLAN-tool-usage-charging.md): a priced tool
+            // Fase 2 surcharge: a priced tool
             // charges its flat app-token fee on COMPLETED steps only — a
             // failed step or scheduler retry that fails buys nothing, and a
             // memo hit returned before this line. The fee rides the two
@@ -6270,7 +6269,7 @@ pub fn execute_plan_stream_with_cancel(
                             artifacts: deck_artifact.clone().into_iter().collect(),
                             retries_used: 0,
                         };
-                        // ── Agent experience (PLAN-personal-context §2.2) ──
+                        // ── Agent experience ──
                         // One distilled row per completed run: tools used,
                         // outcome, and (best-effort, cloud tier) a one-line
                         // lesson. The lesson is SKIPPED silently when no
@@ -6458,7 +6457,7 @@ mod user_language_tests {
 
 #[cfg(test)]
 mod tool_charge_tests {
-    //! Fase 1 tool-charge wiring (PLAN-tool-usage-charging.md): the dispatch
+    //! Fase 1 tool-charge wiring: the dispatch
     //! closure wraps every execution in its step's `ToolCharge` scope — the
     //! tool observes ITS OWN tool name, a serial next step never sees the
     //! previous step's scope (R3 leak guard), and the per-dispatch turn_log
@@ -6726,7 +6725,7 @@ mod tests {
         let _ = planner_response_excerpt("プロンプト 🎉 テスト plan JSON", 10);
     }
 
-    /// Layer-2 resolver output parsing (PLAN-template-routing.md §2.5): the
+    /// Layer-2 resolver output parsing: the
     /// claim must survive fenced/prose-wrapped JSON and case slop, and must
     /// be REJECTED when the template is absent — an unparsable or hedging
     /// answer means the planner, never a guessed pipeline.
@@ -7978,7 +7977,7 @@ mod tests {
         }
     }
 
-    /// Fase 5 runtime gate (PLAN-template-routing.md): a market goal claimed
+    /// Fase 5 runtime gate: a market goal claimed
     /// by the desk template resolves to a Rust-authored plan with ZERO
     /// planner involvement — `usage == 0` proves the short-circuit fired
     /// before any remote round (this env compiles provider keys in, so an

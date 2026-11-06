@@ -120,7 +120,7 @@ export function StepReportBody({
   /** true = full body must be fetched (preview truncated or history). */
   needsFetch: boolean;
   /** When set, renders the "Tanya tentang hasil ini" affordance below the
-   *  report (PLAN-ask-about-step-result.md). */
+   *  report. */
   onAsk?: (stepId: string, question: string) => Promise<string | null>;
 }) {
   const { output, loading, failed, retry } = useStepReport({

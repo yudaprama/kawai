@@ -7,7 +7,7 @@ export interface YoutubeAnalysisFormProps {
   onSubmit: (url: string) => void;
 }
 
-/** YouTube Video Analysis (PLAN-youtube-video-analysis) entry form on the
+/** YouTube Video Analysis entry form on the
  *  Workbench landing. A link in — the FIXED pipeline (transcript parts →
  *  compose → seven-section brief) runs through the supervisor scheduler. No
  *  planning round: the pipeline shape is the product. The transcript itself

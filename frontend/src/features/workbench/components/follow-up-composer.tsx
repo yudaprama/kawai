@@ -36,7 +36,7 @@ export function FollowUpChips({
   );
 }
 
-/** The single quote indicator (PLAN-workbench-multi-run-ux.md): rendered
+/** The single quote indicator: rendered
  *  when a quote is armed — chips arm the default (previous deliverable),
  *  an explicit "build on this" pick arms a specific past run. ✕ disarms
  *  whichever is active. */

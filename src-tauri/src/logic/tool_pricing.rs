@@ -1,4 +1,4 @@
-//! Per-tool-call app-token surcharge (PLAN-tool-usage-charging.md Fase 2).
+//! Per-tool-call app-token surcharge.
 //!
 //! PRICING MODEL (owner decision 2026-10-19 — REVENUE, not cost-recovery):
 //! the marginal cost of most calls is ~zero (free/flat APIs, on-device

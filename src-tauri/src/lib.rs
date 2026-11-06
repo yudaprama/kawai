@@ -269,7 +269,7 @@ pub fn run() {
         commands::frontend_log,
         commands::synthesize_speech,
 
-        // ── QRIS top-up (PLAN-qris-topup.md Fase 3) ─────────────────────
+        // ── QRIS top-up ─────────────────────
         commands::topup_qris_preview,
         commands::topup_qris_claim,
         commands::topup_qris_status,

@@ -129,7 +129,7 @@ fn add_runtime_tools(
         context.user_id.to_string(),
         context.session_id,
     ));
-    // Per-device CLI executor (PLAN-cli-tools.md): cross-cutting like
+    // Per-device CLI executor: cross-cutting like
     // memory_search, but only when this machine actually has CLIs. The
     // inventory snapshot is taken here so registry, prompt block, and
     // dispatch see one consistent view. NEVER seeded into the Turso tool

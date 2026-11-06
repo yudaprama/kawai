@@ -5,13 +5,13 @@ The backend also ships as a standalone web server (`kawai-web` crate, Axum, inde
 
 ## Goals
 
-- Product: **an AI agents app** — a catalog of specialized agents; each agent = LLM persona + curated toolset from domain crates, composed through `AgentDefinition` tool builders. UI: the **Kawai Workbench** — landing goal-composer hero, then a two-pane run view (left sidebar: progress rail with the goal composer pinned below | deliverable viewer; post-run the composer becomes a follow-up composer — chips + opt-in previous-deliverable quote, PLAN-followup-composer.md).
+- Product: **an AI agents app** — a catalog of specialized agents; each agent = LLM persona + curated toolset from domain crates, composed through `AgentDefinition` tool builders. UI: the **Kawai Workbench** — landing goal-composer hero, then a two-pane run view (left sidebar: progress rail with the goal composer pinned below | deliverable viewer; post-run the composer becomes a follow-up composer — chips + opt-in previous-deliverable quote).
 - End state: **desktop + mobile + web from one core**; app logic is 100% shared, only transport and launcher differ per target.
-- Current phase: **MVP, desktop-first** (macOS, on-device LLM, local email+password auth). Scope and priorities live in `AGENTS.md` → "Current phase" + "Roadmap"; the phase defers work, never architecture — the invariants in AGENTS.md are what keeps mobile/web cheap later.
+- Current phase: **MVP, desktop-first** (macOS, on-device LLM, remote worker auth: email+password). Scope and priorities live in `AGENTS.md` → "Current phase" + "Roadmap"; the phase defers work, never architecture — the invariants in AGENTS.md are what keeps mobile/web cheap later.
 - Frontend: React 19 + TypeScript + Vite + Tailwind v4, in `frontend/` (built to `dist/`, Tauri `frontendDist: "../dist"`). UI components vendored from the main `web/` SPA (markdown renderer, prompt-input, ai-elements). **No AI SDK** — stream events are mapped to UIMessage-part shapes by hand (`features/chat/hooks/use-supervisor-plan.ts` + `lib/ai-types.ts`).
 - Backend: Rust, single core logic. Built-in agent composition is owned by the application root (`src-tauri/src/agent_registry.rs`); the reusable orchestration engine consumes an injected `AgentRegistry`.
 - Auth: remote email+password against the kawai-server worker (Cloudflare D1 `kawai-auth`) — the client sends only `SHA-256(salt + kawai_vault::encode_string(password))` (the local vault logic stays the derivation core; server never sees the password) and receives an Ed25519 bearer token (7-day) persisted at `<user_data_dir>/auth.token`. Desktop session auto-restores from the token at startup; web sessions are the token in an HttpOnly cookie, verified against the worker with a 5-minute in-memory cache. Login UI in the React frontend (`auth-gate.tsx`).
-- LLM: **on-device Gemma 4 via LiteRT-LM is the orchestrator** (decision 2026-08-16). Cloud subagents stream through the hand-rolled OpenAI-compatible SSE client in `crates/foundation/remote-llm` (provider pool with health-aware failover); remote providers are optional configuration. The local model delegates heavy synthesis to cloud subagent tools (`deep_write`, `draft_document`) when a remote LLM is configured. Agent toolsets come from domain crates and are composed by the application root. Design record: `PLAN-hybrid-llm-subagents.md`.
+- LLM: **on-device Gemma 4 via LiteRT-LM is the orchestrator** (decision 2026-08-16). Cloud subagents stream through the hand-rolled OpenAI-compatible SSE client in `crates/foundation/remote-llm` (provider pool with health-aware failover); remote providers are optional configuration. The local model delegates heavy synthesis to cloud subagent tools (`deep_write`, `draft_document`) when a remote LLM is configured. Agent toolsets come from domain crates and are composed by the application root.
 - Persistence: local SQLite via `libsql` crate (desktop MVP). Post-MVP: sqld for multi-device sync.
 
 ## Layer diagram
@@ -37,7 +37,7 @@ The backend also ships as a standalone web server (`kawai-web` crate, Axum, inde
 ├───────────────────────────────────────────────────────────┤
 │  CORE LOGIC (Rust, pure, platform-agnostic)               │
 │  logic.rs : fn() -> T  |  fn() -> Stream<Event>           │
-│  auth.rs  : session type (email string) + dotenv loader     │
+│  auth.rs  : bearer-token session + dotenv loader          │
 ├───────────────────────────────────────────────────────────┤
 │  per-user local SQLite (libsql Builder::new_local)         │
 └───────────────────────────────────────────────────────────┘
@@ -45,28 +45,31 @@ The backend also ships as a standalone web server (`kawai-web` crate, Axum, inde
 
 ## Request flow — Supervisor end-to-end
 
-What happens when a user sends a prompt. The Supervisor (`kawai-router`) is the **sole desktop execution path**: every plan is executed by a deterministic Rust scheduler against the tool registry. A plan has **three possible authors**: the deterministic template router (`crates/router/src/route.rs` + `crates/engines/desk` — a goal claimed by a registered pipeline, e.g. a single-ticker market analysis, resolves to a Rust-authored `TaskPlan` with zero planner rounds, stamped `TaskPlan.template` and dispatched against the pipeline's own registry via `build_registry_for_plan`), the **static reply path** (a goal whose every token is greeting or self-identity vocabulary — `kawai_router::static_reply_intent` — resolves to a pre-authored localized one-step `direct_reply` plan stamped `direct_greeting`/`direct_identity`, final answer via `WRITER_RAW`: zero LLM calls), or the LLM planner (`plan_task`'s bounded search loop — the default and the fallback). The legacy `agent_chat` prompt-based tool-calling transport is fully removed (engine loop, command, Axum handler, frontend hook, `AgentChatEvent`).
+What happens when a user sends a prompt. The Supervisor (`kawai-router`) is the **sole desktop execution path**: every plan is executed by a deterministic Rust scheduler against the tool registry. A plan has **three possible authors**: the deterministic template router (`crates/router/src/route.rs` + `crates/engines/desk` — a goal claimed by a registered pipeline, e.g. a single-ticker market analysis, resolves to a Rust-authored `TaskPlan` with zero planner rounds, stamped `TaskPlan.template` and dispatched against the pipeline's own registry via `build_registry_for_plan`), the **static reply path** (a goal whose every token is greeting or self-identity vocabulary — `kawai_router::static_reply_intent` — resolves to a pre-authored localized one-step `direct_reply` plan stamped `direct_greeting`/`direct_identity`, final answer via `WRITER_RAW`: zero LLM calls), or the LLM planner (`plan_task`'s bounded search loop — the default and the fallback). Chat runs end-to-end through the supervisor plan flow (`plan_task` → `execute_supervisor_plan`); conversation history persists via `append_chat_message`.
 
 ### Tool discovery — the shared catalog
 
 The planner prompt never carries the catalog. `plan_task` discovers tools in
-≤2 bounded search rounds against a **shared Turso catalog**
-(`kawai-tool-catalog`, `crates/foundation/tool-catalog`), read through a
-**per-device embedded replica** so discovery also works offline. Each hit is
+≤2 bounded search rounds against the **shared tool catalog** — a self-hosted
+sqld instance (`toolcatalog`, `127.0.0.1:8084`, data under
+`~/.kawai/sqld/toolcatalog/`, managed by `scripts/sqld/run-local.sh`), read
+through a per-device embedded replica so discovery also works offline; the
+replica is refreshed by `sync_shared_catalog` (`supervisor.rs`). Each hit is
 fused vector-cosine + FTS5/BM25 via RRF, then filtered against the toolset
 this build can actually dispatch.
 
-- **Write access is admin-only, enforced server-side.** The token baked into
-  every client carries `perm=[all tables: data_read]`; any write is rejected
-  with `SQLITE_AUTH`. Seeding and `--prune` use a separate admin token that is
-  never baked.
+- **Auth is one shared Ed25519 JWT key** (`SQLD_AUTH_JWT_KEY_FILE`, raw
+  base64url). sqld has no per-token permissions: any valid token grants full
+  read/write. This is an accepted risk — the catalog DB can be reseeded in
+  full from the repo, so no catalog write is irreversible.
 - **The catalog is a curation layer, not the dispatch source of truth.** Which
   tools run is always decided by the local `ToolSet` built per install
   (feature-gated, per-user context); the catalog supplies descriptions,
   schemas and embeddings.
 - **One vector space, on-device.** Rows are embedded by the local LiteRT
-  embedder (`build_litert_embedder`) and plan-time queries embed with the same
-  engine, so no cloud embedding provider participates.
+  embedder (`build_litert_embedder`, EmbeddingGemma, 768-dim) and plan-time
+  queries embed with the same engine; any cloud embedding provider would make
+  cosine similarity noise.
 
 ```mermaid
 sequenceDiagram
@@ -115,7 +118,7 @@ sequenceDiagram
 
 ## Agent catalog & toolset map
 
-Four catalog agents are composed by `src-tauri/src/agent_registry.rs`, each as an `AgentDefinition` containing persona, metadata, a per-turn tool builder, and capability resolvers. Domain definitions live in `crates/engines/office/src/agent.rs`, `crates/toolsets/binance/src/agent.rs`, and `crates/toolsets/analytics-tools/src/agent.rs`. Tools that require runtime resources (webread engines, SQL profiles, Binance credentials) are registered only when available (capability-probe rule). Cross-cutting `codegraph_explore`/`codegraph_status` (feature `codegraph`, sidecar cached) are added to every agent when `litert` + `codegraph` are on.
+Eight catalog agents are composed by `src-tauri/src/agent_registry.rs` (`builtin()`): **office, presentation, binance, analytics, entertainment, monad, accounting, security** — each as an `AgentDefinition` containing persona, metadata, a per-turn tool builder, and capability resolvers. Domain definitions live in `crates/engines/office/src/agent.rs`, `crates/toolsets/binance/src/agent.rs`, and `crates/toolsets/analytics-tools/src/agent.rs`; the remaining toolsets come from `crates/generated-tools/entertainment`, `crates/toolsets/monad-tools`, `crates/toolsets/accounting`, and `crates/toolsets/security-tools`. On top of the per-agent toolsets, the Supervisor merges additional domain toolsets into its registry (`supervisor.rs`): finance, weather_geo, news_media, sports, food_drink, geospace, knowledge, religion, utility, coinmarketcap, composio. Tools that require runtime resources (webread engines, SQL profiles, Binance credentials) are registered only when available (capability-probe rule). Cross-cutting `codegraph_explore`/`codegraph_status` (feature `codegraph`, sidecar cached) are added to every agent when `litert` + `codegraph` are on.
 
 ### `builtin.office` — Office
 
@@ -293,8 +296,9 @@ kawai/
 │       │   ├── api.ts        # call() RPC + errText + payload types
 │       │   ├── stream.ts     # streamOperation(): Channel + cancel_stream
 │       │   └── streamdown/   # vendored markdown/streaming renderer (from web/)
-│       ├── hooks/
-│       │   └── use-supervisor-plan.ts  # SupervisorEvent → UIMessage parts; plan runs; confirmations
+│       ├── features/
+│       │   └── chat/hooks/
+│       │       └── use-supervisor-plan.ts  # SupervisorEvent → UIMessage parts; plan runs; confirmations
 │       ├── components/
 │       │   ├── ai-elements/  # vendored chat components (from web/, trimmed)
 │       │   └── ui/           # shadcn primitives (from web/)
@@ -325,24 +329,29 @@ kawai/
          ├── main.rs           # desktop binary entry (required-features = ["desktop"])
          ├── lib.rs            # Tauri builder + module decls (run/commands/webview_engine gated desktop)
          ├── logic.rs          # PURE helpers (greet/whoami/generate_activity, resolve_model_path/ensure_model, generate_session_title → kawai-db)
-         ├── logic/            # thin shims → crates/* (pub use kawai_*::*): db/db_migrations/skills/memory/office/knowledge/rag/graph/analytics/sql_remote/agent/evidence_cache
+         ├── logic/            # thin shims → crates/* (pub use kawai_*::*): db/db_migrations/skills/memory/office/knowledge/rag/graph/analytics/sql_remote/agent/evidence_cache + domain logic (topup, connector, tts, civitai, mexc_trade, monad_wallet, risk_guard, dyntoken, tool_pricing, binance_trade, binance_credentials, mexc_credentials, email, onboarding, experience, local_auth, monad, codegraph)
          ├── auth.rs           # shim → kawai-auth (pure auth; Session + dotenv loader)
+         ├── supervisor.rs     # Supervisor orchestration: registry assembly, planner loop, tool discovery, catalog sync
+         ├── agent_registry.rs # built-in AgentDefinition catalog (8 agents) + per-agent tool builders
+         ├── templates.rs      # TaskPlan template catalog (the composition root's instance of the kawai-router template contract)
+         ├── keychain.rs       # OS keychain access (device wallet key)
+         ├── logging.rs        # tracing init for both shells
          ├── commands.rs       # #[tauri::command] wrappers (#[cfg(feature="desktop")])
          ├── web.rs            # Axum router + auth_middleware (#[cfg(feature="web")])
          ├── webview_engine.rs # on-device webview fetch engine (#[cfg(feature="desktop")])
          └── bin/
-             └── web.rs        # legacy standalone web entry (use kawai-web/ for deploy)
+             └── web.rs        # workspace web entry (required-features = ["web"]; local dev server)
 ```
 
 ## Layers
 
 1. **`logic.rs`** — the only place for business logic. Pure async fns, no Tauri/Axum imports. Returns `T` (RPC) or `impl Stream<Item = Event>` (streaming). Events tagged `#[serde(tag = "type")]`. Home of `libsql` (per-user DB), the remote SSE client (`remote.rs`), and `mint_db_token` (EdDSA token sqld accepts).
-2. **`auth.rs`** — pure auth. `Session` holds the in-process identity for desktop/mobile (the signed-in email string); web carries it in the `kawai_session` cookie. Login/duplicate-email rules live in `kawai-auth`. No transport imports.
+2. **`auth.rs`** — pure auth. The session credential is an Ed25519 bearer token (7-day) issued and verified by the kawai-server worker; desktop persists it at `<user_data_dir>/auth.token`, web carries it in the `kawai_session` HttpOnly cookie. The in-process `Session` state holds the worker-resolved identity. Login/duplicate-email rules live in `kawai-auth`. No transport imports.
 3. **`commands.rs`** — thin wrappers. Each core fn → one `#[tauri::command]`. Streaming commands take a `Channel<E>` plus the business args. Auth-required commands read `State<Session>` and pass the email as `user_id`.
-4. **`web.rs`** — thin wrappers. Each core fn → one Axum route. `auth_middleware` reads the `kawai_session` cookie (the signed-in email), validates it, and injects `Extension<String>`. Serves the prebuilt frontend from `dist/`.
+4. **`web.rs`** — thin wrappers. Each core fn → one Axum route. `auth_middleware` reads the `kawai_session` HttpOnly cookie, resolves the Ed25519 bearer token to the worker-verified user email (5-minute in-memory cache), and injects `Extension<String>`. Serves the prebuilt frontend from `dist/`.
 5. **Launcher**:
    - Desktop/Mobile (`main.rs` → `lib.rs::run()`): Tauri builder, registers commands + `.manage(Session)`. **Does NOT run Axum.** Gated `desktop` feature; `tauri`/`wry`/`tao` not linked in web binaries (`cargo tree --manifest-path kawai-web/Cargo.toml | grep tauri` empty).
-   - Web (`kawai-web/src/main.rs` + legacy `bin/web.rs`): binds `KAWAI_WEB_ADDR` (`0.0.0.0:3000`), serves `/api/*` router + `dist/`. Not a Tauri app; `kawai-web` crate depends on `kawai = {default-features=false,features=["web"]}` so `cargo check -p kawai --no-default-features --features web` and `cargo check --manifest-path kawai-web/Cargo.toml` stay green without desktop.
+   - Web: two entry points over the same `kawai_lib::web::serve` router — the `kawai-web/` crate (independent deploy; Dockerfile, distroless) and the workspace bin `src-tauri/src/bin/web.rs` (`cargo run --bin kawai-web --features web`, local dev). Both bind `0.0.0.0:3000`, serve `/api/*` + `dist/`. Not a Tauri app; `kawai-web` depends on `kawai = {default-features=false,features=["web"]}` so `cargo check -p kawai --no-default-features --features web` and `cargo check --manifest-path kawai-web/Cargo.toml` stay green without desktop.
 6. **Frontend** — React SPA (`frontend/`), bundled by Vite into `dist/` and served by Tauri. RPC via `@tauri-apps/api/core.invoke`; streaming via `Channel` + `cancel_stream`. Run state lives in `features/chat/hooks/use-supervisor-plan.ts` (wrapped by `features/workbench/hooks/use-workbench.ts`), which folds supervisor stream events (`planningRound`/`planStarted`/`stepStarted`/`stepCompleted`/`stepFailed`/`stepSkipped`/terminals) into the Workbench's plan steps + deliverable; `lib/ai-types.ts` defines those shapes locally (no `ai` npm package — field names stay AI-SDK-v5-compatible so the vendored `ai-elements` components render them unmodified).
 
 ## Core dependencies (in `logic.rs` / `auth.rs`)

@@ -30,7 +30,7 @@ import { getLocale, translate } from "@/lib/i18n";
 
 // ── Derived view models ─────────────────────────────────────────────────────
 
-// ── Follow-up composer (PLAN-followup-composer.md) ──────────────────────
+// ── Follow-up composer ──────────────────────────────────────────────────────
 
 /** Static quick-action chips shown above the composer once a run finished
  *  with a deliverable. Hardcoded by design (deterministic, zero latency,
@@ -630,7 +630,7 @@ export function useWorkbench() {
   }, [terminal, supervisor.planKey, supervisor.steps, supervisor.videoId]);
 
   /** Shared submit pre-flight for every workbench run: clears the previous
-   *  gate failure, then the Fase 0a balance gate (PLAN-qris-topup) — ONE
+   *  gate failure, then the Fase 0a balance gate — ONE
    *  balance read per submit attempt. FAIL-CLOSED: zero tokens AND an
    *  unreadable balance both block the run — an error means the worker cannot
    *  bill it, so it must not silently proceed. It sits before every run-state
@@ -821,7 +821,7 @@ export function useWorkbench() {
     [attachedFiles, supervisor, canFollowUp, quoteTarget, runs, preflightRun, beginRun],
   );
 
-  /** Stock Research (PLAN-stock-research): run the FIXED stock-research
+  /** Stock Research: run the FIXED stock-research
    *  pipeline for one ticker. Same client mechanics as `run()` — balance
    *  gate (fail-closed), lazy session — but no planner, no review gate, no
    *  quote: the desk builds its own plan server-side and streams the same
@@ -863,7 +863,7 @@ export function useWorkbench() {
     [supervisor, preflightRun, beginRun],
   );
 
-  /** YouTube Video Analysis (PLAN-youtube-video-analysis): one link in, the FIXED
+  /** YouTube Video Analysis: one link in, the FIXED
    *  pipeline out. Same client mechanics as `runDesk` — balance gate
    *  (fail-closed), lazy session — but no planner, no review gate: the
    *  backend fetches the transcript and builds the plan, then streams the

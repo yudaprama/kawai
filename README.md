@@ -5,7 +5,7 @@ plan against a registry of agent tools, and a deterministic scheduler executes i
 step's report and a final deliverable in one view. Runs fully on-device where possible
 (LiteRT-LM), with health-aware cloud failover.
 
-Free desktop distribution — no app store. Auto-update is built in (signed with minisign;
+Free desktop distribution — no app store (macOS/Windows/Linux; Android ships via the Play internal track through `release-android.yml`). Desktop auto-update is built in (signed with minisign;
 every release publishes a `latest.json` manifest that installed apps check at launch).
 
 ## Install via Homebrew (macOS only)

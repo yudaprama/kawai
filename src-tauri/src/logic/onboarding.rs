@@ -1,4 +1,4 @@
-//! Onboarding context-gathering (PLAN-personal-context §2.3): post-auth
+//! Onboarding context-gathering: post-auth
 //! opt-in pipeline that turns quick questions + public identity sources into
 //! profile memories, so the agent knows the user before the first goal.
 //! Pure orchestration lives in the `onboarding` crate; this module owns

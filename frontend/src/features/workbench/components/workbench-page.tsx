@@ -151,7 +151,7 @@ export function WorkbenchPage({
   // waits for the picked session's runs to land, then opens that run's report
   // (restored run ids are `restored-<message rowId>` — exact match on rowId).
   const pendingPickRow = useRef<number | null>(null);
-  // Canvas navigation (PLAN-workbench-multi-run-ux.md, canvas policy):
+  // Canvas navigation (canvas policy):
   // view = which run + which document is on the right pane. null = the first
   // run hasn't produced anything yet. The canvas NEVER moves on its own
   // except twice per run: (1) when the new run's FIRST content lands, it
@@ -380,7 +380,7 @@ export function WorkbenchPage({
     [supervisor.status, supervisor.planStartedAt, workbench.setSessionError, enterRunView],
   );
 
-  /** Stock Research submit (PLAN-stock-research): the FIXED stock-research
+  /** Stock Research submit: the FIXED stock-research
    *  pipeline for one ticker. Same canvas handoff as a goal submit — the
    *  desk streams the same SupervisorEvent lifecycle, so the rail, deliverable
    *  viewer, and AGENT REPORTS render it unchanged. */
@@ -396,7 +396,7 @@ export function WorkbenchPage({
     [beginPipelineRun, workbench.runDesk],
   );
 
-  /** YouTube Video Analysis submit (PLAN-youtube-video-analysis): one link in, the FIXED
+  /** YouTube Video Analysis submit: one link in, the FIXED
    *  pipeline out. Same canvas handoff as a desk submit — the run streams the
    *  same SupervisorEvent lifecycle, so the rail, deliverable viewer, and
    *  AGENT REPORTS render it unchanged. */
