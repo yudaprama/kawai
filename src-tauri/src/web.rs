@@ -592,22 +592,6 @@ async fn skill_delete_handler(
 }
 
 /// Public RPC: client-side email verification (same op as the Tauri command).
-/// Returns the generated code so the caller verifies user input locally.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SendVerificationEmailRequest {
-    to: String,
-}
-
-async fn send_verification_email_handler(
-    Json(req): Json<SendVerificationEmailRequest>,
-) -> Result<Json<String>, (StatusCode, String)> {
-    logic::email::send_verification_email(&req.to)
-        .await
-        .map(Json)
-        .map_err(err500)
-}
-
 // ── Local email+password auth (public; same ops as the Tauri commands) ──────
 
 #[derive(Deserialize)]
@@ -615,6 +599,13 @@ async fn send_verification_email_handler(
 struct AuthCredentialsRequest {
     email: String,
     password: String,
+}
+
+/// Send-code only needs the address; a dedicated struct keeps the web contract
+/// honest (a shared email+password struct would 422 on `{email}` alone).
+#[derive(Deserialize)]
+struct AuthEmailRequest {
+    email: String,
 }
 
 async fn session_cookie_response(token: &str) -> Response {
@@ -700,12 +691,12 @@ async fn resolve_cookie_email(token: &str) -> Option<String> {
 }
 
 async fn auth_send_code_handler(
-    Json(req): Json<AuthCredentialsRequest>,
+    Json(req): Json<AuthEmailRequest>,
 ) -> Result<Response, (StatusCode, String)> {
-    logic::email::send_sign_up_code(&req.email)
+    logic::local_auth::auth_send_code(&req.email)
         .await
         .map(|_| StatusCode::NO_CONTENT.into_response())
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
 #[derive(Deserialize)]
@@ -717,17 +708,26 @@ struct AuthCodeRequest {
 async fn auth_verify_code_handler(
     Json(req): Json<AuthCodeRequest>,
 ) -> Result<Response, (StatusCode, String)> {
-    if logic::email::verify_sign_up_code(&req.email, &req.code) {
-        Ok(StatusCode::NO_CONTENT.into_response())
-    } else {
-        Err((StatusCode::UNAUTHORIZED, "verification code is invalid or expired".into()))
-    }
+    logic::local_auth::auth_verify_code(&req.email, &req.code)
+        .await
+        .map(|_| StatusCode::NO_CONTENT.into_response())
+        .map_err(|e| (StatusCode::UNAUTHORIZED, e))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AuthSignUpRequest {
+    email: String,
+    password: String,
+    /// Email-ownership proof issued by `/auth/send_code`; the worker
+    /// consumes it — no account without it.
+    code: String,
 }
 
 async fn auth_sign_up_handler(
-    Json(req): Json<AuthCredentialsRequest>,
+    Json(req): Json<AuthSignUpRequest>,
 ) -> Result<Response, (StatusCode, String)> {
-    let user = logic::local_auth::auth_sign_up(&req.email, &req.password)
+    let user = logic::local_auth::auth_sign_up(&req.email, &req.password, &req.code)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     let token = logic::local_auth::stored_token(&user.email)
@@ -2464,7 +2464,6 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/monad_wallet_create", post(monad_wallet_create_handler))
         .route("/api/monad_wallet_sign_message", post(monad_wallet_sign_message_handler))
         .route("/api/monad_wallet_delete", post(monad_wallet_delete_handler))
-        .route("/api/send_verification_email", post(send_verification_email_handler))
         .route("/api/auth_sign_up", post(auth_sign_up_handler))
         .route("/api/auth_sign_in", post(auth_sign_in_handler))
         .route("/api/auth_send_code", post(auth_send_code_handler))

@@ -169,7 +169,6 @@ pub fn run() {
         commands::greet,
         commands::list_agents,
         commands::generate_activity,
-        commands::send_verification_email,
         commands::auth_sign_up,
         commands::auth_send_code,
         commands::auth_verify_code,

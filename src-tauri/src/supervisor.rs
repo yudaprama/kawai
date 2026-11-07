@@ -4198,6 +4198,15 @@ fn step_error_kind(kind: &kawai_router::FailureKind) -> &'static str {
 /// deliberately NOT capped here.
 const STEP_EVENT_OUTPUT_MAX_CHARS: usize = 2000;
 
+/// How much of the last step's raw output the DEGRADED final answer carries
+/// (see the raw-output fallback below). The fallback exists so a run never
+/// loses its work when synthesis is unavailable, but the last step's output
+/// is unfiltered provider payload — a StockTwits/quote JSON document runs to
+/// tens of thousands of characters, and dumping all of it as the "answer"
+/// reads as a broken product. The preview keeps the run identifiable; the
+/// complete body stays in the step card and in `supervisor_step_results`.
+const RAW_FALLBACK_PREVIEW_CHARS: usize = 4_000;
+
 /// The virtual post-plan step that writes the user-facing deliverable.
 /// Not part of the TaskPlan — emitted as lifecycle events so the UI can show
 /// synthesis as real, trackable work.
@@ -4224,6 +4233,32 @@ fn preview_chars(s: &str, max_chars: usize) -> &str {
         Some((idx, _)) => &s[..idx],
         None => s,
     }
+}
+
+/// The DEGRADED terminal deliverable: a clearly marked, BOUNDED preview of the
+/// last step's raw output, used when synthesis is unavailable.
+///
+/// Never silent — an unmarked raw dump (`fetched-sources JSON`) reads as a
+/// broken product — and never unbounded: the last step's output can be a full
+/// provider document, so pasting it whole turns the answer into a wall of
+/// machine text. The preview identifies the run; the whole body stays in the
+/// last step's card (`supervisor_step_results` keeps the per-step rows).
+fn degraded_raw_deliverable(raw: &str) -> String {
+    let total = raw.chars().count();
+    if total <= RAW_FALLBACK_PREVIEW_CHARS {
+        return format!(
+            "> The report writer was unavailable, so this is the RAW step output below — not a \
+             synthesized report. Retry the run once the providers recover.\n\n{raw}"
+        );
+    }
+    format!(
+        "> The report writer was unavailable, so this is a PREVIEW of the RAW step output — not a \
+         synthesized report. The full output ({total} characters) is in the last step's card \
+         above. Retry the run once the providers recover.\n\n{}\n\n… truncated — the remaining {} \
+         characters are in the step card.",
+        preview_chars(raw, RAW_FALLBACK_PREVIEW_CHARS),
+        total - RAW_FALLBACK_PREVIEW_CHARS
+    )
 }
 
 /// Emit the workflow-step record for a finished scheduler node and end its
@@ -6285,18 +6320,9 @@ pub fn execute_plan_stream_with_cancel(
                         let written = synthesized
                             .map(|text| strip_unknown_chart_tokens(&text, &run_charts, &user_id))
                             .or_else(|| {
-                                // Degraded, never silent: the deliverable the
-                                // user opens must say it is the raw step
-                                // output, not a synthesized report — an
-                                // unmarked raw dump (fetched-sources JSON)
-                                // reads as a broken product.
-                                raw_final.clone().map(|raw| {
-                                    format!(
-                                        "> The report writer was unavailable, so this is the RAW step \
-                                         output below — not a synthesized report. Retry the run once \
-                                         the providers recover.\n\n{raw}"
-                                    )
-                                })
+                                // Degraded, never silent and always bounded —
+                                // see `degraded_raw_deliverable`.
+                                raw_final.clone().map(|raw| degraded_raw_deliverable(&raw))
                             });
                         // The indicator summary is appended DETERMINISTICALLY
                         // from the full step outputs (deck deliverables keep
@@ -7163,6 +7189,30 @@ mod tests {
         let wide: String = "🐍".repeat(3000);
         let cut = preview_chars(&wide, 2500);
         assert_eq!(cut.chars().count(), 2500);
+    }
+
+    /// The degraded terminal answer must stay marked AND bounded: a failed
+    /// synthesis used to paste the last step's whole provider payload into
+    /// the chat (a wall of source JSON on Android, where the local writer
+    /// cannot load).
+    #[test]
+    fn degraded_raw_deliverable_is_marked_and_bounded() {
+        let small = degraded_raw_deliverable("{\"ok\":true}");
+        assert!(small.contains("RAW step output"), "{small}");
+        assert!(small.contains("{\"ok\":true}"));
+        assert!(!small.contains("truncated"), "{small}");
+
+        let big = degraded_raw_deliverable(&"{}".repeat(20_000)); // 40 000 chars
+        assert!(big.contains("RAW step output"), "degraded state unmarked");
+        assert!(big.contains("PREVIEW"), "bounded notice missing");
+        assert!(big.contains("40000 characters"), "total not reported: {big}");
+        assert!(big.contains("step card"), "no pointer to the full output");
+        // Notice + preview + truncation line — never the 40 000-char body.
+        assert!(
+            big.chars().count() < RAW_FALLBACK_PREVIEW_CHARS + 1000,
+            "degraded deliverable not bounded: {} chars",
+            big.chars().count()
+        );
     }
 
     #[test]
