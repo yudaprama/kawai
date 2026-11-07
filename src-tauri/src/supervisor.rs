@@ -7529,7 +7529,13 @@ mod tests {
                 Some(SupervisorEvent::StepStarted { step_id, .. }) => assert_eq!(step_id, "s1"),
                 Some(SupervisorEvent::StepCompleted { step_id, .. }) => assert_eq!(step_id, "s1"),
                 Some(SupervisorEvent::PlanCompleted { final_output, .. }) => {
-                    assert_eq!(final_output.as_deref(), Some("done"));
+                    // Under test the writer tier is gated off, so the
+                    // terminal is the degraded raw-output fallback: the step
+                    // output still reaches the user AND the degraded state is
+                    // marked, never silent.
+                    let out = final_output.expect("final output present");
+                    assert!(out.contains("RAW step output"), "degraded fallback not marked: {out:?}");
+                    assert!(out.ends_with("done"), "step output missing from terminal: {out:?}");
                     finished = true;
                     break;
                 }
