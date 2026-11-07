@@ -79,10 +79,14 @@ export function useOnboarding() {
             setRunning(false);
             showErrorToast(errText(err));
           },
+          // Onboarding ends on its own variants, not the generic shortcut —
+          // mark them so the command's resolution cannot fire `onDone` (and
+          // a second status refresh) after the terminal event.
+          isTerminal: (e) => e.type === "onboardingFinished" || e.type === "onboardingError",
         },
       );
-      // The invoke resolves when the stream command returns; onDone already
-      // flipped the flags, this just satisfies the async contract.
+      // The invoke resolves when the stream command returns; the terminal
+      // event above already flipped the flags.
     },
     [running, statusOp],
   );

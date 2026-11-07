@@ -369,7 +369,6 @@ pub fn run() {
         commands::office_read_deck,
         commands::office_export_deck_html,
         commands::office_export_deck,
-        commands::office_export_deck,
         commands::office_export_file,
         commands::office_capabilities,
         commands::office_index_file,

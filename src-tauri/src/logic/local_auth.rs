@@ -101,12 +101,58 @@ async fn post_json(path: &str, body: serde_json::Value) -> std::result::Result<(
     let status = resp.status().as_u16();
     let text = resp.text().await.unwrap_or_default();
     let json: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
-    eprintln!(
-        "[auth] {path} → {status} in {}ms: {}",
-        started.elapsed().as_millis(),
-        text
-    );
+    // NEVER log the body. `/auth/sign_in` and `/auth/sign_up` answer with
+    // `{ token, email }`, and `eprintln!` is teed into `app.log` (see
+    // `logging.rs`) — logging it would leave a 7-day bearer in plaintext on
+    // disk/logcat. Success logs describe the shape (keys only); failure logs
+    // carry the worker's bounded error text, which never contains the token.
+    let elapsed = started.elapsed().as_millis();
+    if status < 400 {
+        eprintln!(
+            "[auth] {path} → {status} in {elapsed}ms ({} bytes, keys {})",
+            text.len(),
+            json_shape(&json)
+        );
+    } else {
+        eprintln!(
+            "[auth] {path} → {status} in {elapsed}ms ({} bytes): {}",
+            text.len(),
+            short_error(status, &json)
+        );
+    }
     Ok((status, json))
+}
+
+/// Keys-only description of a JSON body for logging. Values are never
+/// printed: the auth responses carry the session bearer, and a value in the
+/// log is a credential in the log.
+fn json_shape(json: &serde_json::Value) -> String {
+    match json {
+        serde_json::Value::Object(map) => {
+            let mut keys: Vec<&str> = map.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            format!("[{}]", keys.join(","))
+        }
+        serde_json::Value::Array(items) => format!("[array of {}]", items.len()),
+        serde_json::Value::Null => "null".to_string(),
+        serde_json::Value::Bool(_) => "bool".to_string(),
+        serde_json::Value::Number(_) => "number".to_string(),
+        serde_json::Value::String(_) => "string".to_string(),
+    }
+}
+
+/// Worker error text, bounded — a gateway HTML page must not dump into the
+/// log, and the auth line stays readable.
+fn short_error(status: u16, json: &serde_json::Value) -> String {
+    let msg = error_text(status, json);
+    const CAP: usize = 200;
+    if msg.chars().count() <= CAP {
+        msg
+    } else {
+        let mut out: String = msg.chars().take(CAP).collect();
+        out.push('…');
+        out
+    }
 }
 
 fn error_text(status: u16, json: &serde_json::Value) -> String {
@@ -181,6 +227,12 @@ pub fn restore_session() -> Option<String> {
     let payload: serde_json::Value = serde_json::from_slice(&payload).ok()?;
     let sub = payload["sub"].as_str()?.to_lowercase();
     let exp = payload["exp"].as_u64()?;
+    // The worker rejects tokens without a `jti` (its revocation handle), so
+    // restoring one would produce a session that fails on its first worker
+    // call — send the user to the login screen instead.
+    if payload["jti"].as_str().unwrap_or_default().is_empty() {
+        return None;
+    }
     if sub != email || exp <= std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() {
         return None;
     }
@@ -205,6 +257,98 @@ pub async fn resolve_bearer(token: &str) -> Option<String> {
         .as_str()
         .map(|s| s.to_string())
         .filter(|s| !s.is_empty())
+}
+
+/// Outcome of server-checking a bearer. The distinction matters at session
+/// restore: an explicit rejection must end the local session, while an
+/// unreachable worker must not — offline use is a supported mode.
+#[derive(Debug)]
+pub enum BearerCheck {
+    /// The worker accepted the token; carries the verified email.
+    Verified(String),
+    /// The worker explicitly rejected it (revoked, expired, malformed —
+    /// includes a missing stored token). The local session must be dropped.
+    Rejected(String),
+    /// The worker could not be reached. Keep the local identity; the next
+    /// online call re-checks.
+    Unreachable(String),
+}
+
+/// Server-verify the bearer stored for `user_email`. Identity is only ever
+/// resolved through the auth worker — a locally decoded payload is a hint,
+/// never a proof.
+pub async fn verify_stored_bearer(user_email: &str) -> BearerCheck {
+    match stored_token(user_email) {
+        Some(token) => verify_bearer(&token).await,
+        None => BearerCheck::Rejected("no stored token".into()),
+    }
+}
+
+/// Check one bearer against the worker (`POST /auth/whoami`).
+pub async fn verify_bearer(token: &str) -> BearerCheck {
+    verify_bearer_at(&worker_base_url(), token).await
+}
+
+/// `verify_bearer` against an explicit base URL — the seam the tests use (a
+/// mock listener on 127.0.0.1) without touching the process-wide env.
+async fn verify_bearer_at(base: &str, token: &str) -> BearerCheck {
+    let url = format!("{base}/auth/whoami");
+    let resp = match worker_client().post(url).bearer_auth(token).send().await {
+        Ok(resp) => resp,
+        Err(e) => return BearerCheck::Unreachable(transport_error("worker unreachable", e)),
+    };
+    let status = resp.status().as_u16();
+    if status != 200 {
+        let text = resp.text().await.unwrap_or_default();
+        let json: serde_json::Value =
+            serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
+        return BearerCheck::Rejected(short_error(status, &json));
+    }
+    let email = resp
+        .json::<serde_json::Value>()
+        .await
+        .ok()
+        .and_then(|j| j["email"].as_str().map(str::to_string))
+        .filter(|s| !s.is_empty());
+    match email {
+        Some(email) => BearerCheck::Verified(email),
+        None => BearerCheck::Rejected("worker returned no identity".into()),
+    }
+}
+
+/// Revoke a bearer at the worker (`POST /auth/logout`).
+///
+/// Dropping the local copy — a token file on desktop, the session cookie on
+/// web — only forgets the token on THIS device. The signed value itself stays
+/// valid for its whole 7-day TTL anywhere else it exists, so logout has to
+/// tell the worker to denylist it. Callers treat this as best-effort: a
+/// network failure must never leave the user unable to sign out locally.
+pub async fn revoke_token(token: &str) -> std::result::Result<(), String> {
+    let url = format!("{}/auth/logout", worker_base_url());
+    let started = std::time::Instant::now();
+    let resp = worker_client()
+        .post(url)
+        .bearer_auth(token)
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .map_err(|e| transport_error("worker unreachable", e))?;
+    let status = resp.status().as_u16();
+    if status >= 400 {
+        let text = resp.text().await.unwrap_or_default();
+        let json: serde_json::Value =
+            serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
+        return Err(format!(
+            "logout rejected ({status}): {}",
+            short_error(status, &json)
+        ));
+    }
+    tracing::info!(
+        component = "auth",
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "session bearer revoked"
+    );
+    Ok(())
 }
 
 /// Authorized call to a worker endpoint on behalf of a signed-in user:
@@ -358,6 +502,62 @@ fn user_hash(email: &str) -> String {
 mod tests {
     use super::*;
 
+    /// One-shot mock worker: accepts a single connection, answers `status` /
+    /// `body`, and returns its base URL for `verify_bearer_at`.
+    fn spawn_mock_worker(status: &'static str, body: &'static str) -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        std::thread::spawn(move || {
+            if let Ok((mut sock, _)) = listener.accept() {
+                use std::io::{Read, Write};
+                let mut buf = [0u8; 1024];
+                let _ = sock.read(&mut buf);
+                let resp = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = sock.write_all(resp.as_bytes());
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    /// Regression (restore trust): `whoami` must be able to tell "worker says
+    /// no" (session dead — drop it) apart from "worker unreachable" (offline —
+    /// keep the local session). All three outcomes off one endpoint.
+    #[tokio::test]
+    async fn verify_bearer_classifies_worker_answers() {
+        let ok = spawn_mock_worker("200 OK", r#"{"email":"a@b.c"}"#);
+        match verify_bearer_at(&ok, "tok").await {
+            BearerCheck::Verified(email) => assert_eq!(email, "a@b.c"),
+            other => panic!("expected Verified, got {other:?}"),
+        }
+
+        let rejected = spawn_mock_worker("401 Unauthorized", r#"{"error":"token revoked"}"#);
+        match verify_bearer_at(&rejected, "tok").await {
+            BearerCheck::Rejected(reason) => assert!(reason.contains("revoked"), "{reason}"),
+            other => panic!("expected Rejected, got {other:?}"),
+        }
+
+        // Port with no listener → transport failure, NOT a rejection.
+        let unreachable = verify_bearer_at("http://127.0.0.1:1", "tok").await;
+        assert!(
+            matches!(unreachable, BearerCheck::Unreachable(_)),
+            "connection refused must read as Unreachable: {unreachable:?}"
+        );
+    }
+
+    /// A 200 whose body carries no usable email is a rejection, not a Verified
+    /// with an empty identity.
+    #[tokio::test]
+    async fn verify_bearer_rejects_an_identity_less_ok_response() {
+        let base = spawn_mock_worker("200 OK", r#"{"ok":true}"#);
+        match verify_bearer_at(&base, "tok").await {
+            BearerCheck::Rejected(reason) => assert!(reason.contains("identity"), "{reason}"),
+            other => panic!("expected Rejected, got {other:?}"),
+        }
+    }
+
     /// Regression: every worker call used `reqwest::Client::new()` (no
     /// connect/overall timeout), so an unreachable worker on a phone network
     /// left the login spinner running for the OS TCP retry window with no
@@ -427,6 +627,39 @@ mod tests {
         let json = serde_json::json!({ "error": "incorrect password" });
         assert_eq!(error_text(401, &json), "incorrect password");
         assert_eq!(error_text(404, &serde_json::json!({})), "no account found for this email");
+    }
+
+    /// Regression: `post_json` used to `eprintln!` the whole worker response.
+    /// Sign-in/sign-up answer with `{ token, email }` — the Ed25519 bearer —
+    /// so every login wrote a 7-day credential into `app.log`. The log line
+    /// must describe the body without ever printing a value.
+    #[test]
+    fn json_shape_never_leaks_a_token_value() {
+        let body = serde_json::json!({ "token": "super-secret-bearer", "email": "a@b.c" });
+        let shape = json_shape(&body);
+        assert_eq!(shape, "[email,token]");
+        assert!(!shape.contains("super-secret-bearer"));
+        assert!(!shape.contains("a@b.c"));
+    }
+
+    #[test]
+    fn json_shape_covers_non_object_bodies() {
+        assert_eq!(json_shape(&serde_json::Value::Null), "null");
+        assert_eq!(json_shape(&serde_json::json!(["x"])), "[array of 1]");
+        assert_eq!(json_shape(&serde_json::json!("token")), "string");
+        assert_eq!(json_shape(&serde_json::json!(1)), "number");
+        assert_eq!(json_shape(&serde_json::json!(true)), "bool");
+    }
+
+    #[test]
+    fn short_error_passes_through_and_bounds_oversized_bodies() {
+        // A normal worker error is unchanged.
+        let small = serde_json::json!({ "error": "incorrect password" });
+        assert_eq!(short_error(401, &small), "incorrect password");
+        // An oversized body (e.g. a gateway HTML page) is capped.
+        let huge = serde_json::json!({ "error": "x".repeat(5_000) });
+        let msg = short_error(500, &huge);
+        assert_eq!(msg.chars().count(), 201); // 200 chars + the ellipsis
     }
 
     #[test]

@@ -43,7 +43,7 @@ async fn run_streaming<E: serde::Serialize>(
     token: Option<CancellationToken>,
 ) -> Result<(), String> {
     let token = token.unwrap_or_else(CancellationToken::new);
-    let _guard = register_stream(registry, &stream_id, token.clone());
+    let _guard = register_stream(registry, &stream_id, token.clone())?;
     let mut stream = Box::pin(stream);
     loop {
         tokio::select! {
@@ -57,19 +57,22 @@ async fn run_streaming<E: serde::Serialize>(
     Ok(())
 }
 
+/// Register a stream's cancellation token. `Err` instead of panic: a poisoned
+/// registry lock must fail THIS command, not take down the whole process —
+/// every stream command shares this registry for the app's lifetime.
 fn register_stream(
     registry: &StreamRegistry,
     stream_id: &str,
     token: CancellationToken,
-) -> StreamGuard {
+) -> Result<StreamGuard, String> {
     registry
         .lock()
-        .unwrap()
+        .map_err(|_| "stream registry unavailable (lock poisoned)".to_string())?
         .insert(stream_id.to_string(), token);
-    StreamGuard {
+    Ok(StreamGuard {
         registry: Arc::clone(registry),
         stream_id: stream_id.to_string(),
-    }
+    })
 }
 
 #[tauri::command]
@@ -304,32 +307,67 @@ fn establish_local_session(email: &str, session: State<'_, Session>) -> Result<U
     Ok(logic::whoami(email))
 }
 
-/// Clear the in-memory session and remove the persisted worker token.
+/// Sign out: revoke the worker bearer, then clear the in-memory session, the
+/// persisted token and the restore pointer.
+///
+/// The revocation comes FIRST — once the token file is gone the bearer is
+/// unrecoverable, and the worker would keep honouring it for its full 7-day
+/// TTL (it is a self-contained signed value, not a server-side session).
+/// Network failure is logged and swallowed: a sign-out must always succeed
+/// locally.
 #[tauri::command]
-pub fn logout(session: State<'_, Session>) {
-    if let Ok(mut guard) = session.write() {
-        if let Some(email) = guard.take() {
-            let path = kawai_paths::auth_token(&email);
-            let _ = std::fs::remove_file(path);
+pub async fn logout(session: State<'_, Session>) -> Result<(), String> {
+    let email = session.read().ok().and_then(|guard| guard.clone());
+    if let Some(email) = email.as_deref() {
+        if let Some(token) = logic::local_auth::stored_token(email) {
+            if let Err(e) = logic::local_auth::revoke_token(&token).await {
+                tracing::warn!(component = "auth", "session revocation failed: {e}");
+            }
         }
     }
-    // Clear the process-wide attribution user with the session.
-    kawai_telemetry::set_current_user(None);
-    // Drop the restore pointer too — the next launch shows the login screen.
+    if let Some(email) = email.as_deref() {
+        clear_local_session(&session, email);
+    }
+    Ok(())
+}
+
+/// Drop the local side of a session: in-memory state, the stored token file,
+/// the restore pointer, and the process-wide attribution user. Shared by
+/// logout and the whoami-time rejection path (a bearer the worker refuses
+/// must not survive to the next launch).
+fn clear_local_session(session: &Session, email: &str) {
+    if let Ok(mut guard) = session.write() {
+        guard.take();
+    }
+    let _ = std::fs::remove_file(kawai_paths::auth_token(email));
     let _ = std::fs::remove_file(kawai_paths::last_session());
+    kawai_telemetry::set_current_user(None);
 }
 
 /// Requires an active session. Demonstrates the auth-required pattern: the
 /// wrapper resolves identity, `logic.rs` receives `user_id`.
+///
+/// Unlike the web twin (whose identity the middleware already verified
+/// against the worker), the desktop session is local state — so this op
+/// re-verifies the stored bearer on every call. A rejection (revoked,
+/// expired, or a pre-`jti` mint) drops the local session and sends the UI
+/// back to the login screen; an unreachable worker does NOT — offline use is
+/// a supported mode, and the next online call re-checks.
 #[tauri::command]
-pub fn whoami(session: State<'_, Session>) -> Result<UserInfo, String> {
-    let guard = session
-        .read()
-        .map_err(|_| "session state unavailable (lock poisoned)".to_string())?;
-    guard
-        .clone()
-        .map(|uid| logic::whoami(&uid))
-        .ok_or_else(|| "not authenticated".to_string())
+pub async fn whoami(session: State<'_, Session>) -> Result<UserInfo, String> {
+    let email = session_user_id(&session)?;
+    match logic::local_auth::verify_stored_bearer(&email).await {
+        logic::local_auth::BearerCheck::Rejected(reason) => {
+            tracing::warn!(component = "auth", "session rejected: {reason}");
+            clear_local_session(&session, &email);
+            Err("session expired — sign in again".to_string())
+        }
+        logic::local_auth::BearerCheck::Unreachable(e) => {
+            tracing::warn!(component = "auth", "worker unreachable; serving local identity: {e}");
+            Ok(logic::whoami(&email))
+        }
+        logic::local_auth::BearerCheck::Verified(_) => Ok(logic::whoami(&email)),
+    }
 }
 
 /// Pull the authenticated user id from the in-process session (desktop/mobile).
@@ -1563,18 +1601,21 @@ pub async fn supervisor_step_output(
 }
 
 /// Authenticated RPC: respond to a pending supervisor confirmation gate.
+/// The gate is claimed for the signed-in user only — a stream id from
+/// another account must not approve (or consume) it.
 #[cfg(feature = "litert")]
 #[tauri::command]
 pub fn respond_supervisor_confirmation(
     stream_id: String,
     step_id: String,
     approved: bool,
+    session: State<'_, Session>,
     registry: State<'_, crate::supervisor::PendingConfirmations>,
 ) -> Result<(), String> {
-    let sender = registry.lock().map_err(|e| e.to_string())?.remove(&crate::supervisor::confirmation_key(&stream_id, &step_id))
+    let user_id = session_user_id(&session)?;
+    let sender = crate::supervisor::take_confirmation(&registry, &stream_id, &step_id, &user_id)
         .ok_or_else(|| format!("no pending confirmation for step '{step_id}'"))?;
     let _ = sender.send(approved);
-    let _ = stream_id;
     Ok(())
 }
 

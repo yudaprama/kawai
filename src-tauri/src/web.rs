@@ -632,30 +632,67 @@ async fn session_cookie_response(token: &str) -> Response {
     resp
 }
 
-/// Token → email, with a 5-minute in-memory cache so the middleware does not
-/// hit the auth worker on every request. `None` when the token is invalid.
-async fn resolve_cookie_email(token: &str) -> Option<String> {
-    use std::collections::HashMap;
+/// Bearer → email cache, shared by `auth_middleware` and `logout_handler`.
+///
+/// `logout` MUST evict the entry after revoking the token: the cache would
+/// otherwise keep accepting a signed-out cookie for up to `COOKIE_CACHE_TTL`.
+fn cookie_cache(
+) -> &'static std::sync::RwLock<std::collections::HashMap<String, (String, std::time::Instant)>> {
     use std::sync::OnceLock;
-    use std::time::{Duration, Instant};
-    static CACHE: OnceLock<std::sync::RwLock<HashMap<String, (String, Instant)>>> = OnceLock::new();
-    let cache = CACHE.get_or_init(|| std::sync::RwLock::new(HashMap::new()));
-    const TTL: Duration = Duration::from_secs(5 * 60);
+    static CACHE: OnceLock<
+        std::sync::RwLock<std::collections::HashMap<String, (String, std::time::Instant)>>,
+    > = OnceLock::new();
+    CACHE.get_or_init(|| std::sync::RwLock::new(std::collections::HashMap::new()))
+}
+
+const COOKIE_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+const COOKIE_CACHE_CAP: usize = 1024;
+
+/// Drop a token from the cache — used by logout once the worker has revoked
+/// it (and by nothing else: a rejected token is cached as absent by omission).
+fn forget_cookie_email(token: &str) {
+    if let Ok(mut guard) = cookie_cache().write() {
+        guard.remove(token);
+    }
+}
+
+/// Token → email, with a 5-minute in-memory cache so protected requests do
+/// not hit the auth worker on every call. `None` when the token is invalid.
+///
+/// The map is bounded: expired entries are dropped on every insert, and when
+/// it is still at capacity the oldest entry is evicted. Without that, one
+/// entry per bearer token would live for the life of the process.
+async fn resolve_cookie_email(token: &str) -> Option<String> {
+    use std::time::Instant;
+    let cache = cookie_cache();
 
     if let Ok(guard) = cache.read() {
         if let Some((email, at)) = guard.get(token) {
-            if at.elapsed() < TTL {
+            if at.elapsed() < COOKIE_CACHE_TTL {
                 return Some(email.clone());
             }
         }
     }
     // Cache miss / stale — ask the worker.
-    let email = tokio::time::timeout(Duration::from_secs(5), logic::local_auth::resolve_bearer(token))
-        .await
-        .ok()
-        .flatten();
+    let email = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        logic::local_auth::resolve_bearer(token),
+    )
+    .await
+    .ok()
+    .flatten();
     if let Some(email) = &email {
         if let Ok(mut guard) = cache.write() {
+            guard.retain(|_, (_, at)| at.elapsed() < COOKIE_CACHE_TTL);
+            if guard.len() >= COOKIE_CACHE_CAP {
+                if let Some(oldest) = guard
+                    .iter()
+                    .min_by_key(|(_, (_, at))| *at)
+                    .map(|(k, _)| k.clone())
+                {
+                    guard.remove(&oldest);
+                }
+            }
             guard.insert(token.to_string(), (email.clone(), Instant::now()));
         }
     }
@@ -933,7 +970,28 @@ async fn generate_activity_handler(
     Sse::new(s).keep_alive(KeepAlive::default())
 }
 
-async fn logout_handler() -> Response {
+/// Sign out on web: revoke the bearer at the worker, drop it from the
+/// resolution cache, then clear the cookie.
+///
+/// Clearing the cookie alone is not a sign-out — the cookie value IS the
+/// 7-day signed bearer, so anyone holding a copy (another browser profile, a
+/// devtools dump, a proxy log) could keep using it. Revoking first and
+/// evicting the cache is what makes the token actually dead.
+///
+/// Public on purpose: logout must work even when the session is already
+/// invalid, so a missing/invalid cookie still clears it.
+async fn logout_handler(headers: HeaderMap) -> Response {
+    if let Some(token) = headers
+        .get(header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| extract_cookie(s, SESSION_COOKIE))
+    {
+        if let Err(e) = logic::local_auth::revoke_token(token).await {
+            // Best-effort: a worker hiccup must still clear the local cookie.
+            tracing::warn!(component = "auth", "web session revocation failed: {e}");
+        }
+        forget_cookie_email(token);
+    }
     let cookie = format!("{SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
     let mut resp = StatusCode::NO_CONTENT.into_response();
     if let Ok(val) = HeaderValue::from_str(&cookie) {
@@ -2348,19 +2406,11 @@ async fn auth_middleware(mut req: Request, next: Next) -> Response {
         return error_response(StatusCode::UNAUTHORIZED, "no session");
     };
     // The cookie carries the Ed25519 bearer token; resolve it to the user
-    // email via the auth worker (cached 5 min). Requests block on the first
-    // resolution — acceptable for a server-side web session.
-    let email = tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::try_current().ok().and_then(|h| {
-            h.block_on(async {
-                tokio::time::timeout(std::time::Duration::from_secs(5), logic::local_auth::resolve_bearer(&token))
-                    .await
-                    .ok()
-                    .flatten()
-            })
-        })
-    });
-    let Some(email) = email else {
+    // email through the shared cached resolver. Every protected request used
+    // to call the auth worker directly — a network hop per call, parked on a
+    // runtime worker via `block_in_place` + `Handle::block_on`. The resolver
+    // is already async, so just await it: cache hit = no network at all.
+    let Some(email) = resolve_cookie_email(&token).await else {
         return error_response(StatusCode::UNAUTHORIZED, "invalid or expired session");
     };
     req.extensions_mut().insert(email);
@@ -3403,11 +3453,14 @@ struct RespondSupervisorConfirmationRequest {
 
 #[cfg(feature = "litert")]
 async fn respond_supervisor_confirmation_handler(
+    Extension(user_id): Extension<String>,
     Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
     Json(req): Json<RespondSupervisorConfirmationRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    let sender = pending.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .remove(&crate::supervisor::confirmation_key(&req.stream_id, &req.step_id)).ok_or(StatusCode::NOT_FOUND)?;
+    // Scoped to the authenticated caller: a foreign stream id answers 404
+    // and leaves the parked gate for its owner.
+    let sender = crate::supervisor::take_confirmation(&pending, &req.stream_id, &req.step_id, &user_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
     let _ = sender.send(req.approved);
     Ok(StatusCode::NO_CONTENT)
 }

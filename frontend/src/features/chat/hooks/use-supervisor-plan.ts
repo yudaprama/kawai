@@ -527,6 +527,11 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
             // that surfaced as one) — the journal row must not spin forever.
             callbacks?.onPlanEnded?.(message);
           },
+          // The supervisor's terminal variants. Declaring them keeps the
+          // command future's resolution from firing `onDone` a second time
+          // after a normal completion — `onDone` is reserved for a stream
+          // that ends WITHOUT a terminal event (a user Stop).
+          isTerminal: (ev) => ev.type === "planCompleted" || ev.type === "planFailed",
         },
         streamId,
       );

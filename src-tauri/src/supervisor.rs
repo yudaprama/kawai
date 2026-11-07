@@ -3823,7 +3823,10 @@ pub(crate) async fn build_registry_from_toolset(
                     output_tokens: if remote_ran {
                         Some(step_out as i64)
                     } else {
-                        result.text().map(|t| t.len() as i64 / 4)
+                        // Chars, not bytes: `.len()` on non-ASCII output
+                        // (3-4 bytes per CJK/emoji char) inflated the ~4
+                        // chars-per-token estimate by that factor.
+                        result.text().map(|t| t.chars().count() as i64 / 4)
                     },
                     latency_ms,
                     outcome: if success { "tool" } else { "error" },
@@ -4129,12 +4132,48 @@ fn tool_output_artifacts(output: &str) -> Vec<kawai_router::Artifact> {
 /// The registry must already be built via [`build_supervisor_registry`].
 /// The stream emits [`SupervisorEvent`]s as steps start, complete, fail,
 /// or are skipped, ending with `PlanCompleted` or `PlanFailed`.
-/// Pending confirmation: `step_id` → completer for the awaiting gate.
-/// Frontend responses route through [`respond_supervisor_confirmation`].
-pub type PendingConfirmations = Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>>;
+/// One parked confirmation gate: the completer plus the identity that owns it.
+///
+/// The map is process-wide and keyed by `stream_id` + `step_id`, so the key
+/// alone carries no identity — without the owner recorded here, any signed-in
+/// caller that learned (or guessed) another user's stream id could approve a
+/// side-effecting step in that user's run.
+pub struct PendingConfirmation {
+    /// User id of the run that parked this gate (the email / per-user dir id).
+    pub user_id: String,
+    pub sender: tokio::sync::oneshot::Sender<bool>,
+}
+
+/// Pending confirmation: `stream_id` + `step_id` → owner + completer for the
+/// awaiting gate. Frontend responses route through
+/// [`take_confirmation`].
+pub type PendingConfirmations = Arc<Mutex<HashMap<String, PendingConfirmation>>>;
 
 pub fn confirmation_key(stream_id: &str, step_id: &str) -> String {
     format!("{stream_id}\u{1f}{step_id}")
+}
+
+/// Claim a parked gate on behalf of `user_id`.
+///
+/// Returns the completer only when the slot exists AND belongs to that user;
+/// otherwise `None`. A foreign caller never consumes the slot — the rightful
+/// owner can still answer. This is the single authorization point for both
+/// the Tauri command and the Axum route.
+pub fn take_confirmation(
+    pending: &PendingConfirmations,
+    stream_id: &str,
+    step_id: &str,
+    user_id: &str,
+) -> Option<tokio::sync::oneshot::Sender<bool>> {
+    let key = confirmation_key(stream_id, step_id);
+    let mut guard = pending.lock().ok()?;
+    let owned = guard
+        .get(&key)
+        .is_some_and(|entry| entry.user_id == user_id);
+    if !owned {
+        return None;
+    }
+    guard.remove(&key).map(|entry| entry.sender)
 }
 
 /// Convert one scheduler event to its transport form, logging it on the way
@@ -4767,10 +4806,16 @@ async fn revise_plan(
                 }
                 return Ok(plan);
             }
-            Ok(_) => {
+            Ok(_) if round == 0 => {
                 materials.push_str(
                     "\n<plan-rejected>The revised plan had no steps. Respond ONLY with plan JSON.</plan-rejected>",
                 );
+            }
+            // Last round: an empty plan is terminal, not a panic. The old
+            // fall-through hit `unreachable!` and killed the run with no
+            // `PlanFailed`, leaving the UI without a terminal state.
+            Ok(_) => {
+                return Err("revised plan had no steps".into());
             }
             Err(plan_err) => {
                 eprintln!(
@@ -4793,7 +4838,11 @@ async fn revise_plan(
             }
         }
     }
-    unreachable!("revise loop exhausted without returning")
+    // Unreachable by construction — the final round always returns (`Ok` with
+    // steps, `Ok` empty, or `Err`) — but expressed as an error, never a panic:
+    // this path runs inside the run's event stream, where a panic tears the
+    // run down with no terminal event.
+    Err("revised planner exhausted its rounds without a usable plan".into())
 }
 
 /// Long strings are clipped before fitting — headers/subjects/snippets
@@ -5945,6 +5994,9 @@ pub fn execute_plan_stream_with_cancel(
         // Confirmation gate: park until the frontend responds (or the plan
         // stream is dropped, which drops the receiver and fails the step).
         let gate_pending = pending.clone();
+        // The gate closure is `move`; the run's identity is needed later in
+        // this fn (persistence + telemetry), so it is copied in.
+        let gate_user_id = user_id.clone();
         let event_stream_id = confirmation_stream_id.clone();
         // The legacy wrapper has no transport id; a per-stream pointer keeps
         // the public API compatible while transport callers use stream_id.
@@ -5970,7 +6022,16 @@ pub fn execute_plan_stream_with_cancel(
             let pending = gate_pending.clone();
             let key = confirmation_key(&confirmation_stream_id, &step_id);
             let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
-            pending.lock().expect("pending confirmations mutex held across panic").insert(key.clone(), tx);
+            pending
+                .lock()
+                .expect("pending confirmations mutex held across panic")
+                .insert(
+                    key.clone(),
+                    PendingConfirmation {
+                        user_id: gate_user_id.clone(),
+                        sender: tx,
+                    },
+                );
             Box::pin(async move {
                 let _guard = PendingGuard { pending, key };
                 match rx.await {
@@ -7436,7 +7497,8 @@ mod tests {
             .lock()
             .unwrap()
             .remove(&confirmation_key("st-a", "s1"))
-            .expect("pending confirmation gate registered");
+            .expect("pending confirmation gate registered")
+            .sender;
         let _ = sender.send(true);
 
         let mut finished = false;
@@ -7467,6 +7529,60 @@ mod tests {
         assert!(pending.lock().unwrap().is_empty(), "stale confirmation gates left behind");
     }
 
+    /// The confirmation map is process-wide: a gate must only be claimable by
+    /// the user whose run parked it. A foreign caller (another signed-in
+    /// account that learned the stream id) must neither approve the step nor
+    /// consume the slot — the rightful owner still gets to answer.
+    #[tokio::test]
+    async fn confirmation_gate_rejects_a_foreign_user() {
+        let pending = new_pending();
+        let mut stream = echo_stream(vec![confirm_step("s1")], pending.clone(), "st-o");
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            assert!(std::time::Instant::now() < deadline, "timeout waiting for events");
+            let ev = tokio::time::timeout(std::time::Duration::from_millis(500), stream.as_mut().next())
+                .await
+                .expect("stream stalled");
+            if matches!(ev, Some(SupervisorEvent::ConfirmationRequested { .. })) {
+                break;
+            }
+        }
+
+        assert!(
+            take_confirmation(&pending, "st-o", "s1", "attacker@example.com").is_none(),
+            "a foreign user must not claim another run's gate"
+        );
+        assert_eq!(
+            pending.lock().unwrap().len(),
+            1,
+            "a foreign claim must leave the slot for its owner"
+        );
+
+        let sender = take_confirmation(&pending, "st-o", "s1", "test-user")
+            .expect("the owning user can answer");
+        let _ = sender.send(false);
+
+        // Rejection is what the owner sent — the foreign claim changed nothing.
+        let mut failed = false;
+        loop {
+            let ev = tokio::time::timeout(std::time::Duration::from_secs(5), stream.as_mut().next())
+                .await
+                .expect("stream stalled after rejection");
+            match ev {
+                Some(SupervisorEvent::PlanFailed { error }) => {
+                    assert!(error.contains("s1"), "failure should name the rejected step: {error}");
+                    failed = true;
+                    break;
+                }
+                Some(_) => {}
+                None => break,
+            }
+        }
+        assert!(failed, "the owner's rejection must fail the plan");
+        assert!(pending.lock().unwrap().is_empty(), "stale confirmation gates left behind");
+    }
+
     /// Rejection: respond(false) → the step fails and the plan reports failure.
     #[tokio::test]
     async fn confirmation_gate_reject_fails_plan() {
@@ -7488,7 +7604,8 @@ mod tests {
             .lock()
             .unwrap()
             .remove(&confirmation_key("st-r", "s1"))
-            .expect("pending confirmation gate registered");
+            .expect("pending confirmation gate registered")
+            .sender;
         let _ = sender.send(false);
 
         let mut failed = false;
