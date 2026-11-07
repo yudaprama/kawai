@@ -93,12 +93,16 @@ export function useChatModel({
     }
   }, [patch, state.modelLoaded, state.modelLoading, stopPolling]);
 
-  // Auto-load once userId exists — same semantics as before (called from owner)
+  // Auto-load once userId exists — same semantics as before (called from owner).
+  // A FAILED auto-load must not retry from this effect: the failure flips
+  // modelLoading back to false, which re-fires the effect, so an ungated
+  // retry hammers local_load_model forever on a device where the model can
+  // never load. The UI's explicit reload action is the retry path.
   useEffect(() => {
-    if (state.userId && !state.modelLoaded && !state.modelLoading) {
+    if (state.userId && !state.modelLoaded && !state.modelLoading && !state.modelError) {
       void loadModel();
     }
-  }, [state.userId, state.modelLoaded, state.modelLoading, loadModel]);
+  }, [state.userId, state.modelLoaded, state.modelLoading, state.modelError, loadModel]);
 
   // Cleanup polling on unmount.
   useEffect(() => () => stopPolling(), [stopPolling]);

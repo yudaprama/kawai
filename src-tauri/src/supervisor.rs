@@ -6284,7 +6284,20 @@ pub fn execute_plan_stream_with_cancel(
                         }
                         let written = synthesized
                             .map(|text| strip_unknown_chart_tokens(&text, &run_charts, &user_id))
-                            .or_else(|| raw_final.clone());
+                            .or_else(|| {
+                                // Degraded, never silent: the deliverable the
+                                // user opens must say it is the raw step
+                                // output, not a synthesized report — an
+                                // unmarked raw dump (fetched-sources JSON)
+                                // reads as a broken product.
+                                raw_final.clone().map(|raw| {
+                                    format!(
+                                        "> The report writer was unavailable, so this is the RAW step \
+                                         output below — not a synthesized report. Retry the run once \
+                                         the providers recover.\n\n{raw}"
+                                    )
+                                })
+                            });
                         // The indicator summary is appended DETERMINISTICALLY
                         // from the full step outputs (deck deliverables keep
                         // their own structure — no table there).
