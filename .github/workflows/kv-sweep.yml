@@ -117,7 +117,7 @@ jobs:
         if: steps.eval-model.outputs.cache-hit != 'true'
         run: |
           mkdir -p eval-model
-          curl -fL --retry 3 -o "eval-model/${MODEL_NAME}.litertlm" "$MODEL_URL"
+          curl -fL --retry 3 --retry-all-errors --continue-at - -o "eval-model/${MODEL_NAME}.litertlm" "$MODEL_URL"
 
       - name: kv_sweep (H7 — budget sweep + RSS)
         working-directory: src-tauri

@@ -552,7 +552,7 @@ jobs:
       - name: Download smoke model fixture
         run: |
           mkdir -p smoke-model
-          curl -fL --retry 3 -o smoke-model/gemma-4-E4B-it.litertlm \
+          curl -fL --retry 3 --retry-all-errors --continue-at - -o smoke-model/gemma-4-E4B-it.litertlm \
             https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
 
       - name: local_llm_smoke (on-device streaming regression)
@@ -819,7 +819,7 @@ jobs:
       - name: Download smoke model fixture
         run: |
           mkdir -p smoke-model
-          curl -fL --retry 3 -o smoke-model/gemma-4-E4B-it.litertlm \
+          curl -fL --retry 3 --retry-all-errors --continue-at - -o smoke-model/gemma-4-E4B-it.litertlm \
             https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
 
       - name: local_llm_smoke (on-device streaming regression)

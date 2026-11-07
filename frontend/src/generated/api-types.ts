@@ -134,7 +134,7 @@ export type DeliverableTranslations = {
 	sourceLanguage: string | null,
 };
 
-/**  A stored agent experience (PLAN-personal-context §2.2). */
+/**  A stored agent experience. */
 export type ExperienceItem = {
 	id: string,
 	agentId: string,
@@ -604,7 +604,7 @@ export type OnboardingStatus = {
 	sources: string[],
 };
 
-/**  One stored profile facet (PLAN-personal-context §2.6). */
+/**  One stored profile facet. */
 export type ProfileFacet = {
 	/**  Namespaced key, e.g. `identity/role`, `goal/2026-h1`. */
 	key: string,

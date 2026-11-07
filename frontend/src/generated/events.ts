@@ -26,7 +26,7 @@ export type LocalChatEvent = { type: "started" } | { type: "token"; text: string
 { type: "thinking"; text: string } | { type: "toolCall"; id?: string | null; tool: string; args: unknown } | { type: "toolResult"; id?: string | null; tool: string; ok: boolean; summary: string } | { type: "finished" } | { type: "error"; message: string };
 
 /**
- *  Events from the `onboarding_run` stream (PLAN-personal-context §2.3):
+ *  Events from the `onboarding_run` stream:
  *  per-source lifecycle, the compression pass, and the terminal variants.
  *  Terminal variants are `onboardingFinished` / `onboardingError`.
  */
