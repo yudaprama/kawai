@@ -8,8 +8,6 @@
  *  two-step run stop.
  *
  *  Deliberately NOT matched here:
- *  - `[data-open-drawer]` — the App's nav-drawer handler keys on it and must
- *    keep running (page handlers keep their own early return for it).
  *  - tooltips — they don't consume Escape, so they never block it. */
 export function overlayOwnsEscape(): boolean {
   return (

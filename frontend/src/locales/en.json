@@ -163,8 +163,6 @@
       },
       "closeProgress": "Close progress panel",
       "progressLabel": "Progress",
-      "openNavigation": "Open navigation",
-      "navigation": "Navigation",
       "openProgress": "Open progress panel",
       "backToComposer": "Back to goal composer"
     },
@@ -274,7 +272,6 @@
     "wallet": "Wallet",
     "topUp": "Top Up",
     "backToWorkbench": "Back to Workbench",
-    "mobileDrawerTitle": "Assets",
     "workbench": "Workbench",
     "assets": "Assets",
     "credentials": "Connections & Keys"

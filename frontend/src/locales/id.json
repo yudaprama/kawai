@@ -163,8 +163,6 @@
       },
       "closeProgress": "Tutup panel progres",
       "progressLabel": "Progres",
-      "openNavigation": "Buka navigasi",
-      "navigation": "Navigasi",
       "openProgress": "Buka panel progres",
       "backToComposer": "Kembali ke komposer tujuan"
     },
@@ -274,7 +272,6 @@
     "wallet": "Dompet",
     "topUp": "Isi Saldo",
     "backToWorkbench": "Kembali ke Workbench",
-    "mobileDrawerTitle": "Aset",
     "workbench": "Workbench",
     "assets": "Aset",
     "credentials": "Koneksi & Kunci"

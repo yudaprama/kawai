@@ -13,7 +13,6 @@ import { type AgentInfo, call, codegraphIsAvailable, tauriOpenFile, errText } fr
 import { logWarn } from "@/lib/logger";
 import { OPEN_PREVIEW_EVENT, type OpenPreviewDetail } from "@/lib/preview-bridge";
 import { platform, runningInTauri } from "@/platform";
-import { AssetNavList } from "@/features/assets/components/asset-nav-list";
 import type { AssetViewId } from "@/features/assets/components/asset-nav";
 import { tauriWalletAdapter } from "@/features/wallet/lib/wallet-adapter";
 import { CodeAssetPage } from "@/features/codegraph/components/code-page";
@@ -30,9 +29,7 @@ import { ModeBar } from "@/app/mode-bar";
 import { type AppMode, isMediaMode } from "@/app/modes";
 import { SessionHistoryDialog } from "@/features/chat/components/session-history-dialog";
 import { ShortcutsDialog } from "@/components/shared/shortcuts-dialog";
-import { Dialog, DialogContent, DialogOverlay, DialogPortal } from "@/components/ui/dialog";
 import { useI18n } from "@/hooks/use-i18n";
-import { cn } from "@/lib/utils";
 
 export default function App() {
   useUpdater();
@@ -58,7 +55,6 @@ export default function App() {
       .then(setCodegraphAvailable)
       .catch(() => {});
   }, []);
-  const [mobileDrawer, setMobileDrawer] = useState<null | "agents">(null);
   // Workbench publishes its selectSession here (App owns the dialog; the
   // workbench keeps its own session state separate from the chat hook).
   const workbenchSelectRef = useRef<((id: number) => void) | null>(null);
@@ -150,7 +146,6 @@ export default function App() {
   useEffect(() => {
     const onOpen = () => {
       setView("topup");
-      setMobileDrawer(null);
     };
     window.addEventListener(OPEN_TOPUP_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_TOPUP_EVENT, onOpen);
@@ -161,7 +156,6 @@ export default function App() {
   const selectMode = (next: AppMode) => {
     setMode(next);
     setView(null);
-    setMobileDrawer(null);
   };
 
   // App-level "New" (rail button + Cmd/Ctrl+N): return to the Text mode, close
@@ -172,7 +166,6 @@ export default function App() {
   const handleNew = () => {
     setMode("text");
     setView(null);
-    setMobileDrawer(null);
     void chat.newChat();
     workbenchNewRef.current?.();
   };
@@ -199,20 +192,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [shortcutsOpen]);
 
-  // Esc closes mobile drawer when idle
-  useEffect(() => {
-    if (mobileDrawer == null || busy) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        // A dialog/menu/popup in front owns Esc; the drawer must stand down.
-        if (overlayOwnsEscape()) return;
-        setMobileDrawer(null);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [mobileDrawer, busy]);
-
   // Esc leaves any non-Text surface — an asset page or a generation lane —
   // back to the Workbench (view-only switch, safe while streaming: the run
   // keeps folding into workbench state in the background). On the Workbench
@@ -234,25 +213,20 @@ export default function App() {
   // ── Android hardware back (MainActivity forwards each press here) ──
   // Mirrors the app's Esc semantics WITHOUT arming the two-step run stop:
   // overlay → close it (synthetic Esc — Radix owns dismissal; every window-level
-  // Esc handler stands down while overlayOwnsEscape() is true), then nav
-  // drawer, then asset page / media lane → Workbench, then the workbench's
-  // mobile progress rail (via its published ref), and only "exit" when nothing
-  // is left — the Kotlin side answers that by moveTaskToBack (recents keep the
-  // state; never finish()).
+  // Esc handler stands down while overlayOwnsEscape() is true), then asset
+  // page / media lane → Workbench, then the workbench's mobile progress rail
+  // (via its published ref), and only "exit" when nothing is left — the Kotlin
+  // side answers that by moveTaskToBack (recents keep the state; never
+  // finish()).
   useEffect(() => {
     (window as unknown as Record<string, unknown>).__kawaiHandleBackPress = (): string => {
       if (overlayOwnsEscape()) {
         document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
         return "consumed";
       }
-      if (mobileDrawer != null) {
-        setMobileDrawer(null);
-        return "consumed";
-      }
       if (view != null || mode !== "text") {
         setMode("text");
         setView(null);
-        setMobileDrawer(null);
         return "consumed";
       }
       if (workbenchRailBackRef.current?.() === true) return "consumed";
@@ -261,21 +235,8 @@ export default function App() {
     return () => {
       delete (window as unknown as Record<string, unknown>).__kawaiHandleBackPress;
     };
-  }, [mobileDrawer, mode, view]);
+  }, [mode, view]);
 
-  const touchStartX = useRef(0);
-  const touchStartY = useRef(0);
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
-  };
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    const dx = e.changedTouches[0].clientX - touchStartX.current;
-    // A mostly-vertical scroll that happens to end leftward must NOT close
-    // the drawer — require the gesture to be predominantly horizontal.
-    const dy = Math.abs(e.changedTouches[0].clientY - touchStartY.current);
-    if (dx < -60 && dy < 40 && mobileDrawer) setMobileDrawer(null);
-  };
   if (agentsError != null) {
     return (
       <div className="bg-background text-foreground flex h-dvh w-full items-center justify-center p-6">
@@ -353,7 +314,6 @@ export default function App() {
     codegraphAvailable,
     onSelectAsset: (id: AssetViewId) => {
       setView(id);
-      setMobileDrawer(null);
     },
   };
 
@@ -367,7 +327,6 @@ export default function App() {
         onSelect={selectMode}
         onSelectAsset={(id) => {
           setView(id);
-          setMobileDrawer(null);
         }}
         userId={chat.userId}
         walletAvailable={walletAvailable}
@@ -384,7 +343,6 @@ export default function App() {
             onAddFiles={ka.addKnowledgeFiles}
             onAddLink={ka.addKnowledgeLink}
             onImageToKnowledge={ka.imageToKnowledge}
-            onOpenNav={() => setMobileDrawer("agents")}
             onOpenSessions={() => setSessionsOpen(true)}
             sessionsOpen={sessionsOpen}
             sessionSelectorRef={workbenchSelectRef}
@@ -394,33 +352,6 @@ export default function App() {
           />
         )}
       </div>
-      {/* Mobile drawer — the nav list under 1024px (the profile dropdown is
-          desktop-side; the drawer gives small screens the same entries).
-          Uses Dialog primitive for proper focus management, focus trapping,
-          and accessibility (ARIA, Escape handling, portal rendering). */}
-      <Dialog open={mobileDrawer !== null} onOpenChange={() => setMobileDrawer(null)}>
-        <DialogPortal>
-          <DialogOverlay className="lg:hidden" />
-          <DialogContent
-            aria-label={t("assetNav.mobileDrawerTitle")}
-            className={cn(
-              // A sheet anchored to the left edge: cancel DialogContent's
-              // centering (top/left 50% + translate -50%/-50%), which
-              // twMerge does not remove on its own and which would otherwise
-              // push the drawer off-screen on phone widths.
-              "fixed inset-y-0 left-0 top-0 translate-x-0 translate-y-0 z-50",
-              "safe-t safe-b w-[210px] max-w-[85vw] p-3 shadow-xl",
-              "data-[state=open]:animate-in data-[state=open]:slide-in-from-left",
-              "data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left",
-              "lg:hidden",
-            )}
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-          >
-            <AssetNavList {...assetChrome} orientation="vertical" />
-          </DialogContent>
-        </DialogPortal>
-      </Dialog>
       <SessionHistoryDialog
         open={sessionsOpen}
         onOpenChange={setSessionsOpen}

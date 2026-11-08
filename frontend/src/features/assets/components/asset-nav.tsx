@@ -15,8 +15,7 @@ export interface AssetNavEntry {
 }
 
 /** The app's asset nav — presentation only, owned by the frontend. All
- *  entries open from the avatar dropdown in the header; the mobile nav
- *  drawer lists them vertically. */
+ *  entries open from the avatar dropdown in the header. */
 export const ASSET_NAV: AssetNavEntry[] = [
   { id: "wiki", labelKey: "assetNav.wiki", subtitle: "knowledge base", icon: "book" },
   { id: "wallet", labelKey: "assetNav.wallet", subtitle: "Monad assets", icon: "wallet" },

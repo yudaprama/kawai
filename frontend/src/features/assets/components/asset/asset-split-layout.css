@@ -87,8 +87,8 @@
 }
 
 /* Matches the app's lg breakpoint (Tailwind lg = 1024px): below it the app
-   chrome is already the mobile variant (nav drawer, mobile rail), so the
-   split stacks too. */
+   chrome is already the mobile variant (mobile rail), so the split stacks
+   too. */
 @media (max-width: 1023px) {
   ._asset-split {
     grid-template-columns: minmax(0, 1fr) !important;

@@ -69,9 +69,6 @@ export interface WorkbenchPageProps {
   /** Import file handler — returns the imported office files (for auto-attach). */
   onAddFiles?: () => Promise<{ id: string; originalName: string; ext: string }[] | undefined> | undefined;
   onAddLink?: () => void;
-  /** App-owned: open the nav drawer (the mobile nav lives outside the
-   *  Workbench — the landing header's hamburger calls it). */
-  onOpenNav?: () => void;
   /** Open the session-history dialog (same modal as Cmd/Ctrl+K). */
   onOpenSessions?: () => void;
   /** App-owned: the session dialog is open — the landing recents list
@@ -105,7 +102,6 @@ export function WorkbenchPage({
   onImageToKnowledge,
   onAddFiles,
   onAddLink,
-  onOpenNav,
   onOpenSessions,
   sessionsOpen = false,
   sessionSelectorRef,
@@ -537,11 +533,10 @@ export function WorkbenchPage({
   // Esc: close the mobile progress drawer, else two-step-stop a running plan
   // (see escStopArmedAt). Mirrors
   // the composer's editable-context rule — the composer opts back in via
-  // data-chat-composer; dialogs and the App nav drawer own their own Esc.
+  // data-chat-composer; dialogs own their own Esc.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (document.querySelector("[data-open-drawer]") != null) return;
       const el = e.target instanceof HTMLElement ? e.target : null;
       // Any topmost overlay (avatar dropdown, popovers, dialogs…) owns the
       // Esc — dismissing it must never arm the run stop.
@@ -799,7 +794,7 @@ export function WorkbenchPage({
           </span>
           <div className="flex items-center gap-1">
             {/* Balance stays visible mid-run on mobile — the submit gate is
-                unreachable from here without opening the nav drawer. */}
+                unreachable from here without leaving the run view. */}
             <TokenBalanceChip onSelectAsset={() => emitOpenTopup()} />
             <button
               type="button"
@@ -838,20 +833,9 @@ export function WorkbenchPage({
       {/* Right: the CANVAS — run switcher + exactly one full document. The
            canvas never moves on its own except the two approved steals. */}
       <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Mobile run-view chrome (the sidebar is a drawer below lg): nav +
+        {/* Mobile run-view chrome (the sidebar is a drawer below lg):
             progress drawer + back-to-landing. */}
         <div className="border-border/60 flex items-center gap-1 border-b px-2 py-1.5 lg:hidden">
-          {onOpenNav && (
-            <button
-              type="button"
-              aria-label={t("workbench.progressRail.openNavigation")}
-              title={t("workbench.progressRail.navigation")}
-              onClick={onOpenNav}
-              className="text-muted-foreground hover:text-foreground hit-44 inline-flex items-center justify-center rounded-lg p-1.5 transition-colors"
-            >
-              <Icon name="menu" className="size-4" />
-            </button>
-          )}
           {/* Icon-only below lg: this row's width belongs to the run switcher —
               one chrome row funds content, not labels. */}
           <button
