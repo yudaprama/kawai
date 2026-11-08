@@ -244,9 +244,14 @@ export function AgentReportsSwitcher({
 export function ScrollToBottomButton({
   containerRef,
   watchKey,
+  lifted = false,
 }: {
   containerRef: RefObject<HTMLDivElement | null>;
   watchKey: string | number;
+  /** The phone composer overlays the canvas bottom (no layout row); lift
+   *  the button above its strip when it is shown, else it hides behind it
+   *  exactly when it matters (streaming growth while the composer is up). */
+  lifted?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: watchKey re-arms this effect when the viewers remount the keyed scroll container — the ref's DOM node is replaced without this component re-rendering, so the ref object alone is not enough.
@@ -269,7 +274,9 @@ export function ScrollToBottomButton({
   return (
     <button
       aria-label="Scroll to latest"
-      className="bg-background border-border/60 text-foreground hover:border-primary/60 shadow-lg hit-44 absolute bottom-4 left-1/2 z-20 flex size-9 -translate-x-1/2 items-center justify-center rounded-full border transition-colors"
+      className={`bg-background border-border/60 text-foreground hover:border-primary/60 shadow-lg hit-44 absolute left-1/2 z-20 flex size-9 -translate-x-1/2 items-center justify-center rounded-full border transition-colors ${
+        lifted ? "bottom-32" : "bottom-4"
+      }`}
       onClick={() => containerRef.current?.scrollTo({ top: containerRef.current.scrollHeight, behavior: "smooth" })}
       title="Scroll to latest"
       type="button"

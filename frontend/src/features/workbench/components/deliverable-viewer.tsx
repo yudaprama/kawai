@@ -574,6 +574,7 @@ export function PastRunCanvas({
   onPickDoc,
   onAsk,
   onScrollShift,
+  composerShown,
 }: {
   loadFullOutput: (stepId: string, planKey?: string) => Promise<string | null>;
   run: WorkbenchRun;
@@ -591,6 +592,9 @@ export function PastRunCanvas({
   onAsk?: (stepId: string, question: string, planKeyOverride?: string) => Promise<string | null>;
   /** Phone composer signal — same contract as the live viewer's. */
   onScrollShift?: (dir: "down" | "up") => void;
+  /** The phone composer currently overlays this canvas's bottom strip —
+   *  the jump-to-latest button must clear it. */
+  composerShown?: boolean;
   discardArmed: boolean;
   setDiscardArmed: (v: boolean) => void;
 }) {
@@ -619,12 +623,12 @@ export function PastRunCanvas({
   return (
     <div className="relative h-full">
       <div
-        className="h-full overflow-y-auto"
+        className="h-full overflow-y-auto overscroll-contain"
         key={run.id}
         onScroll={handleScrollShift(onScrollShift, lastScrollTop)}
         ref={scrollRef}
       >
-        <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 sm:space-y-6 sm:p-6">
+        <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 pb-32 sm:space-y-6 sm:p-6 sm:pb-32 lg:pb-6">
           <div>
             <h3 className="text-foreground inline-flex items-center gap-2 text-lg sm:text-xl font-semibold">
               <Icon name="zap" className="text-primary size-5" />
@@ -760,7 +764,7 @@ export function PastRunCanvas({
           )}
         </div>
       </div>
-      <ScrollToBottomButton containerRef={scrollRef} watchKey={run.id} />
+      <ScrollToBottomButton containerRef={scrollRef} lifted={composerShown} watchKey={run.id} />
     </div>
   );
 }
@@ -928,6 +932,7 @@ export function DeliverableViewer({
   onPickDoc,
   onNewGoal,
   onScrollShift,
+  composerShown,
   discardArmed,
   setDiscardArmed,
 }: {
@@ -950,6 +955,9 @@ export function DeliverableViewer({
   /** Phone composer signal: "down" while the reader scrolls deeper (the page
    *  hides the composer bar), "up" near either edge or scrolling back. */
   onScrollShift?: (dir: "down" | "up") => void;
+  /** The phone composer currently overlays this canvas's bottom strip —
+   *  the jump-to-latest button must clear it. */
+  composerShown?: boolean;
   discardArmed: boolean;
   setDiscardArmed: (v: boolean) => void;
 }) {
@@ -1056,7 +1064,7 @@ export function DeliverableViewer({
   return (
     <div className="relative h-full">
       <div
-        className="h-full overflow-y-auto"
+        className="h-full overflow-y-auto overscroll-contain"
         key={runIndex}
         onScroll={handleScrollShift(onScrollShift, lastScrollTop)}
         ref={scrollRef}
@@ -1064,7 +1072,7 @@ export function DeliverableViewer({
         <div aria-live="polite" className="sr-only" role="status">
           {phaseAnnouncement}
         </div>
-        <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 sm:space-y-6 sm:p-6">
+        <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 pb-32 sm:space-y-6 sm:p-6 sm:pb-32 lg:pb-6">
           <div>
             <h3
               className="text-foreground flex items-start gap-2 text-lg sm:text-xl font-semibold"
@@ -1245,7 +1253,7 @@ export function DeliverableViewer({
           )}
         </div>
       </div>
-      <ScrollToBottomButton containerRef={scrollRef} watchKey={runIndex} />
+      <ScrollToBottomButton containerRef={scrollRef} lifted={composerShown} watchKey={runIndex} />
     </div>
   );
 }

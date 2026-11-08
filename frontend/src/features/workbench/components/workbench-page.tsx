@@ -837,7 +837,7 @@ export function WorkbenchPage({
 
       {/* Right: the CANVAS — run switcher + exactly one full document. The
            canvas never moves on its own except the two approved steals. */}
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Mobile run-view chrome (the sidebar is a drawer below lg): nav +
             progress drawer + back-to-landing. */}
         <div className="border-border/60 flex items-center gap-1 border-b px-2 py-1.5 lg:hidden">
@@ -924,6 +924,7 @@ export function WorkbenchPage({
                       onPickDoc={(doc) => userPick(shown.id, doc)}
                       onAsk={workbench.askAboutResult}
                       onScrollShift={(dir) => setComposerHidden(dir === "down")}
+                      composerShown={!composerHidden}
                       run={shown}
                       sessionId={workbench.sessionId}
                       discardArmed={discardArmed}
@@ -945,6 +946,7 @@ export function WorkbenchPage({
                     }}
                     onNewGoal={goHome}
                     onScrollShift={(dir) => setComposerHidden(dir === "down")}
+                    composerShown={!composerHidden}
                     discardArmed={discardArmed}
                     setDiscardArmed={setDiscardArmed}
                   />
@@ -958,14 +960,23 @@ export function WorkbenchPage({
             Scroll-aware: hides while the reader scrolls DOWN through the
             deliverable (the canvas reclaims the row), returns on scroll-up or
             at either edge — the canvas viewers report the direction.
-            `group/composer` scopes the focus-collapse to THIS placement
-            only — the lg sidebar copy has no such group and keeps its chrome. */}
+            OVERLAY, not a flex row: show/hide must never resize the canvas.
+            A layout row resized the scroller mid-fling the instant its edge
+            clause fired — on Android that read as a content jump + dropped
+            frames exactly when the scroll reached the viewport edge. As an
+            absolute overlay it slides on transform only (no layout), and the
+            canvas content reserves its strip via pb-32 so the last line stays
+            clear. `group/composer` scopes the focus-collapse to THIS
+            placement only — the lg sidebar copy has no such group and keeps
+            its chrome. Visibility (not display) drops the panel from the
+            tab order and the a11y tree while hidden; the discrete-visibility
+            transition flips it in only after the slide-out finishes. */}
         <div
-          className={`group/composer border-border/60 safe-b shrink-0 border-t p-3 lg:hidden ${
-            composerHidden ? "hidden" : ""
+          className={`group/composer pointer-events-none absolute inset-x-0 bottom-0 z-30 transition-[translate,opacity,visibility] duration-200 ease-out lg:hidden ${
+            composerHidden ? "invisible translate-y-full opacity-0" : "translate-y-0 opacity-100"
           }`}
         >
-          {composerPanel}
+          <div className="border-border/60 safe-b bg-background pointer-events-auto border-t p-3">{composerPanel}</div>
         </div>
       </main>
     </div>
