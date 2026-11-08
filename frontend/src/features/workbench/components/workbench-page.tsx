@@ -806,7 +806,7 @@ export function WorkbenchPage({
               aria-label="Close progress panel"
               title={t("common.close")}
               onClick={() => setMobileRail(false)}
-              className="text-muted-foreground hover:text-foreground hit-44 rounded-lg p-1.5 transition-colors"
+              className="text-muted-foreground hover:text-foreground hit-44 inline-flex items-center justify-center rounded-lg p-1.5 transition-colors"
             >
               <Icon name="x" className="size-4" />
             </button>
@@ -847,7 +847,7 @@ export function WorkbenchPage({
               aria-label={t("workbench.progressRail.openNavigation")}
               title={t("workbench.progressRail.navigation")}
               onClick={onOpenNav}
-              className="text-muted-foreground hover:text-foreground hit-44 rounded-lg p-1.5 transition-colors"
+              className="text-muted-foreground hover:text-foreground hit-44 inline-flex items-center justify-center rounded-lg p-1.5 transition-colors"
             >
               <Icon name="menu" className="size-4" />
             </button>
@@ -859,7 +859,7 @@ export function WorkbenchPage({
             aria-label={t("workbench.progressRail.openProgress")}
             title={t("workbench.progressRail.openProgress")}
             onClick={() => setMobileRail(true)}
-            className="text-muted-foreground hover:text-foreground hit-44 rounded-lg p-1.5 transition-colors"
+            className="text-muted-foreground hover:text-foreground hit-44 inline-flex items-center justify-center rounded-lg p-1.5 transition-colors"
           >
             <Icon name="panel-left" className="size-4" />
           </button>
