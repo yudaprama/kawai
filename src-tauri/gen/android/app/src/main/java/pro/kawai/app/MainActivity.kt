@@ -13,6 +13,10 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    // Detached scrape WebViews (KawaiHeadless) need an Activity context. They
+    // are never attached to the view hierarchy, so they cannot replace the app
+    // UI the way a wry-created webview does.
+    KawaiHeadless.attach(this)
     // Hardware back must behave like Esc, never like "exit the app".
     // Tauri's AppPlugin registers an unconditional back callback that
     // finishes the activity; this one is added LATER, so the dispatcher gives
@@ -65,13 +69,23 @@ class MainActivity : TauriActivity() {
 
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
-    mainWebView = webView
-    // Status-bar icon contrast: enableEdgeToEdge() follows the SYSTEM dark
-    // mode, but the app's dark mode is localStorage-driven — without this
-    // bridge a dark app under a light system gets dark icons on dark UI.
-    // JS (use-theme.ts → platform/status-bar.ts) pushes the resolved theme;
-    // absent calls leave the system default.
-    webView.addJavascriptInterface(StatusBarBridge(), "KawaiStatusBar")
+    // Called for EVERY webview wry creates, not just the app's own. Keeping the
+    // first one means the back handler and the viewport resync below can never
+    // be pointed at a different webview.
+    if (mainWebView == null) {
+      mainWebView = webView
+      // Status-bar icon contrast: enableEdgeToEdge() follows the SYSTEM dark
+      // mode, but the app's dark mode is localStorage-driven — without this
+      // bridge a dark app under a light system gets dark icons on dark UI.
+      // JS (use-theme.ts → platform/status-bar.ts) pushes the resolved theme;
+      // absent calls leave the system default.
+      webView.addJavascriptInterface(StatusBarBridge(), "KawaiStatusBar")
+    }
+  }
+
+  override fun onDestroy() {
+    KawaiHeadless.shutdown()
+    super.onDestroy()
   }
 
   private inner class StatusBarBridge {

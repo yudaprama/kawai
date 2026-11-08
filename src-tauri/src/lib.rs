@@ -145,9 +145,9 @@ pub fn run() {
                 webview_engine::TauriWebViewFetch::new(app.handle().clone()),
             );
             webread::set_webview_engine(Some(engine.clone()));
-            // StockTwits sits behind Cloudflare bot management — plain HTTP
-            // gets a JS challenge. Route its fetches through the same hidden
-            // webview (real browser fingerprint), direct reqwest as fallback.
+            // StockTwits: direct reqwest first (HTTP/2 fingerprint, then
+            // HTTP/1.1 — one of the two usually passes Cloudflare), and the
+            // webview render as the last resort (real browser fingerprint).
             finance::stocktwits::set_fetcher(std::sync::Arc::new(move |url| {
                 let engine = engine.clone();
                 Box::pin(async move {

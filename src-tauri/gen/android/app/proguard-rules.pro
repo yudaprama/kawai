@@ -26,3 +26,9 @@
 # "error sending request" (auth login, JWKS, remote LLM, Loki push).
 # Debug builds don't minify, which is why only release was broken.
 -keep class org.rustls.platformverifier.** { *; }
+# KawaiHeadless (detached scrape WebView): driven from Rust over JNI by class
+# and method name (find_class("pro/kawai/app/KawaiHeadless") → start/poll), so
+# R8 cannot see the references and strips the class from release builds —
+# every scrape would then fall back to Cloudflare. Debug builds don't minify,
+# which is why only release breaks.
+-keep class pro.kawai.app.KawaiHeadless { *; }
