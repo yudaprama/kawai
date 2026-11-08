@@ -6593,13 +6593,18 @@ dependencies = [
 name = "kawai-tool-catalog"
 version = "0.1.0"
 dependencies = [
+ "hyper 0.14.32",
+ "hyper-rustls 0.25.0",
  "kawai-constants",
  "kawai-db",
  "kawai-paths",
  "libsql",
+ "rustls 0.22.4",
+ "rustls-native-certs 0.7.3",
  "serde",
  "serde_json",
  "tokio",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
