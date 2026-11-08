@@ -231,7 +231,10 @@ jobs:
 
       - name: Install bazelisk
         run: |
-          sudo wget -qO /usr/local/bin/bazelisk \
+          # GitHub-hosted runners intermittently time out on github release
+          # downloads (v0.3.80 lost two runs: a Maven 504 and this step's
+          # bare wget exiting 4 after 2.5 min of silence).
+          sudo wget -q --tries=10 --timeout=30 --waitretry=5 -O /usr/local/bin/bazelisk \
             https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
           sudo chmod +x /usr/local/bin/bazelisk
           bazelisk version
@@ -313,6 +316,16 @@ jobs:
           cat > "$RUNNER_TEMP/tauri-android-version.json" <<EOF
           {"bundle": {"android": {"versionCode": $(( 10000 + ${{ github.run_number }} ))}}}
           EOF
+
+      # Dependency downloads (gradle + kotlin toolchain jars) are the other
+      # v0.3.80 failure class — a Maven 504 killed the AAB build. One green
+      # run fills this cache; later runs resolve locally and never re-fetch.
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/caches
+          key: gradle-android-${{ runner.os }}-v1
+          restore-keys: gradle-android-${{ runner.os }}-
 
       - name: Build signed AAB
         env:

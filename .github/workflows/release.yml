@@ -484,8 +484,10 @@ jobs:
       - name: Download linuxdeploy
         run: |
           mkdir -p ~/.cache/tauri
+          # --tries: the runner↔github-release CDN path 504s/times out in
+          # waves (all four v0.3.80 failures were downloads, zero code).
           [ -f ~/.cache/tauri/linuxdeploy-x86_64.AppImage ] || \
-            wget -qO ~/.cache/tauri/linuxdeploy-x86_64.AppImage \
+            wget -q --tries=10 --timeout=30 --waitretry=5 -O ~/.cache/tauri/linuxdeploy-x86_64.AppImage \
               https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           chmod +x ~/.cache/tauri/linuxdeploy-x86_64.AppImage
           mkdir -p ~/.local/bin
@@ -519,6 +521,31 @@ jobs:
         with:
           path: cognee-litert-lm/native
           key: litert-lib-linux24-x86_64-${{ steps.litert-lib-key.outputs.sha }}
+
+      # ocr-rs's build.rs otherwise auto-downloads the MNN prebuilt on every
+      # build (bare reqwest, no retry — the v0.3.80 build-linux failure).
+      # Setting MNN_LIB_DIR/MNN_INCLUDE_DIR makes it skip the download, the
+      # same recipe the Windows job uses.
+      - name: Restore MNN prebuilt cache
+        id: mnn-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/mnn
+          key: mnn-dev-linux-x86_64
+
+      - name: Download MNN prebuilt (dynamic) for ocr-rs mnn-dynamic
+        if: steps.mnn-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/mnn
+          curl --retry 10 --retry-all-errors --retry-delay 3 -fSL \
+            -o ~/mnn/mnn-dev-linux-x86_64.tar.gz \
+            https://github.com/zibo-chen/MNN-Prebuilds/releases/download/dev/mnn-dev-linux-x86_64.tar.gz
+          tar -xzf ~/mnn/mnn-dev-linux-x86_64.tar.gz -C ~/mnn
+
+      - name: Stage MNN env for ocr-rs
+        run: |
+          echo "MNN_LIB_DIR=$HOME/mnn/mnn-dev-linux-x86_64/lib" >> "$GITHUB_ENV"
+          echo "MNN_INCLUDE_DIR=$HOME/mnn/mnn-dev-linux-x86_64/include" >> "$GITHUB_ENV"
 
       - name: Build .deb/.AppImage (with litert + office)
         uses: tauri-apps/tauri-action@v0
@@ -700,7 +727,9 @@ jobs:
           $root = "C:\_mnn"
           New-Item -ItemType Directory -Path $root -Force | Out-Null
           $zip = "$root\mnn-dev-windows-x86_64.zip"
-          Invoke-WebRequest -Uri "https://github.com/zibo-chen/MNN-Prebuilds/releases/download/dev/mnn-dev-windows-x86_64.zip" -OutFile $zip
+          # -MaximumRetryCount: same flaky-CDN story as every other download
+          # in these workflows; first cache fill is the only exposure.
+          Invoke-WebRequest -Uri "https://github.com/zibo-chen/MNN-Prebuilds/releases/download/dev/mnn-dev-windows-x86_64.zip" -OutFile $zip -MaximumRetryCount 10 -RetryIntervalSec 5
           Expand-Archive -Force -Path $zip -DestinationPath $root
 
       - name: Stage MNN env + MNN.dll
@@ -711,6 +740,17 @@ jobs:
           $native = Join-Path $env:GITHUB_WORKSPACE "cognee-litert-lm\native"
           New-Item -ItemType Directory -Path $native -Force | Out-Null
           Copy-Item "C:\_mnn\mnn-dev-windows-x86_64\lib\MNN.dll" $native -Force
+
+      # The tauri bundler downloads WiX (msi) and NSIS (updater setup.exe)
+      # into this cache dir on first use — both are github release downloads
+      # that 504 in waves (v0.3.80 build-windows died on wix314-binaries.zip
+      # AFTER a 46-minute green Rust compile). One green fill, then the
+      # bundler short-circuits its download on subsequent runs.
+      - name: Cache tauri bundler tools (WiX + NSIS)
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\tauri
+          key: tauri-bundler-windows-v1
 
       - name: Build .msi/.exe (with litert + office)
         uses: tauri-apps/tauri-action@v0
