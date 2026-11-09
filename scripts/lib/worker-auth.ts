@@ -23,7 +23,7 @@ import { join } from "node:path";
  *  guard admin worker menolak identity lain dengan 403. */
 export const ADMIN_EMAIL = "yudaprama@icloud.com";
 
-export const WORKER_DEFAULT = "https://kawai-worker.akuntestinguntukseto.workers.dev";
+export const WORKER_DEFAULT = "https://api.kawai.pro";
 export const APP_DATA_ID = "pro.kawai.app";
 
 /** Sanitize email → nama folder app-data (identik `sanitize_userdir` Rust). */

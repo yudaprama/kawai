@@ -5,7 +5,7 @@
 terisi (2026-09-25) sehingga preview/claim aktif — klaim menghasilkan QR
 **dinamis** (tag 54 = nominal unik, langsung ter-prefill di dompet pembayar).
 Rute berbayar menunggu konfirmasi rate, deploy worker, dan e2e.
-**Worker:** `https://kawai-worker.akuntestinguntukseto.workers.dev` (source:
+**Worker:** `https://api.kawai.pro` (source:
 `kawai-server/worker/`, TypeScript + Hono di Cloudflare Workers, binding D1
 `DB` = database `kawai-auth` — satu database untuk identitas **dan** uang).
 

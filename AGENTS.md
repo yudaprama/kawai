@@ -539,7 +539,7 @@ user → auth session (worker bearer) → Rust backend → user_id
 
 Project-root `.env` (gitignored) — backend reads these via `auth::load_dotenv()` at startup:
 ```
-KAWAI_WORKER_URL=...           # optional: auth/topup/dyntoken worker override (default: the production workers.dev deployment)
+KAWAI_WORKER_URL=...           # optional: auth/topup/dyntoken worker override (default: https://api.kawai.pro)
 # Data root: NOT env-configurable. Injected by the Tauri shell (app-data dir,
 # ~/Library/Application Support/pro.kawai.app on macOS); headless binaries fall
 # back to <temp>/kawai.

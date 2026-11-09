@@ -27,7 +27,7 @@ use sha2::{Digest, Sha256};
 /// this module are unchanged.
 pub fn worker_base_url() -> String {
     std::env::var("KAWAI_WORKER_URL")
-        .unwrap_or_else(|_| "https://kawai-worker.akuntestinguntukseto.workers.dev".into())
+        .unwrap_or_else(|_| "https://api.kawai.pro".into())
         .trim_end_matches('/')
         .to_string()
 }

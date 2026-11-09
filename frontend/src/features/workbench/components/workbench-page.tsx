@@ -237,10 +237,13 @@ export function WorkbenchPage({
   );
 
   /** Rail "see report" — a user pick. The steps shown in the rail belong to
-   *  the active run once seeded, otherwise (planning) to the previous run. */
+   *  the active run once seeded, otherwise (planning) to the previous run.
+   *  The report renders on the canvas behind the drawer (below lg), so close
+   *  it — desktop layout ignores `mobileRail`, so unconditionally is safe. */
   const openReport = (id: string) => {
     const owner = seededForActiveRun ? activeRunId : (workbench.runs.at(-2)?.id ?? activeRunId);
     if (owner != null) userPick(owner, id);
+    setMobileRail(false);
   };
   // Chip click → draft dropped into the input for editing (not auto-submit).
   const [chipDraft, setChipDraft] = useState<{ text: string; nonce: number } | null>(null);
@@ -810,8 +813,16 @@ export function WorkbenchPage({
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <RunHistoryRail
             onBuildOn={buildOn}
-            onOpenDeliverable={(runId) => userPick(runId, "final")}
-            onOpenStep={(runId, stepId) => userPick(runId, stepId)}
+            // Canvas picks from inside the drawer (below lg): reveal the
+            // canvas by closing the drawer — same rule as "see report".
+            onOpenDeliverable={(runId) => {
+              setMobileRail(false);
+              userPick(runId, "final");
+            }}
+            onOpenStep={(runId, stepId) => {
+              setMobileRail(false);
+              userPick(runId, stepId);
+            }}
             runs={workbench.runs}
           />
           <ProgressRail
@@ -819,6 +830,7 @@ export function WorkbenchPage({
             workbench={workbench}
             onNewGoal={goHome}
             onReopenSession={(id) => {
+              setMobileRail(false);
               setHome(false);
               workbench.selectSession(id);
             }}
