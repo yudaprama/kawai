@@ -591,7 +591,6 @@ async fn skill_delete_handler(
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
-/// Public RPC: client-side email verification (same op as the Tauri command).
 // ── Local email+password auth (public; same ops as the Tauri commands) ──────
 
 #[derive(Deserialize)]
@@ -693,10 +692,10 @@ async fn resolve_cookie_email(token: &str) -> Option<String> {
 async fn auth_send_code_handler(
     Json(req): Json<AuthEmailRequest>,
 ) -> Result<Response, (StatusCode, String)> {
-    logic::local_auth::auth_send_code(&req.email)
+    logic::email::send_sign_up_code(&req.email)
         .await
         .map(|_| StatusCode::NO_CONTENT.into_response())
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
 }
 
 #[derive(Deserialize)]
@@ -708,26 +707,17 @@ struct AuthCodeRequest {
 async fn auth_verify_code_handler(
     Json(req): Json<AuthCodeRequest>,
 ) -> Result<Response, (StatusCode, String)> {
-    logic::local_auth::auth_verify_code(&req.email, &req.code)
-        .await
-        .map(|_| StatusCode::NO_CONTENT.into_response())
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e))
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AuthSignUpRequest {
-    email: String,
-    password: String,
-    /// Email-ownership proof issued by `/auth/send_code`; the worker
-    /// consumes it — no account without it.
-    code: String,
+    if logic::email::verify_sign_up_code(&req.email, &req.code) {
+        Ok(StatusCode::NO_CONTENT.into_response())
+    } else {
+        Err((StatusCode::UNAUTHORIZED, "verification code is invalid or expired".into()))
+    }
 }
 
 async fn auth_sign_up_handler(
-    Json(req): Json<AuthSignUpRequest>,
+    Json(req): Json<AuthCredentialsRequest>,
 ) -> Result<Response, (StatusCode, String)> {
-    let user = logic::local_auth::auth_sign_up(&req.email, &req.password, &req.code)
+    let user = logic::local_auth::auth_sign_up(&req.email, &req.password)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     let token = logic::local_auth::stored_token(&user.email)

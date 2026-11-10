@@ -596,6 +596,7 @@ pub mod risk_guard;
 // TTS via supertonic (neural MNN TTS, multilingual). Feature-gated internally;
 // always compiled so the command stays registered in generate_handler!.
 pub mod tts;
+pub mod email;
 // Local email+password auth (user directory, vault-encoded passwords).
 pub mod local_auth;
 pub mod dyntoken;

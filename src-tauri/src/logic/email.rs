@@ -98,3 +98,56 @@ pub fn verify_sign_up_code(to: &str, code: &str) -> bool {
         _ => false,
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A code is always six ASCII digits (the UI and the sign-up form assume it).
+    #[test]
+    fn generated_code_is_six_digits() {
+        for _ in 0..256 {
+            let code = generate_verification_code();
+            assert_eq!(code.len(), 6, "{code}");
+            assert!(code.chars().all(|c| c.is_ascii_digit()), "{code}");
+        }
+    }
+
+    /// The happy path: the pending code matches (email lowercased, both sides
+    /// trimmed) and is consumed — the same code never verifies twice.
+    #[test]
+    fn pending_code_verifies_once() {
+        let email = "seed-once@example.com";
+        codes()
+            .lock()
+            .unwrap()
+            .insert(email.into(), ("123456".into(), Instant::now()));
+
+        assert!(verify_sign_up_code(" Seed-Once@Example.com ", " 123456 "));
+        assert!(!verify_sign_up_code(email, "123456"), "code is single use");
+    }
+
+    /// Expired codes, wrong codes and unknown emails are rejected — and a wrong
+    /// code must not consume the pending one.
+    #[test]
+    fn expired_wrong_and_unknown_codes_are_rejected() {
+        let stale = "stale@example.com";
+        let old = Instant::now() - (CODE_TTL + Duration::from_secs(1));
+        codes()
+            .lock()
+            .unwrap()
+            .insert(stale.into(), ("654321".into(), old));
+        assert!(!verify_sign_up_code(stale, "654321"));
+
+        let live = "live@example.com";
+        codes()
+            .lock()
+            .unwrap()
+            .insert(live.into(), ("111111".into(), Instant::now()));
+        assert!(!verify_sign_up_code(live, "222222"));
+        assert!(verify_sign_up_code(live, "111111"), "a miss must not consume");
+
+        assert!(!verify_sign_up_code("nobody@example.com", "000000"));
+    }
+}

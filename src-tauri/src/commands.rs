@@ -245,33 +245,34 @@ pub fn frontend_log(level: String, message: String) {
     crate::logging::write(&level, &message);
 }
 
-/// Public RPC: register a new local account. The `code` is the verification
-/// code the worker emailed to this address — the worker refuses any
-/// registration without it, so no account is ever created for an unproven
-/// email. On success the session is established immediately — in-memory
-/// only, so a signed-in user must sign in again after a restart.
+/// Public RPC: register a new local account. Fails when the email is already
+/// in the user directory (or its per-user data dir exists). Sends a welcome
+/// email (best-effort). On success the session is established immediately —
+/// in-memory only, so a signed-in user must sign in again after a restart.
 #[tauri::command]
 pub async fn auth_sign_up(
     email: String,
     password: String,
-    code: String,
     session: State<'_, Session>,
 ) -> Result<UserInfo, String> {
-    let user = logic::local_auth::auth_sign_up(&email, &password, &code).await?;
+    let user = logic::local_auth::auth_sign_up(&email, &password).await?;
     establish_local_session(&user.email, session)
 }
 
-/// Public RPC: email the server-issued 6-digit sign-up code to `email`.
+/// Public RPC: email a 6-digit sign-up verification code to `email`.
 #[tauri::command]
 pub async fn auth_send_code(email: String) -> Result<(), String> {
-    logic::local_auth::auth_send_code(&email).await
+    logic::email::send_sign_up_code(&email).await.map_err(|e| e.to_string())
 }
 
-/// Public RPC: pre-submit check of the sign-up code (non-consuming; the
-/// worker re-checks and consumes it at sign-up).
+/// Public RPC: check the sign-up code the user received by email.
 #[tauri::command]
-pub async fn auth_verify_code(email: String, code: String) -> Result<(), String> {
-    logic::local_auth::auth_verify_code(&email, &code).await
+pub fn auth_verify_code(email: String, code: String) -> Result<(), String> {
+    if logic::email::verify_sign_up_code(&email, &code) {
+        Ok(())
+    } else {
+        Err("verification code is invalid or expired".into())
+    }
 }
 
 /// Public RPC: sign in with email+password (local user directory) and

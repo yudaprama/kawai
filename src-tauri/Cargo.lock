@@ -6193,6 +6193,7 @@ dependencies = [
  "kawai-db",
  "kawai-desk",
  "kawai-dyntoken",
+ "kawai-email",
  "kawai-embedding",
  "kawai-events",
  "kawai-knowledge",
@@ -6400,6 +6401,18 @@ dependencies = [
 [[package]]
 name = "kawai-dyntoken"
 version = "0.1.0"
+
+[[package]]
+name = "kawai-email"
+version = "0.1.0"
+dependencies = [
+ "kawai-constants",
+ "lettre",
+ "log",
+ "serde",
+ "thiserror 2.0.20",
+ "tokio",
+]
 
 [[package]]
 name = "kawai-embedding"
@@ -6809,6 +6822,7 @@ dependencies = [
  "fastrand 2.5.0",
  "futures-io",
  "futures-util",
+ "hostname",
  "httpdate",
  "idna",
  "mime",

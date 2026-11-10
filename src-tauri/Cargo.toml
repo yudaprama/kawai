@@ -139,9 +139,7 @@ webread = { path = "../crates/toolsets/webread" }
 kawai-cli = { path = "../crates/toolsets/cli" }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"], optional = true }
 apify = { path = "../crates/integrations/apify" }
-# Mail delivery moved to the auth worker (Brevo HTTP API, worker-side
-# secret) — the on-device SMTP relay crate (kawai-email) shipped sending
-# credentials in the binary and is no longer a dependency.
+kawai-email = { path = "../crates/integrations/email" }
 kawai-vault = { path = "../kawai-vault/kawai-vault" }
 kawai-telemetry = { path = "../crates/foundation/telemetry" }
 hex = "0.4"

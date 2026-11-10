@@ -34,20 +34,17 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       if (mode === "signin") {
         await call("auth_sign_in", { email, password });
       } else if (!codeSent) {
-        // Step 1: email a server-issued 6-digit code, then ask for it. The
-        // worker answers 409 when the account already exists, which lands in
-        // the error path below — no separate existence pre-check needed.
+        // Step 1: email a 6-digit code (generated and mailed by the app),
+        // then ask for it.
         await call("auth_send_code", { email });
         setCodeSent(true);
         setLoading(false);
         return;
       } else {
-        // Step 2: verify the code, then create the account. The code rides
-        // sign_up — the worker consumes it there (the verify call above is a
-        // non-consuming pre-check, so a failed sign-up keeps the code valid).
+        // Step 2: check the code locally, then create the account.
         await call("auth_verify_code", { email, code });
         try {
-          await call("auth_sign_up", { email, password, code });
+          await call("auth_sign_up", { email, password });
         } catch (signUpErr) {
           // Keep code valid, offer "Sign in instead"
 

@@ -20,6 +20,7 @@
 
 use kawai_auth::UserRecord;
 
+use crate::logic::email;
 use sha2::{Digest, Sha256};
 
 /// Base URL worker (env `KAWAI_WORKER_URL`, fallback ke deployment resmi).
@@ -393,20 +394,9 @@ async fn post_auth_and_persist(
     })
 }
 
-/// Register a new account on the centralized directory.
-///
-/// `code` is the verification code the user received — generated, emailed and
-/// checked entirely by the worker (`/auth/send_code` → `/auth/sign_up`). The
-/// welcome email is the worker's job too; this device never touches the mail
-/// relay. Empty/whitespace `code` fails fast locally (the worker would 400).
-pub async fn auth_sign_up(
-    email_addr: &str,
-    password: &str,
-    code: &str,
-) -> std::result::Result<UserRecord, String> {
-    if code.trim().is_empty() {
-        return Err("verification code is required".into());
-    }
+/// Register a new account on the centralized directory: fail when the email
+/// already exists, then send a welcome email (best-effort).
+pub async fn auth_sign_up(email_addr: &str, password: &str) -> std::result::Result<UserRecord, String> {
     // Validasi lokal dulu supaya errornya sama dengan dulu (sebelum network).
     if !email_addr.contains('@') {
         return Err("invalid email address".into());
@@ -420,46 +410,16 @@ pub async fn auth_sign_up(
 
     let user = post_auth_and_persist(
         "/auth/sign_up",
-        serde_json::json!({
-            "email": email,
-            "salt": salt,
-            "credential": credential,
-            // Email-ownership proof issued by `/auth/send_code`; the worker
-            // consumes it. Without it the worker refuses the registration.
-            "code": code.trim(),
-        }),
+        serde_json::json!({ "email": email, "salt": salt, "credential": credential }),
         &email,
     )
     .await?;
+
+    // Fire-and-forget welcome email — never blocks or fails signup.
+    if let Err(e) = email::send_welcome_email(&email).await {
+        tracing::warn!(component = "auth", "welcome email to {} failed: {e}", email);
+    }
     Ok(user)
-}
-
-/// Email the sign-up verification code (`POST /auth/send_code`). The worker
-/// generates, stores (hashed), and mails the code — this device never sees
-/// its value, so it cannot bypass or replay the flow.
-pub async fn auth_send_code(email_addr: &str) -> std::result::Result<(), String> {
-    let email = email_addr.trim().to_lowercase();
-    if !email.contains('@') {
-        return Err("invalid email address".into());
-    }
-    let (status, json) = post_json("/auth/send_code", serde_json::json!({ "email": email })).await?;
-    if status != 200 {
-        return Err(error_text(status, &json));
-    }
-    Ok(())
-}
-
-/// Pre-submit check of the code the user typed (`POST /auth/verify_code`).
-/// Deliberately non-consuming — `/auth/sign_up` re-checks and consumes the
-/// code server-side, so a UI crash between the two steps cannot burn it.
-pub async fn auth_verify_code(email_addr: &str, code: &str) -> std::result::Result<(), String> {
-    let email = email_addr.trim().to_lowercase();
-    let body = serde_json::json!({ "email": email, "code": code.trim() });
-    let (status, json) = post_json("/auth/verify_code", body).await?;
-    if status != 200 {
-        return Err(error_text(status, &json));
-    }
-    Ok(())
 }
 
 /// Verify email+password against the centralized directory.
