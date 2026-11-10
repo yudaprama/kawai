@@ -258,6 +258,25 @@ export function WorkbenchPage({
   // Mobile progress drawer (below lg the sidebar IS a drawer — opened from
   // the run view's top bar, auto-opened when the plan needs the user).
   const [mobileRail, setMobileRail] = useState(false);
+  /** Live height of the phone composer overlay (below lg only). The canvas
+   *  reserves exactly this much bottom padding (`--composer-h`), because the
+   *  composer is an OVERLAY — it must never resize the scroller — and its
+   *  height is not a constant: the session row + quick chips + input + safe
+   *  area stack to ~2-3 rows, and the chrome collapses on focus. A fixed
+   *  reserve (the old `pb-32`, 128px) left the tail of a long report hidden
+   *  behind the panel at max scroll. Measured via ResizeObserver, so chip
+   *  wrapping, the focus collapse and rotation all track. */
+  const [composerH, setComposerH] = useState(0);
+  const composerOverlayRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = composerOverlayRef.current;
+    if (el == null) return;
+    const update = () => setComposerH(el.offsetHeight);
+    update();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, []);
 
   /** Wrap the App-level import handler: when the import returns the office
    *  files, auto-attach them as workbench chips (optimistic status = indexing
@@ -843,8 +862,13 @@ export function WorkbenchPage({
       </aside>
 
       {/* Right: the CANVAS — run switcher + exactly one full document. The
-           canvas never moves on its own except the two approved steals. */}
-      <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+           canvas never moves on its own except the two approved steals.
+           `--composer-h` is the phone composer's measured height: the canvas
+           viewers reserve it as bottom padding (the panel overlays them). */}
+      <main
+        className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
+        style={{ "--composer-h": `${composerH}px` } as React.CSSProperties}
+      >
         {/* Mobile run-view chrome (the sidebar is a drawer below lg):
             progress drawer + back-to-landing. */}
         <div className="border-border/60 flex items-center gap-1 border-b px-2 py-1.5 lg:hidden">
@@ -961,8 +985,8 @@ export function WorkbenchPage({
             clause fired — on Android that read as a content jump + dropped
             frames exactly when the scroll reached the viewport edge. As an
             absolute overlay it slides on transform only (no layout), and the
-            canvas content reserves its strip via pb-32 so the last line stays
-            clear. `group/composer` scopes the focus-collapse to THIS
+            canvas content reserves its MEASURED strip via `--composer-h` so
+            the last line stays clear. `group/composer` scopes the focus-collapse to THIS
             placement only — the lg sidebar copy has no such group and keeps
             its chrome. Visibility (not display) drops the panel from the
             tab order and the a11y tree while hidden; the discrete-visibility
@@ -971,6 +995,7 @@ export function WorkbenchPage({
           className={`group/composer pointer-events-none absolute inset-x-0 bottom-0 z-30 transition-[translate,opacity,visibility] duration-200 ease-out lg:hidden ${
             composerHidden ? "invisible translate-y-full opacity-0" : "translate-y-0 opacity-100"
           }`}
+          ref={composerOverlayRef}
         >
           <div className="border-border/60 safe-b bg-background pointer-events-auto border-t p-3">{composerPanel}</div>
         </div>

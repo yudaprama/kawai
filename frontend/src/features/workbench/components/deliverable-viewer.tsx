@@ -628,7 +628,7 @@ export function PastRunCanvas({
         onScroll={handleScrollShift(onScrollShift, lastScrollTop)}
         ref={scrollRef}
       >
-        <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 pb-32 sm:space-y-6 sm:p-6 sm:pb-32 lg:pb-6">
+        <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 pb-[calc(1.5rem_+_var(--composer-h,8rem))] sm:space-y-6 sm:p-6 sm:pb-[calc(1.5rem_+_var(--composer-h,8rem))] lg:pb-6">
           <div>
             <h3 className="text-foreground inline-flex items-center gap-2 text-lg sm:text-xl font-semibold">
               <Icon name="zap" className="text-primary size-5" />
@@ -1072,7 +1072,7 @@ export function DeliverableViewer({
         <div aria-live="polite" className="sr-only" role="status">
           {phaseAnnouncement}
         </div>
-        <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 pb-32 sm:space-y-6 sm:p-6 sm:pb-32 lg:pb-6">
+        <div className="mx-auto max-w-4xl space-y-4 px-4 py-6 pb-[calc(1.5rem_+_var(--composer-h,8rem))] sm:space-y-6 sm:p-6 sm:pb-[calc(1.5rem_+_var(--composer-h,8rem))] lg:pb-6">
           <div>
             <h3
               className="text-foreground flex items-start gap-2 text-lg sm:text-xl font-semibold"

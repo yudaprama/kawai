@@ -271,11 +271,15 @@ export function ScrollToBottomButton({
     };
   }, [containerRef, watchKey]);
   if (!visible) return null;
+  // The phone composer OVERLAYS the canvas bottom (no layout row), so `lifted`
+  // clears its MEASURED height (`--composer-h`) instead of a fixed bottom-32 —
+  // that reserve sat behind a 2-3 row composer exactly when it mattered
+  // (streaming growth while the composer is up).
   return (
     <button
       aria-label="Scroll to latest"
       className={`bg-background border-border/60 text-foreground hover:border-primary/60 shadow-lg hit-44 absolute left-1/2 z-20 flex size-9 -translate-x-1/2 items-center justify-center rounded-full border transition-colors ${
-        lifted ? "bottom-32" : "bottom-4"
+        lifted ? "bottom-[calc(1rem_+_var(--composer-h,8rem))]" : "bottom-4"
       }`}
       onClick={() => containerRef.current?.scrollTo({ top: containerRef.current.scrollHeight, behavior: "smooth" })}
       title="Scroll to latest"
