@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { Icon } from "@/components/shared/icon";
 import { LogoMark } from "@/components/shared/logo";
 import { Button } from "@/components/ui/button";
@@ -103,6 +104,12 @@ export function ProfileControls({
   onLogout: () => void;
 }) {
   const [palettesOpen, setPalettesOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+  useEffect(() => {
+    getVersion()
+      .then(setAppVersion)
+      .catch(() => setAppVersion(null));
+  }, []);
   // Same shared store the inline chip reads — one subscription warms the
   // balance for the goal-submit gate too.
   const { tokens, pending } = useTokenBalance();
@@ -174,6 +181,7 @@ export function ProfileControls({
           <DropdownMenuSeparator />
           <LanguageItems />
           <DropdownMenuSeparator />
+          {appVersion && <div className="text-muted-foreground px-2 py-1.5 font-mono text-xs">kawai v{appVersion}</div>}
           <DropdownMenuItem className="gap-2 cursor-pointer" onClick={onLogout}>
             <Icon name="log-out" className="text-muted-foreground size-4" />
             {t("profileDropdown.signOut")}
