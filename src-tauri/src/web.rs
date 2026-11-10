@@ -2458,12 +2458,6 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/get_token_balance", post(get_token_balance_handler))
         .route("/api/get_token_info", post(get_token_info_handler))
         .route("/api/estimate_gas", post(estimate_gas_handler))
-        // Device-scoped Monad hot wallet — PUBLIC ops: the wallet exists
-        // before any session (it creates the identity via SIWE login).
-        .route("/api/monad_wallet_address", post(monad_wallet_address_handler))
-        .route("/api/monad_wallet_create", post(monad_wallet_create_handler))
-        .route("/api/monad_wallet_sign_message", post(monad_wallet_sign_message_handler))
-        .route("/api/monad_wallet_delete", post(monad_wallet_delete_handler))
         .route("/api/auth_sign_up", post(auth_sign_up_handler))
         .route("/api/auth_sign_in", post(auth_sign_in_handler))
         .route("/api/auth_send_code", post(auth_send_code_handler))
@@ -2471,6 +2465,17 @@ pub fn router(dist_dir: PathBuf) -> Router {
 
     let protected = Router::new()
         .route("/api/whoami", post(whoami_handler))
+        // Monad hot wallet — AUTH REQUIRED on web. The key lives in the
+        // SERVER process keychain there (one wallet per instance, not per
+        // user), so signing and deleting it must never be reachable
+        // unauthenticated: `sign_message` would sign arbitrary payloads with
+        // it and `delete` drops it irrecoverably. Desktop/mobile reach the
+        // same logic through Tauri commands, which carry the app's own
+        // identity boundary.
+        .route("/api/monad_wallet_address", post(monad_wallet_address_handler))
+        .route("/api/monad_wallet_create", post(monad_wallet_create_handler))
+        .route("/api/monad_wallet_sign_message", post(monad_wallet_sign_message_handler))
+        .route("/api/monad_wallet_delete", post(monad_wallet_delete_handler))
         // User fund-moving ops (signed by the user's own device key) — auth
         // required on web per the fund-moving boundary.
         .route("/api/transfer_native", post(transfer_native_handler))
@@ -2820,7 +2825,7 @@ struct PlanTaskRequest {
     goal: String,
     session_id: i64,
     agent_id: Option<String>,
-    /// Raw device locale tag — template-path output language only.
+    /// Raw locale tag — template-path output language only.
     #[serde(default)]
     language: Option<String>,
 }
@@ -2884,7 +2889,7 @@ struct ExecuteSupervisorPlanRequest {
     /// The user's verbatim goal — synthesis answers THIS, not the planner's
     /// rewritten `plan.goal`.
     user_goal: Option<String>,
-    /// Raw device locale tag — the deliverable's output language. Absent for
+    /// Raw locale tag — the deliverable's output language. Absent for
     /// older clients; the `Accept-Language` header is the web fallback.
     #[serde(default)]
     language: Option<String>,
@@ -3049,7 +3054,7 @@ struct RunStockResearchRequest {
     analysts: Option<Vec<String>>,
     /// Asset class chosen by the user: "stock" (default) | "crypto".
     domain: Option<String>,
-    /// Raw device locale tag (e.g. "id-ID"); falls back to Accept-Language.
+    /// Raw locale tag (the app's active language, e.g. "id"); falls back to Accept-Language.
     language: Option<String>,
     stream_id: String,
 }
@@ -3112,7 +3117,7 @@ async fn run_stock_research_handler(
 struct RunYoutubeAnalysisRequest {
     session_id: i64,
     url: String,
-    /// Raw device locale tag (e.g. "id-ID"); falls back to Accept-Language.
+    /// Raw locale tag (the app's active language, e.g. "id"); falls back to Accept-Language.
     language: Option<String>,
     stream_id: String,
 }
@@ -3164,7 +3169,7 @@ struct RunRiskAuditRequest {
     limit: Option<u32>,
     /// Market scope: "all" (default), "usdm", or "coinm".
     market: Option<String>,
-    /// Raw device locale tag (e.g. "id-ID"); falls back to Accept-Language.
+    /// Raw locale tag (the app's active language, e.g. "id"); falls back to Accept-Language.
     language: Option<String>,
     stream_id: String,
 }
@@ -3180,7 +3185,7 @@ struct RunTradingPerformanceRequest {
     /// Exchange to review ("binance", "mexc"); absent reviews every venue's
     /// fills. Resolved at this edge, never by the model.
     venue: Option<String>,
-    /// Raw device locale tag (e.g. "id-ID"); falls back to Accept-Language.
+    /// Raw locale tag (the app's active language, e.g. "id"); falls back to Accept-Language.
     language: Option<String>,
     stream_id: String,
 }
@@ -3230,7 +3235,7 @@ struct RunCryptoScreenerRequest {
     /// Structural narrowing of the hits (nearest pivot level per symbol);
     /// validated by `normalize_screener_args` before any plan exists.
     structure: Option<::binance::StructureNarrowing>,
-    /// Raw device locale tag (e.g. "id-ID"); falls back to Accept-Language.
+    /// Raw locale tag (the app's active language, e.g. "id"); falls back to Accept-Language.
     language: Option<String>,
     stream_id: String,
 }

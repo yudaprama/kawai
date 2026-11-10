@@ -129,9 +129,10 @@ pub async fn estimate_gas(rpc_url: Option<String>) -> Result<logic::monad::GasEs
     logic::monad::gas_estimate(rpc_url.as_deref()).await
 }
 
-// ── Device-scoped Monad hot wallet (PUBLIC ops — the wallet exists before
-//    any session: it IS what creates the identity via SIWE login). Key lives
-//    in the OS keychain, never crosses to the frontend. ──
+// ── Device-scoped Monad hot wallet — one wallet per installation. Key lives
+//    in the OS keychain, never crosses to the frontend. The kawai-web routes
+//    for these ops sit on the PROTECTED router: there the key is server-side,
+//    so signing or deleting it requires a session. ──
 
 /// Load the device wallet's address, if one exists.
 #[tauri::command]
@@ -1521,7 +1522,7 @@ pub async fn plan_task(
     goal: String,
     session_id: i64,
     agent_id: String,
-    // Raw device locale tag (e.g. "id-ID") — feeds ONLY the template path's
+    // Raw locale tag (the app's active language, e.g. "id") — feeds ONLY the template path's
     // output language (resolve_user_language), so a composer-routed desk run
     // renders in the user's language like the fixed-pipeline form. The
     // planner itself is language-agnostic.
@@ -2188,7 +2189,7 @@ pub async fn execute_supervisor_plan(
     plan: kawai_router::TaskPlan,
     session_id: i64,
     user_goal: Option<String>,
-    // Raw device locale tag (e.g. "id-ID"). A planner-driven or template-routed
+    // Raw locale tag (the app's active language, e.g. "id"). A planner-driven or template-routed
     // goal is the CLIENT's text, so — unlike the fixed pipelines, whose domain
     // builders compose their own rule — the output language has to ride the
     // goal here or the deliverable ignores the locale (see `goal_in_language`).
@@ -2231,7 +2232,7 @@ pub async fn run_stock_research(
     trade_date: Option<String>,
     analysts: Option<Vec<String>>,
     domain: Option<String>,
-    // Raw device locale tag (e.g. "id-ID") — resolved into the pipelines'
+    // Raw locale tag (the app's active language, e.g. "id") — resolved into the pipelines'
     // output language at this edge (see `supervisor::resolve_user_language`).
     language: Option<String>,
     stream_id: String,
@@ -2276,7 +2277,7 @@ pub async fn run_binance_risk_audit(
     limit: Option<u32>,
     // Market scope: "all" (default), "usdm", or "coinm".
     market: Option<String>,
-    // Raw device locale tag (e.g. "id-ID") — resolved into the report's
+    // Raw locale tag (the app's active language, e.g. "id") — resolved into the report's
     // output language at this edge (see `supervisor::resolve_user_language`).
     language: Option<String>,
     stream_id: String,
@@ -2360,7 +2361,7 @@ pub async fn run_trading_performance(
     // fills. Bound here at the transport edge and passed to the plan builder —
     // the model never chooses the scope.
     venue: Option<String>,
-    // Raw device locale tag (e.g. "id-ID") — resolved into the report's
+    // Raw locale tag (the app's active language, e.g. "id") — resolved into the report's
     // output language at this edge (see `supervisor::resolve_user_language`).
     language: Option<String>,
     stream_id: String,
@@ -2426,7 +2427,7 @@ pub async fn run_security_audit(
     target: String,
     categories: Option<Vec<String>>,
     intensity: Option<String>,
-    // Raw device locale tag (e.g. "id-ID") — resolved into the report's
+    // Raw locale tag (the app's active language, e.g. "id") — resolved into the report's
     // output language at this edge.
     language: Option<String>,
     stream_id: String,
@@ -2476,7 +2477,7 @@ pub async fn run_crypto_screener(
     // Structural narrowing of the hits (nearest pivot level per symbol);
     // validated by `normalize_screener_args` before any plan exists.
     structure: Option<::binance::StructureNarrowing>,
-    // Raw device locale tag (e.g. "id-ID") — resolved into the report's
+    // Raw locale tag (the app's active language, e.g. "id") — resolved into the report's
     // output language at this edge (see `supervisor::resolve_user_language`).
     language: Option<String>,
     stream_id: String,
@@ -2517,7 +2518,7 @@ pub async fn run_crypto_screener(
 pub async fn run_youtube_analysis(
     session_id: i64,
     url: String,
-    // Raw device locale tag (e.g. "id-ID") — resolved into the pipelines'
+    // Raw locale tag (the app's active language, e.g. "id") — resolved into the pipelines'
     // output language at this edge (see `supervisor::resolve_user_language`).
     language: Option<String>,
     stream_id: String,

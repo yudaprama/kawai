@@ -191,41 +191,34 @@ describe("supervisorReducer — replan", () => {
     expect(s.planKey).toBe("pk2");
     expect(s.priorVersions).toHaveLength(1);
     expect(s.priorVersions[0]).toEqual({ version: 0, completed: 1, total: 2, note: "revised after failure" });
-    expect(s.replansExhausted).toBe(true); // 1 prior version >= 1
+    expect(s.replansExhausted).toBe(false); // 1 prior version, budget is 3
     expect(s.error).toBeNull();
   });
 
-  it("replansExhausted stays false until 2 replans", () => {
+  it("replansExhausted flips only at the MAX_REPLANS-th revision", () => {
     let s = makePlan([step("a")], { planKey: "pk1" });
-    s = supervisorReducer(
-      s,
-      {
-        type: "planRevised",
-        attempt: 1,
-        stepCount: 1,
-        steps: [step("a")],
-        planKey: "pk2",
-        summary: { overview: "o", actions: [], outputs: [] },
-      },
-      { now: NOW + 100 },
-    );
-    expect(s.replansExhausted).toBe(true); // 1 prior >= 1
+    const revise = (attempt: number, planKey: string) =>
+      supervisorReducer(
+        s,
+        {
+          type: "planRevised",
+          attempt,
+          stepCount: 1,
+          steps: [step("a")],
+          planKey,
+          summary: { overview: "o", actions: [], outputs: [] },
+        },
+        { now: NOW + attempt * 100 },
+      );
 
-    s = supervisorReducer(
-      s,
-      {
-        type: "planRevised",
-        attempt: 2,
-        stepCount: 1,
-        steps: [step("a")],
-        planKey: "pk3",
-        summary: { overview: "o", actions: [], outputs: [] },
-      },
-      { now: NOW + 200 },
-    );
-    expect(s.replansExhausted).toBe(true); // 2 prior >= 1
-    expect(s.priorVersions).toHaveLength(2);
-    expect(s.planVersion).toBe(2); // 0 → 1 → 2
+    s = revise(1, "pk2");
+    expect(s.replansExhausted).toBe(false); // 1 prior < 3
+    s = revise(2, "pk3");
+    expect(s.replansExhausted).toBe(false); // 2 prior < 3
+    s = revise(3, "pk4");
+    expect(s.replansExhausted).toBe(true); // 3 prior === MAX_REPLANS
+    expect(s.priorVersions).toHaveLength(3);
+    expect(s.planVersion).toBe(3); // 0 → 1 → 2 → 3
   });
 });
 

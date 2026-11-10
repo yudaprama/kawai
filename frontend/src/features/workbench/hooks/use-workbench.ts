@@ -108,7 +108,7 @@ export function buildQuotedGoal(opts: {
 }): string {
   const excerpt = sanitizeDeliverableExcerpt(opts.excerpt, QUOTE_EXCERPT_MAX_CHARS);
   const chain = opts.indirect ? ' chain="indirect"' : "";
-  return `<previous-deliverable planKey="${opts.planKey}" session="${opts.sessionId}" chars="${opts.excerpt.length}"${chain}>\n${excerpt}\n</previous-deliverable>\n\n<user-goal>\n${opts.goal}\n</user-goal>`;
+  return `<previous-deliverable planKey="${opts.planKey}" session="${opts.sessionId}" chars="${excerpt.length}"${chain}>\n${excerpt}\n</previous-deliverable>\n\n<user-goal>\n${opts.goal}\n</user-goal>`;
 }
 
 /** One past/current run in the desk's history list (in-memory for S1; S2
@@ -290,9 +290,13 @@ export function useWorkbench() {
     try {
       const all = await call<KnowledgeFileInfo[]>("knowledge_list");
       setAttachedFiles((prev) =>
-        prev.map((f) => {
+        prev.flatMap((f) => {
           const fresh = all.find((x) => x.id === f.id);
-          return fresh ?? f;
+          if (fresh) return [fresh];
+          // Gone from the library (deleted elsewhere): a still-indexing chip
+          // must NOT keep its stale status — `anyIndexing` would stay true and
+          // the poll below would re-read the whole library every 2.5s forever.
+          return f.status === "indexing" ? [] : [f];
         }),
       );
     } catch {
@@ -838,6 +842,7 @@ export function useWorkbench() {
         onStart?: () => void;
       },
     ) => {
+      ensureIdleRun(supervisor.status, setSessionError);
       const sym = ticker.trim().toUpperCase();
       if (!sym) return;
       const assetClass = domain ?? "stock";
@@ -878,6 +883,7 @@ export function useWorkbench() {
         onStart?: () => void;
       },
     ) => {
+      ensureIdleRun(supervisor.status, setSessionError);
       const link = url.trim();
       if (!link) return;
       // Balance gate + lazy session — the shared fail-closed pre-flight.
@@ -944,6 +950,7 @@ export function useWorkbench() {
         onStart?: () => void;
       },
     ) => {
+      ensureIdleRun(supervisor.status, setSessionError);
       const sid = await preflightRun(
         `Futures risk audit (MEXC) — ${interval}/${risk}`.slice(0, 80),
         "Couldn't start the audit",
@@ -975,6 +982,7 @@ export function useWorkbench() {
         onStart?: () => void;
       },
     ) => {
+      ensureIdleRun(supervisor.status, setSessionError);
       // Named in the session title and the goal line, so a MEXC-only review
       // is never confused with an all-venue one after the run.
       const label = opts?.venue ? ` — ${opts.venue}` : "";
@@ -1004,6 +1012,7 @@ export function useWorkbench() {
         onStart?: () => void;
       },
     ) => {
+      ensureIdleRun(supervisor.status, setSessionError);
       const sid = await preflightRun(`Monthly close — ${period}`.slice(0, 80), "Couldn't start the monthly close");
       const goal = `Monthly close — ${period}`.slice(0, 140);
       launchFixedRun(beginRun, goal, sid, (s) => supervisor.runMonthlyClose({ period }, s), opts);

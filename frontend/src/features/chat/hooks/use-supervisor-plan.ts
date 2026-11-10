@@ -308,6 +308,11 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   const [messages, setMessages] = useState<UIMessage[]>([]);
 
   const streamCtrl = useRef<StreamControl | null>(null);
+  /** Monotonic stream generation. A stream that was stopped (or superseded by
+   *  a reset) keeps delivering events until the backend finishes its
+   *  cooperative cancel — every handler below drops anything from an older
+   *  generation so a late event can never fold into the NEXT run's state. */
+  const streamGenRef = useRef(0);
   const streamIdRef = useRef<string>("");
   const goalRef = useRef<string | null>(null);
   /** The user's verbatim goal — captured before the planner can rewrite it;
@@ -353,6 +358,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
    *  Same SupervisorEvent pipeline, persistence, and terminal handling. */
   const startStream = useCallback(
     (payload: Record<string, unknown>, sessionId: number, op = "execute_supervisor_plan") => {
+      const gen = ++streamGenRef.current;
       const streamId = crypto.randomUUID();
       streamIdRef.current = streamId;
       goalRef.current = null;
@@ -389,6 +395,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         },
         {
           onEvent: (ev) => {
+            if (gen !== streamGenRef.current) return; // stale stream
             // Terminal events need side-effect handling plus reducer.
             switch (ev.type) {
               case "planRevised": {
@@ -467,6 +474,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
             }
           },
           onDone: () => {
+            if (gen !== streamGenRef.current) return; // stale stream
             streamCtrl.current = null;
 
             const wasStopping = stoppingRef.current;
@@ -497,6 +505,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
             });
           },
           onError: (err) => {
+            if (gen !== streamGenRef.current) return; // stale stream
             streamCtrl.current = null;
             const wasStopping = stoppingRef.current;
             stoppingRef.current = false;
@@ -580,8 +589,8 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           tradeDate: options.tradeDate ?? "",
           analysts: options.analysts ?? [],
           domain: options.domain ?? "stock",
-          // Device locale → pipeline output language (resolved server-side).
-          language: navigator.language,
+          // In-app language → pipeline output language (resolved server-side).
+          language: getLocale(),
         },
         sessionId,
         "run_stock_research",
@@ -602,8 +611,8 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         {
           sessionId,
           url: options.url,
-          // Device locale → pipeline output language (resolved server-side).
-          language: navigator.language,
+          // In-app language → pipeline output language (resolved server-side).
+          language: getLocale(),
         },
         sessionId,
         "run_youtube_analysis",
@@ -627,8 +636,8 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           risk: options.risk,
           limit: options.limit,
           market: options.market,
-          // Device locale → report language (resolved server-side).
-          language: navigator.language,
+          // In-app language → report language (resolved server-side).
+          language: getLocale(),
         },
         sessionId,
         "run_binance_risk_audit",
@@ -646,8 +655,8 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           interval: options.interval,
           risk: options.risk,
           limit: options.limit,
-          // Device locale → report language (resolved server-side).
-          language: navigator.language,
+          // In-app language → report language (resolved server-side).
+          language: getLocale(),
         },
         sessionId,
         "run_mexc_risk_audit",
@@ -673,8 +682,8 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           // Venue is OPTIONAL: omitting the field reads every exchange's
           // fills, so an all-venue review stays the default.
           ...(options.venue ? { venue: options.venue } : {}),
-          // Device locale → report language (resolved server-side).
-          language: navigator.language,
+          // In-app language → report language (resolved server-side).
+          language: getLocale(),
         },
         sessionId,
         "run_trading_performance",
@@ -692,7 +701,8 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         {
           sessionId,
           period: options.period,
-          language: navigator.language,
+          // In-app language → report language (resolved server-side).
+          language: getLocale(),
         },
         sessionId,
         "run_monthly_close",
@@ -719,8 +729,8 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           topN: options.topN,
           scanSize: options.scanSize,
           structure: options.structure,
-          // Device locale → report language (resolved server-side).
-          language: navigator.language,
+          // In-app language → report language (resolved server-side).
+          language: getLocale(),
         },
         sessionId,
         "run_crypto_screener",
@@ -744,8 +754,8 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           target: options.target,
           ...(options.categories ? { categories: options.categories } : {}),
           ...(options.intensity ? { intensity: options.intensity } : {}),
-          // Device locale → report language (resolved server-side).
-          language: navigator.language,
+          // In-app language → report language (resolved server-side).
+          language: getLocale(),
         },
         sessionId,
         "run_security_audit",
@@ -860,7 +870,10 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     if (!ctrl) return;
     stoppingRef.current = true;
     ctrl.cancel();
-    streamCtrl.current = null;
+    // Keep `streamCtrl` set: cancellation is cooperative (in-flight steps
+    // finish first), so the run IS still in flight until `onDone`/`onError`
+    // clears it. Nulling here made `runPlan`/`resume`/`selectSession` believe
+    // the run was over and let a new stream start under the old one's events.
     patch({ status: "stopping", pendingConfirmation: null });
   }, [patch]);
 
@@ -933,9 +946,14 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   );
 
   const reset = useCallback(() => {
+    // Abandon any in-flight stream: cancel it server-side (it would otherwise
+    // keep running with no UI to land in) and orphan it, so a late event from
+    // it can never fold into the fresh state this reset establishes.
+    streamCtrl.current?.cancel();
+    streamCtrl.current = null;
+    streamGenRef.current += 1;
     setState(initialSupervisorState());
     setMessages([]);
-    streamCtrl.current = null;
     streamIdRef.current = "";
     goalRef.current = null;
     userGoalRef.current = null;

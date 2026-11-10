@@ -101,15 +101,24 @@ export function useChatSessions({
     await resetSession(null);
   }, [streamCtrl, resetSession]);
 
+  // Monotonic request token for `list_chat_messages`: a slower response for a
+  // session the user already navigated away from must never land. Without it,
+  // two rapid session switches can render the FIRST session's transcript under
+  // the SECOND session's id.
+  const loadSeq = useRef(0);
+
   const loadMessages = useCallback(
     async (sessionId: number) => {
+      const seq = ++loadSeq.current;
       try {
         const rows = await call<ChatMessage[]>("list_chat_messages", {
           sessionId,
         });
+        if (seq !== loadSeq.current) return; // a newer load superseded this one
         patch({ messages: historyToMessages(rows), historyError: null });
       } catch (err) {
         logError("list_chat_messages", err);
+        if (seq !== loadSeq.current) return;
         patch({ historyError: errText(err) });
       }
     },

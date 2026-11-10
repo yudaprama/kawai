@@ -85,7 +85,7 @@ standalone sync. Order is load-bearing, so it is pinned by
 5. `trading_fee_summary(period, venue?)` — fees and fees-as-%-of-volume
 6. Synthesis: best/worst pair, fee drag, period-over-period, venue context
    (unrealized) from the audit when available. The deliverable's language
-   comes from the device locale (`language` on both the fixed pipeline and
+   comes from the reported locale (`language` on both the fixed pipeline and
    `execute_supervisor_plan`), so a routed/free-text review is not English
    by default.
 

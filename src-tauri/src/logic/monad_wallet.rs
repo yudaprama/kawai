@@ -54,9 +54,9 @@ mod imp {
 
     pub use kawai_monad::{ReceiptInfo, TxResult};
 
-    /// Device-scoped keychain slot. A hot wallet exists BEFORE any Supabase
-    /// identity (it is what creates the identity via SIWE), so it cannot be
-    /// keyed by user_id.
+    /// Device-scoped keychain slot — one hot wallet per installation. It is
+    /// not keyed by user_id: the key belongs to the device and must survive
+    /// sign-out/sign-in on the same machine.
     const WALLET_ACCOUNT: &str = "monad-wallet/device";
 
     /// The wallet's public identity. Safe to surface anywhere.

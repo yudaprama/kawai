@@ -701,8 +701,9 @@ fn static_reply_plan(
     }
 }
 
-/// `language` is the device locale tag from the transport edge (e.g.
-/// "id-ID") — it only feeds the template path (`resolve_user_language`), so a
+/// `language` is the locale tag from the transport edge (the app's active
+/// language, e.g. "id"; a device tag like "id-ID" resolves the same way) — it
+/// only feeds the template path (`resolve_user_language`), so a
 /// composer-routed desk run renders its reports in the user's language
 /// exactly like the fixed-pipeline form does.
 /// Slot values the rule gate's own fact extraction supplies — shared by the
@@ -2746,17 +2747,21 @@ pub fn plan_key(plan: &kawai_router::TaskPlan) -> String {
     hex::encode(hash)
 }
 
-/// Resolve the output language for the FIXED pipelines (Analysis Desk,
-/// YouTube Video Analysis) from the transport edge — same edge-resolution invariant
-/// as identity (AGENTS.md #8): the frontend never decides prompt semantics,
-/// it only reports the device locale.
+/// Resolve the output language for every fixed pipeline (Analysis Desk,
+/// YouTube Video Analysis, the risk audits, the screener, the books
+/// pipelines, the security audit) from the transport edge — same
+/// edge-resolution invariant as identity (AGENTS.md #8): the frontend never
+/// decides prompt semantics, it only reports a locale tag.
 ///
-/// `explicit` is the raw `navigator.language` tag the client sent (e.g.
-/// "id-ID"); `accept_language` is the raw `Accept-Language` header value
-/// (web fallback, e.g. "id-ID,id;q=0.9,en;q=0.8"). The primary subtag maps
-/// to a display name from the SAME fixed menu the deliverable viewer's
-/// translate picker carries (`TRANSLATE_LANGUAGES`), so a later translate of
-/// the deliverable names the language identically.
+/// `explicit` is the locale tag the client reports for the run — the app's
+/// active language (`getLocale()`, e.g. "id"), so a user who switches the
+/// in-app language gets that language even on a differently-localized device.
+/// A full device tag ("id-ID") resolves identically: only the primary subtag
+/// is read. `accept_language` is the raw `Accept-Language` header value (web
+/// fallback, e.g. "id-ID,id;q=0.9,en;q=0.8"). The subtag maps to a display
+/// name from the SAME fixed menu the deliverable viewer's translate picker
+/// carries (`TRANSLATE_LANGUAGES`), so a later translate of the deliverable
+/// names the language identically.
 ///
 /// English and unknown subtags return `None` = the pipelines' default
 /// content-language behavior, byte-identical to pre-language runs. `zh`
@@ -8029,7 +8034,7 @@ mod tests {
         registry
             .validate_plan(&plan)
             .unwrap_or_else(|e| panic!("the venue-scoped plan must validate: {e}"));
-        // ... and the device locale rides the plan's goal (the writer's brief).
+        // ... and the reported locale rides the plan's goal (the writer's brief).
         assert!(
             plan.goal.contains("LANGUAGE: Write your ENTIRE report in Bahasa Indonesia"),
             "{}",

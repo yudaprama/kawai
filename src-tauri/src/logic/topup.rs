@@ -167,6 +167,11 @@ pub async fn flush_usage_replay(user_id: &str, token: &str) -> Result<(), String
         {
             return Ok(());
         }
+        // Drop expired entries: this map is per-process, and kawai-web serves
+        // many users from one process — without the sweep it grows by one row
+        // per user for the life of the server. An entry older than the window
+        // has no effect on the gate, so dropping it is free.
+        last.retain(|_, at| now.saturating_sub(*at) < REPLAY_MIN_INTERVAL_SECS);
         last.insert(user_id.to_string(), now);
     }
 

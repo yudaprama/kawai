@@ -137,7 +137,7 @@ fn build_accounting_close(slots: &ResolvedSlots) -> Result<TaskPlan, String> {
     accounting_tools::plan::build_monthly_close_plan(
         slots.get("period").unwrap_or_default(),
         chrono::Local::now().date_naive(),
-        // The device locale rides the plan: it is the writer's brief, so a
+        // The reported locale rides the plan: it is the writer's brief, so a
         // routed close is delivered in the user's language.
         slots.get("language"),
     )
@@ -366,7 +366,7 @@ mod tests {
                 .unwrap_or_else(|e| panic!("template {} built an invalid plan: {e}", t.id));
             // The fixed-pipeline conventions: tool-dispatched steps, one
             // string run nonce, no stray language rule (routed builds carry
-            // no locale — the device locale rides at run time).
+            // no locale — the reported locale rides at run time).
             check_plan_conventions(&plan, None)
                 .unwrap_or_else(|e| panic!("template {} violates plan conventions: {e}", t.id));
         }

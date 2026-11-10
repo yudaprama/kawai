@@ -23,6 +23,11 @@ export type {
 
 // ── Pure helpers ────────────────────────────────────────────────────────────
 
+/** Failure-triggered revision budget — mirrors `supervisor::MAX_REPLANS`, so
+ *  the rail's "replans exhausted" hint flips exactly when the backend stops
+ *  repairing. Keep the two in sync. */
+export const MAX_REPLANS = 3;
+
 /** Seed the tracked plan structure from planStarted/planRevised wire steps —
  *  every step starts pending with no artifacts. */
 export function seedSteps(
@@ -315,7 +320,7 @@ export function supervisorReducer(
         planVersion: priorVersion + 1,
         planKey: event.planKey,
         priorVersions,
-        replansExhausted: priorVersions.length >= 1,
+        replansExhausted: priorVersions.length >= MAX_REPLANS,
         revising: null,
       };
     }

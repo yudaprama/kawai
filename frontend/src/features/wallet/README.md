@@ -17,9 +17,10 @@ Dana SERVER (worker secret PRIVATE_KEY)           → sign di WORKER (kawai-serv
 - Worker (`POST /transfer`) memakai key server yang BERBEDA — pola payout/faucet
   (cashback, reward), bukan dana user. Jangan pernah pindahkan signing user ke
   worker, dan jangan kirim key user ke mana pun.
-- Wallet ada SEBELUM identitas: address dipakai untuk SIWE login, makanya op
-  `monad_wallet_*` public (tanpa session) di web; tapi op **fund-moving**
-  (`transfer_*`, `deposit_to_vault`) ada di router **protected**.
+- Semua op `monad_wallet_*` (address/create/sign_message/delete) ada di router
+  **protected** di web: key-nya hidup di proses SERVER (satu wallet per
+  instance, bukan per user), jadi menandatangani atau menghapusnya wajib
+  session. Op **fund-moving** (`transfer_*`, `deposit_to_vault`) juga protected.
 
 ## Alur data (front → back)
 
@@ -36,7 +37,7 @@ SendForm/SmartDepositForm (string desimal, "1.5" — tanpa float math)
 
 | Op | Fungsi | Auth (web) |
 |---|---|---|
-| `monad_wallet_address/create/sign_message/delete` | siklus hidup device wallet | public (SIWE) |
+| `monad_wallet_address/create/sign_message/delete` | siklus hidup device wallet | **protected** |
 | `check_monad_balance`, `monad_chain_status`, `get_token_balance`, `get_token_info`, `estimate_gas` | baca chain | public |
 | `get_transaction_receipt` | receipt on-chain (broadcast → mined) | **protected** |
 | `monad_wallet_history` | riwayat tx device (file JSON lokal `wallet_history.json`, newest-first) | **protected** |
