@@ -1,5 +1,4 @@
 import { Icon } from "@/components/shared/icon";
-import { platform } from "@/platform";
 import { cn } from "@/lib/utils";
 
 export type GoalTemplateId =
@@ -13,6 +12,13 @@ export type GoalTemplateId =
   | "bookClose"
   | "tradingPerformance"
   | "securityAudit";
+/** Landing chips, display order. Every chip maps to a backend pipeline that
+ *  ships in both release feature sets — `release-desktop` and its Android
+ *  alias `release-android` — so the list is identical on every platform.
+ *  `securityAudit` builds active scans from lonkero's in-process engine; that
+ *  engine compiles for android arm64 (its headless-Chrome paths are
+ *  target-gated out there), so the phone backend carries `run_security_audit`
+ *  too. */
 const GOAL_TEMPLATES: { id: GoalTemplateId; label: string }[] = [
   { id: "stock", label: "Stock Research" },
   { id: "crypto", label: "Crypto Research" },
@@ -23,12 +29,7 @@ const GOAL_TEMPLATES: { id: GoalTemplateId; label: string }[] = [
   { id: "cryptoScreener", label: "Crypto Screener" },
   { id: "bookClose", label: "Monthly Close" },
   { id: "tradingPerformance", label: "Trading Performance" },
-  // Security Audit rides the `security` cargo feature, which ships in desktop
-  // builds only (Android deliberately defers: phone-class CPU for active
-  // scanning + the lonkero engine weight). The mobile backend registers no
-  // `run_security_audit` command, so the chip must not offer it there —
-  // invoking it fails with "Command run_security_audit not found".
-  ...(platform.target !== "mobile" ? [{ id: "securityAudit" as const, label: "Security Audit" }] : []),
+  { id: "securityAudit", label: "Security Audit" },
 ];
 
 /** Templates whose workflow includes the fixed-pipeline Stock Research — only

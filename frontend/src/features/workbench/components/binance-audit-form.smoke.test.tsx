@@ -839,6 +839,28 @@ describe("goal templates", () => {
     const html = renderToStaticMarkup(<GoalTemplates value={null} onChange={() => {}} />);
     expect(html).toContain("Futures Risk Audit");
   });
+
+  it("lists every backend pipeline shipped in the release feature sets", () => {
+    // The chips are the landing's door to the fixed pipelines. Security Audit
+    // rides the `security` feature, which ships on desktop AND Android, so it
+    // must be offered everywhere — the phone backend registers
+    // `run_security_audit` exactly like the desktop one.
+    const html = renderToStaticMarkup(<GoalTemplates value={null} onChange={() => {}} />);
+    for (const label of [
+      "Stock Research",
+      "Crypto Research",
+      "Commodity Research",
+      "Forex Research",
+      "YouTube Video Analysis",
+      "Futures Risk Audit",
+      "Crypto Screener",
+      "Monthly Close",
+      "Trading Performance",
+      "Security Audit",
+    ]) {
+      expect(html).toContain(`>${label}</button>`);
+    }
+  });
 });
 
 describe("placement result failures", () => {
