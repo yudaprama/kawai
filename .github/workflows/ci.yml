@@ -595,6 +595,14 @@ jobs:
           # recurring protocol drift (2026-10-25, 2026-10-26) is otherwise
           # undebuggable from the 160-char excerpt alone.
           KAWAI_PLANNER_DEBUG: "1"
+          # Dedicated smoke account (NOT a personal account) — the smoke
+          # signs in at runtime, which arms the gateway-*/candidates: GLM
+          # quality + capacity via kawai-server instead of the free-tier
+          # openrouter fallback whose weak model goes off-protocol mid-plan
+          # and rate-limits under repair rounds (2026-11-12 planner_smoke
+          # failures). Rotate only if the account is compromised.
+          KAWAI_SMOKE_EMAIL: ${{ secrets.KAWAI_SMOKE_EMAIL }}
+          KAWAI_SMOKE_PASSWORD: ${{ secrets.KAWAI_SMOKE_PASSWORD }}
         run: cargo run --example planner_smoke --features litert,binance
 
       

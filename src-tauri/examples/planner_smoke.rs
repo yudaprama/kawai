@@ -39,6 +39,24 @@ async fn main() {
         .await
         .expect("create smoke session");
 
+    // CI runs the planner on the worker gateway, not on the rotting direct
+    // tier: a session bearer arms the `gateway-*` candidates (GLM quality +
+    // server-side keys). The bearer is minted at RUNTIME from a dedicated
+    // smoke account (GitHub secrets) — no 7-day-token rotation chore.
+    // Unset/failure ⇒ the pool keeps whatever direct candidates it has and
+    // the smoke still exercises the real production path.
+    if let (Ok(email), Ok(password)) = (
+        std::env::var("KAWAI_SMOKE_EMAIL"),
+        std::env::var("KAWAI_SMOKE_PASSWORD"),
+    ) {
+        match kawai_lib::logic::local_auth::auth_sign_in(&email, &password).await {
+            Ok(_) => eprintln!("[planner_smoke] gateway session armed for the smoke account"),
+            Err(e) => {
+                eprintln!("[planner_smoke] smoke sign-in failed — continuing without the gateway tier: {e}")
+            }
+        }
+    }
+
     let mut failures = 0usize;
     // At least one task must reach the remote planner, or the smoke proved
     // nothing about planner quality (every goal template-claimed = vacuous).
