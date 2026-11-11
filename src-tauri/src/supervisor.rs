@@ -7904,9 +7904,14 @@ mod tests {
                 );
             }
             Err(err) => {
+                // Two legitimate failure flavors: a no-keys build runs the
+                // local-only pool against the unloaded engine ("local model
+                // error"); a keyed build can exhaust the remote pool (free
+                // tiers rate-limit under parallel CI load) — both mean the
+                // planner tier failed and the canned reply never ran.
                 assert!(
-                    err.contains("local model error"),
-                    "expected the local-only planner to fail on the unloaded engine: {err}"
+                    err.contains("local model error") || err.contains("remote error"),
+                    "expected the planner tier to fail on the unloaded engine or an exhausted pool: {err}"
                 );
             }
         }
