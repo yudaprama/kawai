@@ -194,6 +194,9 @@ fn persist_token(user_email: &str, token: &str) {
             tracing::error!(component = "auth", "failed to write auth token {}: {e}", path.display());
         }
     }
+    // The freshly minted bearer also unlocks the worker's model-routed LLM
+    // gateway (`remote-llm` reads this per turn).
+    remote_llm::set_gateway_bearer(Some(token.to_string()));
 }
 
 /// Read the stored bearer token for a signed-in user, if any.
@@ -236,6 +239,9 @@ pub fn restore_session() -> Option<String> {
     if sub != email || exp <= std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() {
         return None;
     }
+    // Restored bearer unlocks the worker's model-routed LLM gateway until the
+    // next teardown (`clear_local_session`) or sign-in refresh.
+    remote_llm::set_gateway_bearer(Some(token));
     Some(email)
 }
 

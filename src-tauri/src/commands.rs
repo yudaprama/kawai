@@ -335,6 +335,9 @@ fn clear_local_session(session: &Session, email: &str) {
     let _ = std::fs::remove_file(kawai_paths::auth_token(email));
     let _ = std::fs::remove_file(kawai_paths::last_session());
     kawai_telemetry::set_current_user(None);
+    // Same funnel for the gateway tier: a torn-down session must not keep
+    // funding remote-llm's gateway candidates.
+    remote_llm::set_gateway_bearer(None);
 }
 
 /// Requires an active session. Demonstrates the auth-required pattern: the
