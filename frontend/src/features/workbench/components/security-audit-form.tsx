@@ -69,7 +69,7 @@ export function SecurityAuditForm({
           onKeyDown={(e) => {
             if (e.key === "Enter") submit();
           }}
-          placeholder="https://your-app.example.com"
+          placeholder="your-app.example.com"
           disabled={disabled}
           spellCheck={false}
           className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 min-w-0 flex-1 rounded-lg border px-3 py-2 font-mono text-base outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50 md:text-sm"

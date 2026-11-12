@@ -7,11 +7,16 @@
 //! confirmation policy the executor enforces (auto-approve: no gate), and
 //! runs it through the real scheduler against a REAL vulnerable localhost
 //! target — so what it prints is the payload the step cards actually read.
+//! A caller-supplied positional arg audits THAT target instead (the nightly
+//! Windows smoke passes https://kawai.pro): same plan, the default triad at
+//! minimal intensity, structural assertions only — finding exactness would
+//! turn a production scan into a probabilistic gate.
 //!
-//! The only network traffic is against 127.0.0.1.
+//! Default mode's only network traffic is against 127.0.0.1.
 //!
 //! Run from `src-tauri/`:
 //!   cargo run --example security_plan_smoke --features litert,security
+//!   cargo run --example security_plan_smoke --features litert,security -- https://kawai.pro
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -98,16 +103,37 @@ async fn main() {
         .expect("chat session")
         .id;
 
-    let port = serve();
-    // Seed a query parameter: with crawling disabled the XSS scanners test
-    // the parameters the target URL already carries.
-    let target = format!("http://127.0.0.1:{port}/search?q=kawai");
+    // Optional positional arg: audit THAT target instead of the embedded
+    // vulnerable localhost app (bare domains get https:// from the builder).
+    let external_target = std::env::args()
+        .nth(1)
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
+    let external_mode = external_target.is_some();
+    let (target, categories) = match external_target {
+        Some(t) => (
+            t,
+            security_tools::plan::DEFAULT_CATEGORIES
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>(),
+        ),
+        None => {
+            let port = serve();
+            // Seed a query parameter: with crawling disabled the XSS
+            // scanners test the parameters the target URL already carries.
+            (
+                format!("http://127.0.0.1:{port}/search?q=kawai"),
+                vec!["xss".to_string()],
+            )
+        }
+    };
     println!("user={user} session={session} target={target}");
 
     // The real plan: same builder the form and the template call.
     let mut plan = security_tools::plan::build_security_audit_plan(
         &target,
-        &["xss".to_string()],
+        &categories,
         Some("minimal"),
         None,
     )
@@ -142,9 +168,13 @@ async fn main() {
         .map(|s| s.requires_confirmation == Some(true))
         .collect();
     assert_eq!(
-        gated,
-        vec![false, false],
-        "auto-approve by design: the active scan must NOT be gated"
+        plan.steps.len(),
+        1 + categories.len(),
+        "recon + one scan per selected category"
+    );
+    assert!(
+        !gated.contains(&true),
+        "auto-approve by design: no audit step may carry a gate"
     );
     // No approval pause exists for this pipeline; the plan executes straight
     // through with the default limits.
@@ -186,9 +216,14 @@ async fn main() {
                     failures.push(format!("recon must carry a findings array: {payload}"));
                 }
             }
-            "scan-xss" => {
+            id if id.starts_with("scan-") => {
                 if payload["kind"] != serde_json::json!("security_scan") {
                     failures.push(format!("scan envelope kind drifted: {payload}"));
+                }
+                // Finding exactness only against the deliberately vulnerable
+                // local app; a production target is probabilistic by nature.
+                if external_mode {
+                    continue;
                 }
                 let findings = payload["findings"].as_array().cloned().unwrap_or_default();
                 let xss = findings.iter().any(|f| {

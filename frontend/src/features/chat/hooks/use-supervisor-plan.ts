@@ -100,7 +100,7 @@ interface RunCryptoScreenerOptions {
 }
 
 interface RunSecurityAuditOptions {
-  /** The one target to audit — full http(s) URL. */
+  /** The one target to audit — a bare domain gets https:// prepended server-side. */
   target: string;
   /** Active categories to fire, one sequential gated step each. Omitted =
    * the backend's default triad (xss, sqli, ssrf). */
@@ -740,11 +740,12 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   );
 
   /** Security Audit: execute the FIXED pipeline — passive recon, then ONE
-   *  confirmation-gated active scan per selected category, strictly
-   *  sequential. The tool's requires_confirmation makes the executor pause
-   *  before every scan step (one approval = one scan) even after the plan
-   *  itself is approved. Streams the same SupervisorEvent lifecycle as
-   *  runPlan, so the Workbench renders it unchanged. */
+   *  active scan per selected category, strictly sequential. `security_scan`
+   *  is auto-approved (`requires_confirmation = false`), so the steps run
+   *  straight through: the scan itself fires as soon as its predecessor
+   *  completes, no per-step approval pause. Streams the same
+   *  SupervisorEvent lifecycle as runPlan, so the Workbench renders it
+   *  unchanged. */
   const runSecurityAudit = useCallback(
     (options: RunSecurityAuditOptions, sessionId: number) => {
       if (streamCtrl.current) return;

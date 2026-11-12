@@ -380,7 +380,7 @@ kawai-tools/                     # the agent tool seam: AgentTool trait + ToolSe
 crates/foundation/venue/         # venue-neutral exchange types: Venue, VenueFill/Position/Asset, VenueError, VenueClient
 crates/toolsets/binance/         # Binance agent tools (feature `binance`): market data, futures mirror, execution, venue fill history
 crates/toolsets/mexc/            # MEXC agent tools (feature `mexc`): fills sync into the same venue-keyed history; own keys only
-crates/toolsets/security-tools/  # Security agent tools (feature `security`, builtin.security): recon / targeted scan / module catalog / subdomain enum over the vendored lonkero engine — in-process (`lonkero::standalone::run_scan` on a dedicated thread; the engine future is !Send), flat kind-tagged envelopes, `security_scan` auto-approved (`requires_confirmation = false`). Smokes: `cargo run -p security-tools --example security_smoke` (tool loop vs a local vulnerable server) and, from `src-tauri/`, `cargo run --example security_plan_smoke --features litert,security` (plan → merged registry → confirmation policy → scheduler, real scans vs the same kind of local target)
+crates/toolsets/security-tools/  # Security agent tools (feature `security`, builtin.security): recon / targeted scan / module catalog / subdomain enum over the vendored lonkero engine — in-process (`lonkero::standalone::run_scan` on a dedicated thread; the engine future is !Send), flat kind-tagged envelopes, `security_scan` auto-approved (`requires_confirmation = false`). Smokes: `cargo run -p security-tools --example security_smoke` (tool loop vs a local vulnerable server) and, from `src-tauri/`, `cargo run --example security_plan_smoke --features litert,security` (plan → merged registry → confirmation policy → scheduler, real scans vs the same kind of local target; an optional `-- <target>` arg audits that site instead — the nightly windows-smoke audits https://kawai.pro)
 crates/lonkero/                  # vendored web-security scanner (own .git, excluded from the crates workspace): 127 modules behind `lonkero_scanner`; lib seams = `standalone::run_scan` (the one end-to-end pipeline, no Redis), `groups` (category→module IDs, shared with `ai::tools`), `scope::ScopeConfig`, `ai::system_prompt::methodology_prompt` (persona source for builtin.security). Its vendored #[cfg(test)] modules are pre-broken (stale vs current APIs) — `cargo test` is not a usable gate here; compile with `cargo check --lib --bins`
 crates/                          # split-out first-party crates (foundation / engines / toolsets / integrations / generated-tools / vendor); crates/vendor/accounting-core is a vendored copy of accounting-blue (double-entry ledger + Indian GST) whose invoice PDF renders through pdf_oxide; exposed as the `builtin.accounting` agent via the `accounting` feature and crates/toolsets/accounting
 nautilus_trader/                # submodule, REFERENCE-ONLY: never a workspace member or path dep. nautilus-binance does NOT replace binance-sdk in-app — see PLAN-nautilus-integration.md §5.1
@@ -651,10 +651,12 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
     `release-desktop`; Android ships it too via `release-android` — lonkero's
     headless-Chrome paths are compile-time excluded there) and in `bun tauri
     dev`. Workflow: the **Security Audit** fixed pipeline
-    (`security_tools::plan::build_security_audit_plan` — recon → one gated
-    scan per category, sequential; chip form + `security_audit` router
-    template + `run_security_audit` op + `/api/run_security_audit`; the
-    `plan_task`-proving probe is `cargo run --example security_plan_smoke
-    --features litert,security` from `src-tauri/`). Deferred: session-pinned
+    (`security_tools::plan::build_security_audit_plan` — recon → one
+    auto-approved active scan per category, sequential; chip form +
+    `security_audit` router template + `run_security_audit` op +
+    `/api/run_security_audit`; the `plan_task`-proving probe is
+    `cargo run --example security_plan_smoke --features litert,security`
+    from `src-tauri/`, whose optional `-- <target>` arg audits that site —
+    the nightly windows-smoke audits https://kawai.pro). Deferred: session-pinned
     scope registry (`lonkero::scope` extraction exists), scan-progress
     streaming, persisted reports, Android.

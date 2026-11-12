@@ -234,7 +234,24 @@ jobs:
         run: cargo run --example analytics_smoke
         working-directory: src-tauri
 
-      # ── Smoke 5: orchestration-quality gate ──
+      # ── Smoke 5: the REAL Security Audit pipeline against the production
+      #    site — recon + one minimal active scan per default category
+      #    (xss/sqli/ssrf), strictly sequential, through the same plan →
+      #    merged-registry → scheduler path the workbench form uses.
+      #    Nightly only: it fires active payloads at kawai.pro from runner
+      #    IPs — per-push would hammer the site and trip its WAF. Structural
+      #    assertions only; a production target makes finding exactness a
+      #    probabilistic gate.
+      - name: security_plan_smoke (audit https://kawai.pro)
+        if: github.event_name == 'schedule'
+        working-directory: src-tauri
+        shell: bash
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+        run: cargo run --example security_plan_smoke --features litert,security -- https://kawai.pro
+
+      # ── Smoke 6: orchestration-quality gate ──
       # Nightly only (schedule): the E4B suites (office + analytics) run on
       # every push in evals.yml on macOS — same model, CPU inference, the
       # signal is OS-independent. Repeating them per-push on Windows tripled
