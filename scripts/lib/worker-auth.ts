@@ -31,13 +31,49 @@ export function userDirName(email: string): string {
 	return /^[A-Za-z0-9_-]+$/.test(email) ? email : Buffer.from(email, "utf8").toString("hex");
 }
 
+/** Root app-data app desktop (identik `kawai_paths::tauri_app_data_dir`);
+ *  `KAWAI_DATA_DIR` menang, seperti di backend Rust. */
+export function appDataRoot(): string {
+	const override = process.env.KAWAI_DATA_DIR?.trim();
+	if (override) return override;
+	if (process.platform === "darwin") {
+		return join(homedir(), "Library", "Application Support", APP_DATA_ID);
+	}
+	if (process.platform === "win32") {
+		return join(process.env.APPDATA ?? homedir(), APP_DATA_ID);
+	}
+	const xdg = process.env.XDG_DATA_HOME?.trim();
+	return join(xdg && xdg.length > 0 ? xdg : join(homedir(), ".local", "share"), APP_DATA_ID);
+}
+
 export function userDataDir(email: string): string {
-	return join(homedir(), "Library", "Application Support", APP_DATA_ID, userDirName(email));
+	return join(appDataRoot(), userDirName(email));
 }
 
 /** Path `auth.token` untuk sebuah email (default CLI = email admin). */
 export function authTokenPath(email: string): string {
 	return join(userDataDir(email), "auth.token");
+}
+
+/** Email sesi terakhir app desktop (`<data_root>/last_session`), null bila belum
+ *  pernah sign-in di mesin ini. */
+export function lastSessionEmail(): string | null {
+	try {
+		const email = readFileSync(join(appDataRoot(), "last_session"), "utf8").trim().toLowerCase();
+		return email.length > 0 ? email : null;
+	} catch {
+		return null;
+	}
+}
+
+/** Bearer sesi yang disimpan app desktop untuk email tsb (0600, `<dir>/auth.token`). */
+export function desktopToken(email: string): string | null {
+	try {
+		const token = readFileSync(authTokenPath(email), "utf8").trim();
+		return token.length > 0 ? token : null;
+	} catch {
+		return null;
+	}
 }
 
 // ─── kawai_vault::encode_string (port deterministik) ───────────────────────
