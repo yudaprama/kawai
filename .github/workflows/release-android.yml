@@ -522,26 +522,33 @@ jobs:
           retention-days: 30
 
       # R8 (release `optimization`) strips classes that are only referenced
-      # from Rust via JNI by name — the rustls-platform-verifier Kotlin
-      # component is one of them, and without it EVERY HTTPS call from the
-      # app dies ("auth server unreachable: error sending request") while
-      # debug builds work fine. Fail here, before anything attaches to the
-      # public release.
-      - name: Verify TLS verifier survived R8
+      # from Rust via JNI by name. Two of them are load-bearing: the
+      # rustls-platform-verifier Kotlin component (without it EVERY HTTPS call
+      # from the app dies — "auth server unreachable: error sending request")
+      # and KawaiForeground (without it a run in flight is left unprotected
+      # from the cached-app freezer, which only shows up once the app is
+      # backgrounded mid-generation). Fail here, before anything attaches to
+      # the public release.
+      - name: Verify JNI-by-name classes survived R8
         run: |
           set -euo pipefail
           APK="$(ls src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk | head -n1)"
-          HIT=0
+          TLS=0
+          RUN=0
           for d in $(unzip -l "$APK" | grep -oE 'classes[0-9]*\.dex'); do
-            if unzip -p "$APK" "$d" | strings | grep -q 'org/rustls/platformverifier'; then
-              HIT=1
-            fi
+            STRINGS="$(unzip -p "$APK" "$d" | strings)"
+            if grep -q 'org/rustls/platformverifier' <<<"$STRINGS"; then TLS=1; fi
+            if grep -q 'pro/kawai/app/KawaiForeground' <<<"$STRINGS"; then RUN=1; fi
           done
-          if [ "$HIT" != 1 ]; then
+          if [ "$TLS" != 1 ]; then
             echo "::error::org.rustls.platformverifier.CertificateVerifier was stripped by R8 — the app cannot make any HTTPS call. Check the proguard keep rules in src-tauri/gen/android/app/proguard-rules.pro."
             exit 1
           fi
-          echo "rustls-platform-verifier present in the release dex."
+          if [ "$RUN" != 1 ]; then
+            echo "::error::pro.kawai.app.KawaiForeground was stripped by R8 — a run in flight loses its protection from the cached-app freezer. Check the proguard keep rules in src-tauri/gen/android/app/proguard-rules.pro."
+            exit 1
+          fi
+          echo "rustls-platform-verifier and KawaiForeground present in the release dex."
 
       # Play's bundle upload rejects with a bare "Validation of uploaded file
       # failed." and the action swallows the API response body. Run the same

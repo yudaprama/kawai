@@ -89,6 +89,15 @@ tail -n 100 /tmp/kawai-android.log
   `files/logs/app.log` by the stderr tee (`logging.rs`).
 - WebView DevTools: `chrome://inspect` on the desktop Chrome with
   `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>`.
+- **A run in flight shows a persistent "kawai" notification while the app is
+  backgrounded.** Every streaming op holds `KawaiForegroundService` (foreground
+  service, `dataSync`) so the process is never demoted to the cached state and
+  frozen — a frozen process stalls on-device generation mid-token and has its
+  TCP sockets torn down (AGENTS.md Landmines). `adb shell dumpsys activity
+  services pro.kawai.app` shows the service while a run is live. No service +
+  `could not start the run foreground service` in logcat means Android refused
+  the background start (API 31+ `ForegroundServiceStartNotAllowedException`):
+  the run is unprotected, not broken.
 
 **Auth/login hangs on device** — the auth path emits `tracing` events
 (`component="auth"`) carrying `user_id_hash`, the failing `stage`

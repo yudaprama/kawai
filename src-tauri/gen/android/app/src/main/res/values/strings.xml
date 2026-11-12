@@ -1,4 +1,9 @@
 <resources>
     <string name="app_name">"kawai"</string>
     <string name="main_activity_title">"kawai"</string>
+    <!-- KawaiForegroundService notification (a run in flight). -->
+    <string name="kawai_run_channel_name">"Active run"</string>
+    <string name="kawai_run_channel_description">"Shown while kawai is still answering."</string>
+    <string name="kawai_run_notification_title">"kawai is working"</string>
+    <string name="kawai_run_notification_text">"Your answer keeps running in the background."</string>
 </resources>

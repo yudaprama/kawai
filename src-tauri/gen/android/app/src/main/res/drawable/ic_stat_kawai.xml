@@ -1,0 +1,12 @@
+<!-- Status-bar icon for KawaiForegroundService's notification. Android draws a
+     small icon as a silhouette (alpha only, tinted by the system), so this is a
+     single white path on a transparent 24dp canvas — no gradients, no color. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,1.6C12.9,7.1 16.9,11.1 22.4,12C16.9,12.9 12.9,16.9 12,22.4C11.1,16.9 7.1,12.9 1.6,12C7.1,11.1 11.1,7.1 12,1.6Z" />
+</vector>

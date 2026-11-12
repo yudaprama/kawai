@@ -9,6 +9,17 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
+    <!-- A run in flight holds the process in the foreground-service state, so
+         Android never freezes it into the cached state (~10 s after the app is
+         backgrounded; frozen = every thread suspended and the app's TCP sockets
+         torn down, which stalled on-device generation and killed remote
+         streams). POST_NOTIFICATIONS is what makes the required notification
+         visible from API 33 on; WAKE_LOCK keeps the CPU up with the screen off. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
@@ -42,5 +53,11 @@
             android:name="android.support.FILE_PROVIDER_PATHS"
             android:resource="@xml/file_paths" />
         </provider>
+
+        <service
+            android:name=".KawaiForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="false" />
     </application>
 </manifest>

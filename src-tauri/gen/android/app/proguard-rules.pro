@@ -32,3 +32,9 @@
 # every scrape would then fall back to Cloudflare. Debug builds don't minify,
 # which is why only release breaks.
 -keep class pro.kawai.app.KawaiHeadless { *; }
+# KawaiForeground (run foreground service): started from Rust over JNI by class
+# and method name (load_class("pro/kawai/app/KawaiForeground") → start/stop).
+# Stripped from release builds it would leave every long run unprotected from
+# the cached-app freezer — a failure that only shows up after the app is
+# backgrounded mid-generation.
+-keep class pro.kawai.app.KawaiForeground { *; }

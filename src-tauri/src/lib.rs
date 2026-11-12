@@ -1,3 +1,7 @@
+/// Android process-lifetime guard for in-flight runs (no-op elsewhere).
+#[cfg(feature = "desktop")]
+pub mod android_foreground;
+
 pub mod agent_registry;
 pub mod auth;
 #[cfg(feature = "desktop")]

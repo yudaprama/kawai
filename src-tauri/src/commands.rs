@@ -43,7 +43,12 @@ async fn run_streaming<E: serde::Serialize>(
     token: Option<CancellationToken>,
 ) -> Result<(), String> {
     let token = token.unwrap_or_else(CancellationToken::new);
+    // Hold the process out of Android's cached-app freezer for the whole
+    // stream: a frozen process stalls the on-device generation mid-token and
+    // has its sockets torn down under the remote tier. No-op off Android.
+    let _run = crate::android_foreground::RunGuard::acquire();
     let _guard = register_stream(registry, &stream_id, token.clone())?;
+    // `async_stream` streams are not `Unpin` — pin before polling.
     let mut stream = Box::pin(stream);
     loop {
         tokio::select! {

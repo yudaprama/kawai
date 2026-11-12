@@ -1,5 +1,8 @@
 package pro.kawai.app
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -17,6 +20,20 @@ class MainActivity : TauriActivity() {
     // are never attached to the view hierarchy, so they cannot replace the app
     // UI the way a wry-created webview does.
     KawaiHeadless.attach(this)
+
+    // The run foreground service is started from the Rust run guard
+    // (src-tauri/src/android_foreground.rs), which has no Activity to start it
+    // from — hand it the application context.
+    KawaiForeground.attach(this)
+    // Android 13+ hides the run notification unless POST_NOTIFICATIONS is
+    // granted, and the start path is background-side, so it cannot raise a
+    // prompt itself. Ask once, on first launch.
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+      checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+      PackageManager.PERMISSION_GRANTED
+    ) {
+      requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_REQUEST)
+    }
     // Hardware back must behave like Esc, never like "exit the app".
     // Tauri's AppPlugin registers an unconditional back callback that
     // finishes the activity; this one is added LATER, so the dispatcher gives
@@ -95,5 +112,9 @@ class MainActivity : TauriActivity() {
         WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = light
       }
     }
+  }
+
+  private companion object {
+    const val NOTIFICATION_REQUEST = 4711
   }
 }
