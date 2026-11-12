@@ -1358,6 +1358,21 @@ via the always-available `session_step_results` tool. If the goal depends on det
             }
         }
 
+        // Mechanical ARG repair: a protocol-shaped plan whose `cli_run`
+        // steps pack the binary into `args[0]` without the required
+        // `command` property (planner_smoke 2026-11-12: two corrective
+        // rounds with the schema in view still omitted it) — promote
+        // `args[0]` deterministically. The validator stays the only
+        // quality gate; this rescues the ARGUMENTS only, never the content.
+        if let Some(v) = parsed.as_mut() {
+            if repair_cli_run_command_arg(v) {
+                parse_raw = v.to_string();
+                eprintln!(
+                    "[plan_task] mechanical arg repair: cli_run `command` promoted from args[0]"
+                );
+            }
+        }
+
         // Final plan?
         if let Some(v) = &parsed {
             if v.get("steps").is_some() && v.get("goal").is_some() {
@@ -2228,6 +2243,52 @@ fn repair_nested_steps_json(raw: &str) -> Option<String> {
         }
     }
     (repaired || over_closed).then_some(fixed)
+}
+
+/// Mechanical repair of a protocol-shaped plan whose `cli_run` steps are
+/// missing the REQUIRED `command` property: the model packed the binary into
+/// `args[0]` instead (planner_smoke 2026-11-12 — two corrective rounds with
+/// the tool schema in view still omitted `command`, the same
+/// "note-names-the-mistake, model-repeats-it" pattern that moved
+/// `repair_nested_steps_json` into code). Promotes `args[0]` to `command`
+/// (the cli_run contract: `command` = the binary, `args` = the rest) and
+/// reports whether anything changed. Whatever comes back still goes through
+/// the full plan validator — this rescues the ARGUMENTS only, never the
+/// content.
+fn repair_cli_run_command_arg(v: &mut serde_json::Value) -> bool {
+    let Some(steps) = v.get_mut("steps").and_then(|s| s.as_array_mut()) else {
+        return false;
+    };
+    let mut fixed = false;
+    for step in steps {
+        if step.get("tool").and_then(|t| t.as_str()) != Some("cli_run") {
+            continue;
+        }
+        let Some(args_obj) = step.get_mut("arguments").and_then(|a| a.as_object_mut()) else {
+            continue;
+        };
+        if args_obj.contains_key("command") {
+            continue;
+        }
+        let promoted = args_obj
+            .get_mut("args")
+            .and_then(|a| a.as_array_mut())
+            .and_then(|a| {
+                // args[0] must be a non-empty string — the binary name the
+                // model meant for `command`. Numbers/objects are not a
+                // convention signal; leave them for the corrective round.
+                if matches!(a.first(), Some(serde_json::Value::String(s)) if !s.is_empty()) {
+                    Some(a.remove(0))
+                } else {
+                    None
+                }
+            });
+        if let Some(command) = promoted {
+            args_obj.insert("command".to_string(), command);
+            fixed = true;
+        }
+    }
+    fixed
 }
 
 /// Candidate cap for `repair_extra_close_json`: plan replies run ~1.5k chars
@@ -7164,6 +7225,42 @@ mod tests {
         // it, exactly as before the over-close pass existed.
         let stranded = r#"{"goal":"G","steps":[{"id":"s1","tool":"cli_run","task":"t","arguments":{"command":"curl"},"retries":"#;
         assert!(repair_nested_steps_json(stranded).is_none());
+    }
+
+    #[test]
+    fn repair_promotes_cli_run_args0_to_command() {
+        // planner_smoke 2026-11-12: a protocol-shaped plan whose cli_run
+        // step packed the binary into args[0] with no `command` — the
+        // validator rejected it ("missing required property `command`")
+        // after two corrective rounds showed the model the schema.
+        let mut v: serde_json::Value = serde_json::from_str(
+            r#"{"goal":"G","steps":[
+                {"id":"s1","tool":"office_list_files","arguments":{}},
+                {"id":"s2","tool":"cli_run","task":"find revenue files",
+                 "arguments":{"args":["find",".","-name","revenue.csv"],"cwd":"/tmp/workspace"}}
+            ]}"#,
+        )
+        .unwrap();
+        assert!(repair_cli_run_command_arg(&mut v));
+        let steps = v["steps"].as_array().unwrap();
+        assert_eq!(steps[1]["arguments"]["command"], "find");
+        assert_eq!(
+            steps[1]["arguments"]["args"],
+            serde_json::json!([".", "-name", "revenue.csv"]),
+            "args[0] must move OUT of args — cli_run runs command with args as-is"
+        );
+        // A step that already carries `command` is untouched.
+        let mut ok: serde_json::Value = serde_json::from_str(
+            r#"{"goal":"G","steps":[{"id":"s1","tool":"cli_run","task":"t","arguments":{"command":"curl","args":["-s","u"]}}]}"#,
+        )
+        .unwrap();
+        assert!(!repair_cli_run_command_arg(&mut ok));
+        // A non-string args[0] is not the convention signal — left alone.
+        let mut bad: serde_json::Value = serde_json::from_str(
+            r#"{"goal":"G","steps":[{"id":"s1","tool":"cli_run","task":"t","arguments":{"args":[42]}}]}"#,
+        )
+        .unwrap();
+        assert!(!repair_cli_run_command_arg(&mut bad));
     }
 
     #[test]
