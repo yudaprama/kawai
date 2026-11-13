@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "iap",
+  "description": "IAP top-up channel (tauri-plugin-iap: Google Play Billing). NOT parsed by default builds — tauri.conf.json lists only the 'default' capability; the Play-distributed Android build (release-android-play) adds this identifier via its --config merge, which replaces app.security.capabilities with [default, iap].",
+  "windows": ["main"],
+  "platforms": ["android"],
+  "permissions": ["iap:default"]
+}

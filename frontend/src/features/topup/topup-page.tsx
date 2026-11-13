@@ -13,11 +13,13 @@ import {
   type TopupClaim,
   type TopupHistory,
   type TopupHistoryEntry,
+  type TopupIapAvailable,
   type TopupPreview,
   type TopupStatusInfo,
   type TopupVoucherRedeem,
 } from "@/lib/api";
 import { QrisCard } from "@/features/topup/qris-card";
+import { IapPanel } from "@/features/topup/iap-panel";
 import { isLowTokenBalance, refreshTokenBalance, useTokenBalance } from "@/features/topup/use-token-balance";
 
 // ── Constants (source-hardcoded — repo rule: no new env) ────────────────────
@@ -53,6 +55,7 @@ const REASON_LABEL: Record<string, string> = {
   media: "Generasi media",
   admin_adjustment: "Penyesuaian admin",
   voucher: "Voucher",
+  iap: "Google Play",
 };
 
 function formatWhen(unix: number): string {
@@ -97,6 +100,28 @@ function Expiry({ expiresAt }: { expiresAt: number }) {
 }
 
 export function TopupPage() {
+  // ── Top-up channel (QRIS vs Google Play IAP) ──────────────────────────────
+  // Build Play (`release-android-play`) menjawab available=true dan halaman
+  // ini menukar jalur QRIS + voucher dengan panel IAP (kebijakan Play:
+  // barang digital wajib lewat Play Billing). Probe ke backend, bukan
+  // probing plugin — plugin yang tidak ter-registered membuat semua invoke
+  // gagal, sedangkan flag ini compile-time dari backend.
+  const [iapBuild, setIapBuild] = useState<{ accountHash: string } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    call<TopupIapAvailable>("topup_iap_available")
+      .then(({ available, accountHash }) => {
+        if (!cancelled) setIapBuild(available ? { accountHash } : null);
+      })
+      .catch(() => {
+        // Backend tanpa op (build lama) — perlakukan sebagai jalur QRIS.
+        if (!cancelled) setIapBuild(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // ── Balance card — shared store (the rail chip, the submit gate and this
   // page all read the same value; `useTokenBalance` reads on mount) ─────────
   const { tokens: balance, pending: balancePending } = useTokenBalance();
@@ -139,14 +164,18 @@ export function TopupPage() {
       .finally(() => setLoadingPreview(false));
   }, []);
   useEffect(() => {
+    // Build IAP tidak pernah memakai QRIS — jangan hit worker-nya.
+    if (iapBuild != null) return;
     loadPreview();
-  }, [loadPreview]);
+  }, [loadPreview, iapBuild]);
 
   // ── Active-claim recovery ─────────────────────────────────────────────────
   // A pending claim survives reload/remount (one row per email server-side):
   // show its QR immediately instead of letting a fresh claim of a different
   // nominal hit the claim path. Best-effort — on failure the picker works.
   useEffect(() => {
+    // Build IAP tidak pernah memakai QRIS — jangan hit worker-nya.
+    if (iapBuild != null) return;
     let cancelled = false;
     void call<TopupClaim | null>("topup_qris_active")
       .then((data) => {
@@ -158,7 +187,7 @@ export function TopupPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [iapBuild]);
 
   // ── Amount picker (pay-as-you-go) ─────────────────────────────────────────
   const [amountInput, setAmountInput] = useState("");
@@ -349,56 +378,63 @@ export function TopupPage() {
           </CardContent>
         </Card>
 
-        {/* Voucher card — terletak setelah saldo, di luar claim ternary. */}
-        <section className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-medium">Voucher</h3>
-            <span className="text-muted-foreground text-xs">Kode sekali-pakai</span>
-          </div>
-          <div className="space-y-3">
-            <Input
-              placeholder="Masukkan kode voucher"
-              value={voucherInput}
-              onChange={(e) => setVoucherInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  void redeemVoucher();
-                }
-              }}
-              disabled={redeeming}
-              className="font-mono uppercase tracking-wider"
-            />
-            <Button onClick={redeemVoucher} disabled={redeeming || voucherCode === ""} className="w-full">
-              {redeeming ? (
-                <>
-                  <Spinner className="mr-2 size-4 animate-spin" />
-                  Menebus...
-                </>
-              ) : (
-                "Tebus voucher"
+        {/* Voucher card — terletak setelah saldo, di luar claim ternary.
+            Build IAP menyembunyikannya: kode yang dijual di luar Play untuk
+            barang digital melanggar kebijakan Play Billing. */}
+        {iapBuild == null && (
+          <section className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-medium">Voucher</h3>
+              <span className="text-muted-foreground text-xs">Kode sekali-pakai</span>
+            </div>
+            <div className="space-y-3">
+              <Input
+                placeholder="Masukkan kode voucher"
+                value={voucherInput}
+                onChange={(e) => setVoucherInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    void redeemVoucher();
+                  }
+                }}
+                disabled={redeeming}
+                className="font-mono uppercase tracking-wider"
+              />
+              <Button onClick={redeemVoucher} disabled={redeeming || voucherCode === ""} className="w-full">
+                {redeeming ? (
+                  <>
+                    <Spinner className="mr-2 size-4 animate-spin" />
+                    Menebus...
+                  </>
+                ) : (
+                  "Tebus voucher"
+                )}
+              </Button>
+              {voucherResult && (
+                <div className="rounded-md border border-success/20 bg-success/5 p-3 text-xs">
+                  <p className="font-medium text-success">Berhasil!</p>
+                  <p className="text-muted-foreground">
+                    +{voucherResult.tokens.toLocaleString("id-ID")} token dimasukkan
+                  </p>
+                  <p className="text-muted-foreground">
+                    Saldo sekarang: {voucherResult.balance.toLocaleString("id-ID")} token
+                  </p>
+                </div>
               )}
-            </Button>
-            {voucherResult && (
-              <div className="rounded-md border border-success/20 bg-success/5 p-3 text-xs">
-                <p className="font-medium text-success">Berhasil!</p>
-                <p className="text-muted-foreground">
-                  +{voucherResult.tokens.toLocaleString("id-ID")} token dimasukkan
-                </p>
-                <p className="text-muted-foreground">
-                  Saldo sekarang: {voucherResult.balance.toLocaleString("id-ID")} token
-                </p>
-              </div>
-            )}
-            {voucherError && (
-              <div className="border-warning/30 space-y-1 rounded-md border p-3 text-xs">
-                <p className="text-warning font-medium">Gagal</p>
-                <p className="text-muted-foreground font-mono break-words">{voucherError}</p>
-              </div>
-            )}
-          </div>
-        </section>
+              {voucherError && (
+                <div className="border-warning/30 space-y-1 rounded-md border p-3 text-xs">
+                  <p className="text-warning font-medium">Gagal</p>
+                  <p className="text-muted-foreground font-mono break-words">{voucherError}</p>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
-        {claim ? (
+        {iapBuild ? (
+          // ── Google Play Billing (build release-android-play) ─────────────
+          <IapPanel accountHash={iapBuild.accountHash} />
+        ) : claim ? (
           isTerminal ? (
             // ── Terminal states ─────────────────────────────────────────────
             <section className="space-y-3 rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-4">

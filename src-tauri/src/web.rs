@@ -1989,6 +1989,47 @@ async fn topup_voucher_redeem_handler(
         .map_err(err500)
 }
 
+// ── IAP top-up (Google Play Billing — release-android-play build) ───────────
+// Same thin proxies as the Tauri commands; the web build never enables the
+// `iap` feature, so `topup_iap_available` answers false here. Kept for the
+// one-op-both-wrappers invariant (and in case a future storefront reuses the
+// same verify+credit lane).
+
+async fn topup_iap_available_handler(
+    user: Extension<String>,
+) -> Json<logic::topup::IapAvailable> {
+    Json(logic::topup::iap_available(&user.0))
+}
+
+async fn topup_iap_products_handler(
+    headers: HeaderMap,
+) -> Result<Json<logic::topup::IapProducts>, (StatusCode, String)> {
+    let token = cookie_bearer(&headers)?;
+    logic::topup::topup_iap_products(&token)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TopupIapRedeemRequest {
+    product_id: String,
+    purchase_token: String,
+    order_id: String,
+}
+
+async fn topup_iap_redeem_handler(
+    headers: HeaderMap,
+    Json(req): Json<TopupIapRedeemRequest>,
+) -> Result<Json<logic::topup::IapRedeem>, (StatusCode, String)> {
+    let token = cookie_bearer(&headers)?;
+    logic::topup::topup_iap_redeem(&token, &req.product_id, &req.purchase_token, &req.order_id)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
 // ── Civitai image generation (Generator panel) ─────────────────────────────
 // Auth-required thin proxies sharing `logic::civitai` with the Tauri
 // commands. The API key is vault-baked; generate binds the middleware's
@@ -2548,6 +2589,9 @@ pub fn router(dist_dir: PathBuf) -> Router {
         // Voucher top-up (kode sekali-pakai) — single redeem op (POST on
         // both transports); admin ops CLI-only.
         .route("/api/topup_voucher_redeem", post(topup_voucher_redeem_handler))
+        .route("/api/topup_iap_available", post(topup_iap_available_handler))
+        .route("/api/topup_iap_products", post(topup_iap_products_handler))
+        .route("/api/topup_iap_redeem", post(topup_iap_redeem_handler))
         // Civitai image generation (Generator panel) — same 2 ops as the
         // Tauri commands (POST on both transports); the API key is
         // vault-baked, no key management surface.

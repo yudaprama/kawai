@@ -1250,6 +1250,44 @@ pub async fn topup_voucher_redeem(
     logic::topup::topup_voucher_redeem(&token, &code).await
 }
 
+/// ── IAP top-up (Google Play Billing — `release-android-play` build) ────────
+/// Auth-required thin proxies sharing `logic::topup` with the web routes.
+/// The purchase itself happens in the webview via the tauri-plugin-iap JS
+/// API; these ops only surface the build flag and the worker's verify +
+/// credit round-trip.
+
+/// Whether this build ships the IAP channel (compile-time `iap` feature) +
+/// the Play `obfuscatedAccountId` (sha256 of the session identity).
+#[tauri::command]
+pub fn topup_iap_available(session: State<'_, Session>) -> Result<logic::topup::IapAvailable, String> {
+    let user_id = session_user_id(&session)?;
+    Ok(logic::topup::iap_available(&user_id))
+}
+
+/// The server-owned Play catalog (productId → tokens).
+#[tauri::command]
+pub async fn topup_iap_products(
+    session: State<'_, Session>,
+) -> Result<logic::topup::IapProducts, String> {
+    let token = session_bearer(&session)?;
+    logic::topup::topup_iap_products(&token).await
+}
+
+/// Verify a completed Play purchase against the worker (Google Play
+/// Developer API server-side), credit the ledger idempotently per orderId
+/// and return the new balance. The frontend consumes the purchase after this
+/// succeeds.
+#[tauri::command]
+pub async fn topup_iap_redeem(
+    product_id: String,
+    purchase_token: String,
+    order_id: String,
+    session: State<'_, Session>,
+) -> Result<logic::topup::IapRedeem, String> {
+    let token = session_bearer(&session)?;
+    logic::topup::topup_iap_redeem(&token, &product_id, &purchase_token, &order_id).await
+}
+
 /// ── Civitai image generation (Generator panel) ─────────────────────────────
 /// The API key is product-baked (`kawai-vault/constants::civitai::get_civitai`)
 /// — no user-facing key management. `civitai_generate` spends Buzz and lands

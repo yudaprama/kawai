@@ -44,7 +44,18 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_process::init());
+    // IAP top-up channel (Play-distributed Android build only): Google
+    // Play Billing via tauri-plugin-iap. The webview calls the plugin's
+    // JS API directly (purchase/consume); verification + crediting stay
+    // server-side (`logic::topup::topup_iap_redeem` → worker). A #[cfg]
+    // attribute cannot sit mid-chain, so the plugin joins on its own
+    // statement; builds without the `iap` feature never parse the plugin's
+    // capability either (capabilities/iap.json is only listed by the play
+    // build's config merge), so the permission never dangles.
+    #[cfg(feature = "iap")]
+    let builder = builder.plugin(tauri_plugin_iap::init());
+    let builder = builder
         .manage(commands::new_registry())
         .manage(auth::new_session())
         .manage(supervisor_pending_state())
@@ -284,6 +295,9 @@ pub fn run() {
         // Voucher top-up (kode sekali-pakai) — single redeem op; admin ops
         // CLI-only.
         commands::topup_voucher_redeem,
+        commands::topup_iap_available,
+        commands::topup_iap_products,
+        commands::topup_iap_redeem,
         // Civitai image generation (Generator panel) — key is vault-baked,
         // generate is user-bound (Buzz spend + office store writes).
         commands::civitai_api_key_status,

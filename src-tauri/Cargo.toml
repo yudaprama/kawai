@@ -105,6 +105,14 @@ mexc = { path = "../crates/toolsets/mexc", optional = true }
 # (in-process standalone pipeline, no Redis) exposed as recon/scan/catalog/
 # subdomain AgentTools.
 security-tools = { path = "../crates/toolsets/security-tools", optional = true }
+# Google Play Billing / StoreKit IAP (tauri-plugin-iap, Billing Library v9 via
+# the plugin's Kotlin module). Only the Play-distributed Android build enables
+# it (`release-android-play`): Play policy requires digital goods to be sold
+# through Play Billing, so that build swaps the QRIS top-up UI for an IAP
+# panel whose purchases the worker verifies + credits (`/topup/iap/*`).
+# Pinned exactly — the 0.10 line is release-candidates only; a loose "0.10"
+# would not match them.
+tauri-plugin-iap = { version = "=0.10.0-rc.10", optional = true }
 
 # Split-out first-party crates (foundation / engines / toolsets / integrations).
 kawai-auth = { path = "../crates/foundation/auth" }
@@ -239,6 +247,14 @@ tts = ["dep:supertonic"]
 # vendored for the android target.
 release-desktop = ["litert", "tts", "binance", "accounting", "security"]
 release-android = ["release-desktop"]
+# Play-distributed Android build: identical feature set + the IAP top-up
+# channel (tauri-plugin-iap). Play policy requires digital goods to go
+# through Play Billing, so this build's UI swaps the QRIS panel for the IAP
+# one (`topup_iap_available` gates the frontend branch).
+release-android-play = ["release-android", "iap"]
+# IAP top-up channel (tauri-plugin-iap: Play Billing on Android). Never
+# enabled on desktop/web — `release-android-play` is its only consumer.
+iap = ["dep:tauri-plugin-iap"]
 
 [[bin]]
 name = "kawai"

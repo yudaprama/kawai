@@ -89,8 +89,10 @@ fn parsed<T: DeserializeOwned>(json: serde_json::Value) -> std::result::Result<T
 // call site below is untouched.
 pub use kawai_api_types::{
     TopupBalance as Balance, TopupClaim as Claim, TopupHistory as History,
-    TopupHistoryEntry as HistoryEntry, TopupPreview as Preview,
-    TopupStatusInfo as Status, TopupVoucherRedeem as VoucherRedeem,
+    TopupHistoryEntry as HistoryEntry, TopupIapAvailable as IapAvailable,
+    TopupIapProduct as IapProduct, TopupIapProducts as IapProducts,
+    TopupIapRedeem as IapRedeem, TopupPreview as Preview, TopupStatusInfo as Status,
+    TopupVoucherRedeem as VoucherRedeem,
 };
 
 /// Riwayat ledger — halaman batas section Riwayat (source-hardcoded, no env).
@@ -398,4 +400,47 @@ pub async fn topup_history(token: &str) -> std::result::Result<History, String> 
 pub async fn topup_voucher_redeem(token: &str, code: &str) -> std::result::Result<VoucherRedeem, String> {
     let body = serde_json::json!({ "code": code });
     parsed(post(token, "/topup/voucher/redeem", body).await?)
+}
+
+// ─── IAP top-up (Google Play Billing — build `release-android-play`) ───────
+
+/// `iap` build flag + the Play `obfuscatedAccountId` (`sha256(email)` hex),
+/// surfaced to the UI as `topup_iap_available`. Compile-time on purpose: the
+/// frontend must not probe the plugin (an unregistered plugin makes every
+/// invoke fail), it asks the backend which top-up channel this build ships —
+/// and it gets the account hash from here too, so the webview never depends
+/// on WebCrypto. True only in the Play-distributed Android build.
+pub fn iap_available(user_id: &str) -> IapAvailable {
+    use sha2::Digest as _;
+    IapAvailable {
+        available: cfg!(feature = "iap"),
+        account_hash: hex::encode(sha2::Sha256::digest(user_id.as_bytes())),
+    }
+}
+
+/// `GET /topup/iap/products` — the server-owned Play catalog (productId →
+/// tokens). The UI joins it with the plugin's `get_products` for Play's
+/// localized price; the token mapping itself is NEVER taken from the client.
+pub async fn topup_iap_products(token: &str) -> std::result::Result<IapProducts, String> {
+    parsed(get(token, "/topup/iap/products").await?)
+}
+
+/// `POST /topup/iap/redeem` — hand a completed Play purchase to the worker:
+/// it verifies the purchase token against the Google Play Developer API
+/// (purchaseState + package + account bind), credits the ledger idempotently
+/// per `orderId` and returns the new balance. The frontend then consumes the
+/// purchase. Worker rejections (`purchase_not_owned`, `order_id_taken`,
+/// `purchase_account_mismatch`, `iap_not_configured`, …) arrive as `Err`.
+pub async fn topup_iap_redeem(
+    token: &str,
+    product_id: &str,
+    purchase_token: &str,
+    order_id: &str,
+) -> std::result::Result<IapRedeem, String> {
+    let body = serde_json::json!({
+        "productId": product_id,
+        "purchaseToken": purchase_token,
+        "orderId": order_id,
+    });
+    parsed(post(token, "/topup/iap/redeem", body).await?)
 }

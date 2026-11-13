@@ -114,7 +114,7 @@ error sending request`** → R8 stripped the TLS verifier. Release builds run
 CertificateVerifier` is instantiated from Rust via JNI BY NAME, so R8 sees
 it as dead code and removes it — every HTTPS call dies at the TLS layer
 while debug (unminified) builds work. The keep rule lives in
-`src-tauri/gen/android/app/proguard-rules.pro`; release-android.yml has a
+`src-tauri/gen/android/app/proguard-rules.pro`; release-android-build.yml has a
 "Verify TLS verifier survived R8" dex check that fails the build before the
 APK can attach to a release.
 

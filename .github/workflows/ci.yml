@@ -415,6 +415,14 @@ jobs:
         working-directory: src-tauri
         run: cargo ndk -t arm64-v8a -P 24 check --features release-android
 
+      # The Play-distributed variant adds `iap` (tauri-plugin-iap — Google Play
+      # Billing Library v9 through the plugin's Kotlin module) on top of
+      # release-android. Same graph otherwise; this is the every-push compile
+      # gate for the build-play release variant.
+      - name: cargo ndk check (aarch64, play feature set + IAP)
+        working-directory: src-tauri
+        run: cargo ndk -t arm64-v8a -P 24 check --features release-android-play
+
   # ── Android on-device smoke ───────────────────────────────────────────────
   # Lives in android-smoke.yml (manual dispatch on a self-hosted runner): it
   # adds a second bazel graph (android_arm64), a full aarch64 cross-compile

@@ -151,19 +151,27 @@ migration runner terpisah.
 | POST | `/topup/qris/reject` | tolak klaim (admin) |
 | POST | `/topup/qris/autoconfirm` | kredit otomatis via forwarder notifikasi Android — auth **token device statis** (`NOTIF_DEVICE_TOKEN` di `qris.ts`, bukan Bearer user/admin); parse nominal dari `bigText`/`text` → cocokkan ke tepat satu klaim pending → jalur confirm yang sama (idempoten); cap `AUTO_CONFIRM_MAX_IDR` (di atas → dicatat `over_cap`, manual); hasil terminal dicatat `qris_notif_log` (dedup by `id` hash app); hasil non-terminal (409/500) sengaja non-2xx agar app retry |
 | POST | `/admin/balance/credit` | koreksi saldo signed ± (admin, guard saldo ≥ 0) |
+| GET | `/topup/iap/products` | katalog IAP server `{products:[{productId, tokens}]}` — konstanta `IAP_PRODUCTS` di `iap.ts`; 503 `iap_not_configured` bila `PLAY_SERVICE_ACCOUNT_JSON` belum di-set |
+| POST | `/topup/iap/redeem` | verifikasi pembelian Google Play Billing (`purchases.products.get`: state, package, bind akun `sha256(email)`) → kredit idempoten per `orderId` (ledger ref `iap:<orderId>`, guard UNIQUE) → `{status, tokens, balance}` — jalur build Play (`release-android-play`); klien `consumePurchase` hanya setelah 2xx |
 
 Tabel endpoint + detail pemanggilan lengkap: `kawai-server/worker/README.md`.
 
 ### 3.3 Sisi aplikasi
 
 - **Rust** — `src-tauri/src/logic/topup.rs` (murni, reqwest, tanpa tauri/axum)
-  diemban **kedua** wrapper: `commands.rs` (4 op, Bearer dari `auth.token`)
-  dan `web.rs` (4 route `POST /api/<name>` di protected router, Bearer dari
-  cookie `kawai_session`). Frontend tidak pernah mengirim token/user id.
+  diemban **kedua** wrapper: `commands.rs` + `web.rs` (`POST /api/<name>` di
+  protected router; Bearer dari `auth.token` / cookie `kawai_session`).
+  Frontend tidak pernah mengirim token/user id. Selain proxy QRIS di atas,
+  modul ini membawa jalur IAP (`topup_iap_available` = flag compile-time
+  feature `iap`, `topup_iap_products`, `topup_iap_redeem`).
 - **Frontend** — `frontend/src/features/topup/` (Assets rail → Top Up):
-  preview → isi nominal → klaim → QR + countdown → polling status (5s × 5
-  menit, lalu 30s; terminal sembunyikan QR). Kartu saldo dipakai lagi oleh
-  pre-check Fase 0a di `use-workbench.run()`.
+  halaman bercabang per CHANNEL via `topup_iap_available` — build Play
+  (`release-android-play`): `iap-panel.tsx` (katalog worker + harga Play →
+  `purchase` → redeem → `consumePurchase`; pending-poll + recovery
+  `restorePurchases`; QRIS + voucher disembunyikan per kebijakan Play).
+  Build lain: preview → isi nominal → klaim → QR + countdown → polling
+  status (5s × 5 menit, lalu 30s; terminal sembunyikan QR) + voucher.
+  Kartu saldo dipakai lagi oleh pre-check Fase 0a di `use-workbench.run()`.
 - **KV worker** — tidak berubah: `apikey:`/`authz:`/`online:`/`seen:`/dll.
   Endpoint `/kv` + `/balance/:address` kini **wajib Bearer** dan menolak
   reserved key prefixes.

@@ -871,6 +871,48 @@ export type TopupHistoryEntry = {
 };
 
 /**
+ *  `topup_iap_available` — whether this build ships the Play Billing top-up
+ *  channel (compile-time `iap` feature), plus `sha256(email)` hex — the
+ *  Google Play `obfuscatedAccountId` the purchase must carry (the worker
+ *  cross-checks it against the session email). Computed Rust-side so the
+ *  webview never depends on WebCrypto availability.
+ */
+export type TopupIapAvailable = {
+	available: boolean,
+	accountHash: string,
+};
+
+/**
+ *  One Play catalog entry — the SERVER-owned productId → tokens mapping.
+ *  Prices live in Play Console; the UI reads them from the plugin's product
+ *  query and never derives tokens from money.
+ */
+export type TopupIapProduct = {
+	/**  Google Play Console in-app product id, e.g. `tokens_50k`. */
+	productId: string,
+	/**  Tokens credited for one purchase (ledger unit). */
+	tokens: number,
+};
+
+/**  `topup_iap_products` — the catalog, catalog order preserved (UI sort). */
+export type TopupIapProducts = {
+	products: TopupIapProduct[],
+};
+
+/**
+ *  `topup_iap_redeem` — verification result. `status` is
+ *  `credited | already_credited` (the latter: this orderId was credited
+ *  before — a retry after a crash between credit and consume).
+ */
+export type TopupIapRedeem = {
+	status: string,
+	/**  Tokens credited for THIS purchase (repeat of the catalog value). */
+	tokens: number,
+	/**  Balance after the credit. */
+	balance: number,
+};
+
+/**
  *  `topup_qris_preview` — the static merchant payload plus the pay-as-you-go
  *  amount range. Errors while the EMVCo constant is unset (worker 503).
  */
