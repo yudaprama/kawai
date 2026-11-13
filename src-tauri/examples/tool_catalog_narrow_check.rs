@@ -1,5 +1,6 @@
-//! End-to-end check of the planner prompt narrowing against the live Turso
-//! tool catalog (`narrow_registry_for_goal_with`).
+//! End-to-end check of the planner prompt narrowing against the live catalog
+//! host (`narrow_registry_for_goal_with`; catalog.kawai.pro — a self-hosted
+//! sqld reached through the kawai-catalog tunnel).
 //!
 //! Verifies the three contracts without needing a >60-tool install:
 //!   1. Narrowing activates below the production threshold when driven
@@ -32,7 +33,7 @@ async fn run() -> Result<(), String> {
     println!("[narrow_check] full registry: {full_len} tools");
 
     if kawai_tool_catalog::RemoteConfig::from_env().is_none() {
-        return Err("KAWAI_TURSO_* not configured in .env — nothing to check".to_string());
+        return Err("catalog env (KAWAI_TURSO_*) not configured in .env — nothing to check".to_string());
     }
 
     // ── Contract 1: narrowing activates (parametrized) and returns ≤ top_k.
@@ -44,7 +45,12 @@ async fn run() -> Result<(), String> {
     {
         let cfg = kawai_tool_catalog::RemoteConfig::from_env()
             .ok_or("KAWAI_TURSO_* missing")?;
-        let model = kawai_embedding::build_providers_from_env("");
+        // LiteRT-ONLY embedder — the seeder's space. This block exists to
+        // make each layer of the supervisor's `ok()?` chain visible; using
+        // the provider pool here would reintroduce the cross-space bug the
+        // supervisor fix removed (query vectors from whichever remote
+        // provider answers first).
+        let model = kawai_embedding::build_litert_embedder();
         let qvec = model
             .embed_strings(kawai_embedding::EmbedRole::Query, vec![goal.to_string()])
             .await

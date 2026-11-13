@@ -1932,9 +1932,12 @@ async fn sync_catalog_bounded(
 }
 
 /// One serialized sync + freshness gate on the shared replica. Skipped when
-/// a sync completed recently. Safe to call from anywhere (startup prefetch,
-/// plan_task).
-async fn sync_shared_catalog(sync_timeout: std::time::Duration) {
+/// a sync completed recently, unless `force` (the prefetch loop's explicit
+/// retries — see [`prefetch_tool_catalog`]: without it, the suppress window
+/// every attempt installs makes iterations 2..n return instantly and the
+/// "retry" loop degrades into four fingerprint probes that can never retry).
+/// Safe to call from anywhere (startup prefetch, plan_task).
+async fn sync_shared_catalog(sync_timeout: std::time::Duration, force: bool) {
     // CI kill-switch (KAWAI_TOOL_CATALOG_OFFLINE=1): planner_smoke opens the
     // replica but NEVER touches the catalog sqld — zero sync requests, zero
     // quota. The cached replica (see ci.yml) serves the read; on a cache miss
@@ -1946,20 +1949,22 @@ async fn sync_shared_catalog(sync_timeout: std::time::Duration) {
     let Some(catalog) = shared_catalog().await else {
         return;
     };
-    if LAST_SYNC_AT
-        .lock()
-        .map(|t| t.map(|t| t.elapsed() < SYNC_SUPPRESS).unwrap_or(false))
-        .unwrap_or(false)
+    if !force
+        && LAST_SYNC_AT
+            .lock()
+            .map(|t| t.map(|t| t.elapsed() < SYNC_SUPPRESS).unwrap_or(false))
+            .unwrap_or(false)
     {
         return;
     }
     let _guard = CATALOG_SYNC_LOCK.lock().await;
     // Double-check after acquiring the lock (another task may have just
     // finished a sync while we waited).
-    if LAST_SYNC_AT
-        .lock()
-        .map(|t| t.map(|t| t.elapsed() < SYNC_SUPPRESS).unwrap_or(false))
-        .unwrap_or(false)
+    if !force
+        && LAST_SYNC_AT
+            .lock()
+            .map(|t| t.map(|t| t.elapsed() < SYNC_SUPPRESS).unwrap_or(false))
+            .unwrap_or(false)
     {
         return;
     }
@@ -2061,15 +2066,23 @@ async fn sync_shared_catalog(sync_timeout: std::time::Duration) {
 
 /// Startup prefetch: converge the replica in the background so plan_task
 /// never pays (or loses) the first sync. Loop until fresh or attempts out.
-/// Desktop-only: the only caller is the tauri shell's setup hook.
+/// Retry attempts force the sync past the suppress window — each attempt
+/// below would otherwise be swallowed by the window IT installed (the skip
+/// path stamps `LAST_SYNC_AT` too), leaving the loop probing fingerprints it
+/// can never act on. Desktop-only: the only caller is the tauri shell's
+/// setup hook.
 #[cfg(feature = "desktop")]
 pub fn prefetch_tool_catalog() {
     tauri::async_runtime::spawn(async {
         if shared_catalog().await.is_none() {
             return;
         }
-        for _ in 1..=5 {
-            sync_shared_catalog(std::time::Duration::from_secs(60)).await;
+        for attempt in 1..=5 {
+            sync_shared_catalog(
+                std::time::Duration::from_secs(60),
+                attempt > 1, // retries bypass the suppress window
+            )
+            .await;
             let Some(catalog) = shared_catalog().await else { return };
             let Some(cfg) = kawai_tool_catalog::RemoteConfig::from_env() else { return };
             match catalog.fingerprints(&cfg).await {
@@ -2100,7 +2113,7 @@ async fn open_synced_catalog(
     sync_timeout: std::time::Duration,
 ) -> Option<std::sync::Arc<kawai_tool_catalog::Catalog>> {
     let catalog = shared_catalog().await?;
-    sync_shared_catalog(sync_timeout).await;
+    sync_shared_catalog(sync_timeout, false).await;
     match catalog.list_names().await {
         Ok(names) if !names.is_empty() => Some(catalog),
         Ok(_) => {
@@ -2663,10 +2676,13 @@ async fn run_tool_search(
     let Some(catalog) = catalog else {
         return ("\n<tool-search-results>\nTool catalog is unavailable; rely on the core tools listed above.\n</tool-search-results>\n".to_string(), Vec::new());
     };
-    // Primary provider ONLY: the catalog is seeded with provider #1's
-    // embedding space. A silent fallback to another model (the local LiteRT
-    // embedder, same 768-dim) is a different space — cosine becomes noise
-    // and the search returns junk (planner sessions 41–42).
+    // Primary provider ONLY: the catalog is seeded in the on-device model's
+    // space (toolseed embeds through `build_litert_embedder`, and the
+    // `embedder` passed in here is exactly that single-provider embedder).
+    // A fallback into another model's space — remote providers produce the
+    // same 768-dim vectors in a DIFFERENT space — turns cosine into noise,
+    // and the search returns plausible-looking junk (planner sessions 41–42;
+    // re-measured 2026-11-13 while fixing the narrowing path).
     let vecs = match embedder.embed_primary(kawai_embedding::EmbedRole::Query, queries.to_vec()).await {
         Ok(v) => v,
         Err(e) => {
@@ -2821,7 +2837,7 @@ pub async fn narrow_registry_for_goal(
 /// Parametrized variant of [`narrow_registry_for_goal`] (inspection/test
 /// seam): `min_tools` is the activation threshold, `top_k` the admitted set.
 pub async fn narrow_registry_for_goal_with(
-    user_id: &str,
+    _user_id: &str,
     registry: &ToolRegistry,
     goal: &str,
     min_tools: usize,
@@ -2831,7 +2847,17 @@ pub async fn narrow_registry_for_goal_with(
         return None;
     }
     let _cfg = kawai_tool_catalog::RemoteConfig::from_env()?;
-    let model = kawai_embedding::build_providers_from_env(user_id);
+    // The catalog is seeded in the ON-DEVICE model's space (`toolseed` embeds
+    // through `build_litert_embedder`), so the query must be embedded in that
+    // same space. The provider pool (`build_providers_from_env`) is NOT that:
+    // whichever remote provider answers first (OpenRouter/Gemini keys are
+    // baked in) produces a 768-d vector in a DIFFERENT space — same
+    // dimension, unrelated cosines. Measured: the narrowed set flipped
+    // run-to-run between two analytics tools, and the broken runs ranked poem
+    // tools first (cos ~0.03 noise) — every remote answer silently corrupted
+    // the ranking. Same rule as `plan_task`'s tool search (LiteRT-ONLY
+    // embedder) and the cli catalog ("no acceptable second embedder").
+    let model = kawai_embedding::build_litert_embedder();
     let query_vec = model
         .embed_strings(kawai_embedding::EmbedRole::Query, vec![goal.to_string()])
         .await
