@@ -300,6 +300,11 @@ pdf_oxide = { path = "../pdf_oxide" }
 
 [dev-dependencies]
 tempfile = "3"
+# `KAWAI_EXAMPLE_LOG=1` installs a stderr `tracing` subscriber for examples
+# (see examples/common/mod.rs): the catalog sync gate and the supervisor retry
+# logs are `tracing` events, so without one a headless probe silently drops
+# exactly the lines that explain its decision.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # `test-util` for `#[tokio::test(start_paused = true)]` — lets the stalled-worker
 # timeout test auto-advance the clock instead of sleeping 30s for real.
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "test-util"] }

@@ -6,6 +6,7 @@
 /// Prints the error and exits with code 1 on failure.
 pub fn run_async(name: &str, f: impl std::future::Future<Output = Result<(), String>>) {
     kawai_lib::auth::load_dotenv();
+    init_tracing();
 
     #[cfg(feature = "litert")]
     {
@@ -21,6 +22,29 @@ pub fn run_async(name: &str, f: impl std::future::Future<Output = Result<(), Str
         eprintln!("[{name}] FAIL: rebuild with --features litert");
         std::process::exit(1);
     }
+}
+
+/// Opt-in `tracing` subscriber for examples (`KAWAI_EXAMPLE_LOG=1`).
+///
+/// The interesting half of an example is usually a `tracing` event, not the
+/// stdout summary: the catalog sync gate logs why it skipped a sync, the
+/// supervisor logs a stale replica, the remote tier logs a failover. Without a
+/// subscriber all of it is dropped and a headless probe looks like the code
+/// never ran. Off by default because the JSON app subscriber writes to stdout
+/// (it would interleave with what the example prints) and because `RUST_LOG`
+/// is only meaningful once something consumes it.
+pub fn init_tracing() {
+    if std::env::var("KAWAI_EXAMPLE_LOG").as_deref() != Ok("1") {
+        return;
+    }
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .with_target(true)
+        .with_ansi(false)
+        .try_init();
 }
 
 /// Build a merged supervisor toolset from the standard domain builders
