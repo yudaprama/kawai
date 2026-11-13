@@ -172,7 +172,7 @@ pub const AUTO_AGENT_ID: &str = "auto";
 /// step arguments, this tool surfaces it as the step output, and
 /// `WRITER_RAW` promotes that output to the final answer — no planner
 /// rounds, no LLM call. Never planner-visible: it rides no domain toolset,
-/// the Turso catalog, or `PLAN_CORE_TOOLS` — the merged Auto toolset below
+/// the shared catalog, or `PLAN_CORE_TOOLS` — the merged Auto toolset below
 /// is its only registration.
 #[derive(Default)]
 pub struct DirectReplyTool;
@@ -1117,7 +1117,7 @@ pub async fn plan_task(
     // + skills. All three are best-effort — planning never fails on them.
     // All independent, so they run concurrently — sequential awaits here were
     // the bulk of the dead time between submit and the first planner round.
-    // The Turso catalog sync joins the same fan-out (best-effort).
+    // The shared catalog sync joins the same fan-out (best-effort).
     let (persona_block, memories_block, skills_block, attached_files_block, experiences_block, profile_block, catalog) = tokio::join! {
         kawai_memory::persona_prompt_block(user_id),
         kawai_memory::prompt_block_relevant(user_id, goal),
@@ -1153,7 +1153,7 @@ pub async fn plan_task(
     );
 
     // The planner sees NO full catalog. It discovers tools through bounded
-    // search rounds against the Turso tool catalog, then emits the plan.
+    // search rounds against the shared tool catalog, then emits the plan.
     // Core cross-cutting tools are always visible (retrieval misses them
     // disproportionately — measured, see tool_search_probe).
     let core_tools: Vec<String> = PLAN_CORE_TOOLS
@@ -1823,7 +1823,7 @@ fn enforce_cli_run_confirmation_tiering(plan: &mut kawai_router::TaskPlan) {
 
 // ── Planner search-loop (mode A: no full-catalog fallback) ──────────────────
 
-/// Open the Turso tool catalog and sync the local embedded replica, with every
+/// Open the shared tool catalog and sync the local embedded replica, with every
 /// failure surfaced on stderr. An unreachable sync is tolerated (the replica
 /// serves its last synced state), but an EMPTY replica is treated as
 /// unavailable: searching an empty catalog silently returns no hits, which
@@ -1851,6 +1851,11 @@ const SYNC_SUPPRESS: std::time::Duration = std::time::Duration::from_secs(600);
 /// — including one from a PREVIOUS process run, which the in-process
 /// suppress timer can't see — skips the sync (and its quota cost) entirely.
 const REPLICA_FRESH_WINDOW: std::time::Duration = std::time::Duration::from_secs(6 * 3600);
+/// Hard ceiling on trusting a matching fingerprint: the remote can change and
+/// change back between two probes, so a replica syncs at least once per window
+/// even when the cheap local-vs-remote check looks identical. One metered sync
+/// per day is the price of never freezing a device on an old catalog.
+const REPLICA_MAX_STALENESS: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
 
 async fn shared_catalog() -> Option<std::sync::Arc<kawai_tool_catalog::Catalog>> {
     SHARED_CATALOG
@@ -1878,9 +1883,9 @@ async fn shared_catalog() -> Option<std::sync::Arc<kawai_tool_catalog::Catalog>>
 /// plan_task).
 async fn sync_shared_catalog(sync_timeout: std::time::Duration) {
     // CI kill-switch (KAWAI_TOOL_CATALOG_OFFLINE=1): planner_smoke opens the
-    // replica but NEVER touches Turso — zero sync requests, zero quota. The
-    // cached replica (see ci.yml) serves the read; on a cache miss the
-    // planner degrades to core tools, which planner_smoke tolerates (it
+    // replica but NEVER touches the catalog sqld — zero sync requests, zero
+    // quota. The cached replica (see ci.yml) serves the read; on a cache miss
+    // the planner degrades to core tools, which planner_smoke tolerates (it
     // validates plan STRUCTURE, not catalog coverage).
     if std::env::var("KAWAI_TOOL_CATALOG_OFFLINE").as_deref() == Ok("1") {
         return;
@@ -1908,38 +1913,35 @@ async fn sync_shared_catalog(sync_timeout: std::time::Duration) {
 
     // ── Cheap-skip gates BEFORE the sync ──
     // An embedded-replica sync() counts against the host's syncs quota even
-    // when it moves ZERO frames (the request is what Turso meters), so the
-    // "is the data stale?" question is answered first from the replica's
-    // own file age and the cheap local-vs-remote COUNT(*) — the sync only
-    // runs when staleness is proven or unprovable. Same suppress semantics
-    // as a completed sync: a skip here also suppresses re-checking for the
-    // window, so a hot planner loop pays at most one COUNT(*) pair per 10
-    // minutes.
+    // when it moves ZERO frames (the request itself is what the host meters),
+    // so the "is the data stale?" question is answered first from the
+    // replica's own file age and a cheap local-vs-remote content fingerprint
+    // — the sync only runs when staleness is proven or unprovable. The probe
+    // is bounded (5s inside the crate) so an unreachable host cannot stall
+    // planning. Same suppress semantics as a completed sync: a skip here also
+    // suppresses re-checking for the window, so a hot planner loop pays at
+    // most one probe per 10 minutes.
     let cfg = kawai_tool_catalog::RemoteConfig::from_env();
-    let replica_age = std::fs::metadata(kawai_tool_catalog::default_local_path())
-        .and_then(|m| m.modified().map(|t| t.elapsed()))
-        .ok()
-        .transpose()
-        .ok()
-        .flatten();
-    let counts = match &cfg {
-        Some(cfg) => catalog.row_counts(cfg).await.ok(),
+    let replica_age = kawai_tool_catalog::replica_age(&kawai_tool_catalog::default_local_path());
+    let probes = match &cfg {
+        Some(cfg) => catalog.fingerprints(cfg).await.ok(),
         None => None,
     };
-    let (local_rows, remote_rows) = match &counts {
+    let (local_fp, remote_fp) = match &probes {
         Some((l, r)) => (Some(*l), Some(*r)),
         None => (None, None),
     };
     if !kawai_tool_catalog::Catalog::sync_needed(
         replica_age,
-        local_rows,
-        remote_rows,
+        local_fp,
+        remote_fp,
         REPLICA_FRESH_WINDOW,
+        REPLICA_MAX_STALENESS,
     ) {
         tracing::info!(
             component = "tool-catalog",
-            ?local_rows,
-            ?remote_rows,
+            ?local_fp,
+            ?remote_fp,
             ?replica_age,
             "replica fresh — sync skipped"
         );
@@ -1968,27 +1970,34 @@ async fn sync_shared_catalog(sync_timeout: std::time::Duration) {
     // Freshness gate: a timed-out sync leaves the replica at an old
     // replication index — the planner would then search a catalog missing
     // the newest tools entirely (measured: a frozen 83-tool snapshot vs 144
-    // on the remote). Verify and retry once before degrading.
+    // on the remote). A fingerprint mismatch in EITHER direction is stale:
+    // fewer rows means the sync never landed, more means a remote prune has
+    // not reached us yet.
     let Some(cfg) = kawai_tool_catalog::RemoteConfig::from_env() else {
         return;
     };
-    if let Ok((local, remote)) = catalog.row_counts(&cfg).await {
-        if local < remote {
+    if let Ok((local, remote)) = catalog.fingerprints(&cfg).await {
+        if local != remote {
             tracing::warn!(
                 component = "tool-catalog",
-                "replica STALE ({local} vs {remote} on remote) — retrying sync"
+                ?local,
+                ?remote,
+                "replica STALE — retrying sync"
             );
             let _ = tokio::time::timeout(sync_timeout, catalog.sync()).await;
             catalog.sync_detached(); // never leave a dropped sync behind
             *LAST_SYNC_AT.lock().unwrap() = Some(std::time::Instant::now());
-            match catalog.row_counts(&cfg).await {
-                Ok((local, remote)) if local < remote => tracing::error!(
+            match catalog.fingerprints(&cfg).await {
+                Ok((local, remote)) if local != remote => tracing::error!(
                     component = "tool-catalog",
-                    "CRITICAL: replica still stale after retry \
-                     ({local} vs {remote}) — planner sees an outdated catalog"
+                    ?local,
+                    ?remote,
+                    "CRITICAL: replica still stale after retry — planner sees an outdated catalog"
                 ),
                 Ok(_) => tracing::info!(component = "tool-catalog", "replica fresh after retry"),
-                Err(e) => tracing::warn!(component = "tool-catalog", error = %e, "count check failed"),
+                Err(e) => {
+                    tracing::warn!(component = "tool-catalog", error = %e, "fingerprint check failed")
+                }
             }
         }
     }
@@ -2007,16 +2016,22 @@ pub fn prefetch_tool_catalog() {
             sync_shared_catalog(std::time::Duration::from_secs(60)).await;
             let Some(catalog) = shared_catalog().await else { return };
             let Some(cfg) = kawai_tool_catalog::RemoteConfig::from_env() else { return };
-            match catalog.row_counts(&cfg).await {
-                Ok((local, remote)) if local >= remote => break, // converged
+            match catalog.fingerprints(&cfg).await {
+                Ok((local, remote)) if local == remote => break, // converged
                 Ok((local, remote)) => {
                     tracing::warn!(
                         component = "tool-catalog",
-                        "prefetch: replica still stale ({local} vs {remote}), retrying"
+                        ?local,
+                        ?remote,
+                        "prefetch: replica still stale — retrying"
                     );
                 }
                 Err(e) => {
-                    tracing::error!(component = "tool-catalog", "prefetch count check failed: {e}");
+                    tracing::error!(
+                        component = "tool-catalog",
+                        error = %e,
+                        "prefetch fingerprint check failed"
+                    );
                     break;
                 }
             }
@@ -2091,7 +2106,7 @@ pub const NON_DISPATCHABLE_TOOLS: [&str; 5] = [
     "plan_revise",
     "artifact_recall",
 ];
-/// Sync budget — an unreachable Turso must never stall planning, but it must
+/// Sync budget — an unreachable catalog sqld must never stall planning, but it must
 /// be long enough for the FIRST sync of a cold replica (a full frame pull,
 /// not an incremental one) — a too-tight budget leaves the replica empty and
 /// tool discovery blind. Frontend shows live "loading context" progress
@@ -2578,7 +2593,7 @@ fn composio_discovery_rejection(
     None
 }
 
-/// Execute one search round: embed the queries, hit the Turso catalog AND
+/// Execute one search round: embed the queries, hit the shared catalog AND
 /// the device-local cli-catalog, dedupe against everything already shown,
 /// and format the results block. Returns the block plus the names of the
 /// newly surfaced tools/CLIs (planner progress telemetry).
@@ -2633,7 +2648,7 @@ async fn run_tool_search(
             {
                 continue;
             }
-            // The Turso catalog is seeded globally (all domains, all feature
+            // The shared catalog is seeded globally (all domains, all feature
             // combos) while THIS build's registry only contains the tools it
             // can dispatch (e.g. binance_* are feature-gated off). Surfacing a
             // catalog hit the registry cannot dispatch guarantees a validation
@@ -2656,7 +2671,7 @@ async fn run_tool_search(
         }
 
         // Device CLI side — the local cli-catalog (on-device EmbeddingGemma
-        // space, same hybrid recipe, independent of the Turso catalog). A
+        // space, same hybrid recipe, independent of the shared catalog). A
         // not-yet-ready catalog skips silently: the <cli-tools> prompt block
         // already carries the inventory head as fallback.
         let mut cli_listed = 0;
@@ -2720,24 +2735,24 @@ fn suggest_tools(registry: &ToolRegistry, plan_err: &str) -> Vec<String> {
     scored.into_iter().map(|(_, name)| name).collect()
 }
 
-// ── Planner catalog narrowing (Turso tool catalog) ──────────────────────────
+// ── Planner catalog narrowing (shared tool catalog) ──────────────────────────
 
 /// Below this size the full catalog is always pasted into the planner prompt
 /// (small catalogs plan better unfiltered).
 const NARROW_MIN_TOOLS: usize = 60;
 /// Top-k tools admitted to the prompt when narrowing kicks in.
 const NARROW_TOP_K: usize = 40;
-/// Sync budget — an unreachable Turso must never stall planning.
+/// Sync budget — an unreachable catalog sqld must never stall planning.
 const NARROW_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// Narrow the planner prompt's tool catalog to the top-k entries the remote
-/// Turso tool catalog ranks as relevant to the goal (vector + BM25 fused via
+/// shared tool catalog ranks as relevant to the goal (vector + BM25 fused via
 /// RRF over an embedded replica — offline-safe via the last synced state).
 ///
 /// Purely advisory: the result only shapes the prompt. Plan validation and
 /// dispatch stay against the FULL registry, so a stale catalog (or one that
 /// names tools this install cannot dispatch) degrades gracefully. Every
-/// failure mode — no Turso config, no embedder, sync timeout, dimension
+/// failure mode — no catalog config, no embedder, sync timeout, dimension
 /// mismatch, empty intersection — falls back to `None` = full catalog.
 pub async fn narrow_registry_for_goal(
     user_id: &str,
@@ -3116,7 +3131,7 @@ pub fn seed_usdm_universe_for_test(symbols: &[&str], equities: &[&str]) {
 }
 
 /// The Stock Research execution registry: the merged auto catalog narrowed
-/// the planner (never in the Turso tool catalog or `PLAN_CORE_TOOLS`) — this
+/// the planner (never in the shared tool catalog or `PLAN_CORE_TOOLS`) — this
 /// registry is the dispatch view only.
 #[cfg(feature = "litert")]
 pub async fn build_desk_registry(
@@ -3220,7 +3235,7 @@ fn venue_symbol_spellings(symbol: &str) -> Vec<(kawai_venue::Venue, &'static str
 
 /// The YouTube Video Analysis execution registry: the merged auto catalog narrowed
 /// for dispatch PLUS the one youtube stage tool. Stage steps are never
-/// visible to the planner (never in the Turso tool catalog or
+/// visible to the planner (never in the shared tool catalog or
 /// `PLAN_CORE_TOOLS`) — this registry is the dispatch view only.
 #[cfg(feature = "litert")]
 pub async fn build_youtube_registry(

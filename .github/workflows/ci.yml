@@ -459,11 +459,12 @@ jobs:
 
       # Tool-catalog embedded replica (headless data root = /tmp/kawai).
       # planner_smoke opens the replica and a FRESH one full-downloads the
-      # whole ~46 MB catalog from Turso EVERY run — the syncs-quota drain.
-      # Static key: the save is skipped once the key exists, so the replica
-      # ages deliberately — staleness is safe because the supervisor's
-      # row_counts gate detects local < remote and delta-syncs (KBs), and
-      # equal counts skip the sync entirely (zero bytes).
+      # whole ~46 MB catalog from the catalog sqld EVERY run — the
+      # syncs-quota drain. Static key: the save is skipped once the key
+      # exists, so the replica ages deliberately — staleness is safe because
+      # the supervisor's fingerprint gate detects a local-vs-remote mismatch
+      # and delta-syncs (KBs), a matching fingerprint skips the sync entirely
+      # (zero bytes), and a 24h ceiling forces a resync regardless.
       - name: Cache tool-catalog replica
         uses: actions/cache@v4
         with:
