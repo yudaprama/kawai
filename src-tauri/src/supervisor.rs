@@ -1837,7 +1837,10 @@ fn enforce_cli_run_confirmation_tiering(plan: &mut kawai_router::TaskPlan) {
 static SHARED_CATALOG: tokio::sync::OnceCell<
     Option<std::sync::Arc<kawai_tool_catalog::Catalog>>,
 > = tokio::sync::OnceCell::const_new();
-/// Serializes every sync against the shared replica.
+/// Serializes the whole GATE (probe + sync) so two planner calls cannot both
+/// pay the remote probe. The sync itself is serialized where it belongs — by
+/// the per-replica lock inside `kawai_tool_catalog::Catalog` — so a detached
+/// (timed-out) sync and its retry queue instead of racing.
 static CATALOG_SYNC_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 /// Last time a sync attempt COMPLETED (success or logged failure) — a fresh
 /// sync suppresses re-syncing for 10 minutes so prefetch and plan_task
@@ -1876,6 +1879,56 @@ async fn shared_catalog() -> Option<std::sync::Arc<kawai_tool_catalog::Catalog>>
         .ok()
         .cloned()
         .flatten()
+}
+
+/// Run one sync against the shared replica, bounding only the WAIT.
+///
+/// A `timeout` around a sync is a trap unless the work can outlive the wait:
+/// the timeout future owns the join handle, so expiring it drops the sync in
+/// flight — and a sync dropped inside WAL apply poisons the replica
+/// (`wal_insert_begin failed`, then permanently `database is locked`).
+/// `Catalog::sync` runs the work in a spawned task, so the handle can be
+/// abandoned safely: the sync finishes in the background, still holding the
+/// replica lock, and the retry queues behind it. Here the abandoned handle is
+/// re-await'ed by a logger so a slow or failed detached sync is visible
+/// instead of silent (on a phone it has no other channel).
+///
+/// `None` = still running past the budget (outcome unknown; the caller must
+/// re-check freshness rather than assume success).
+async fn sync_catalog_bounded(
+    catalog: &std::sync::Arc<kawai_tool_catalog::Catalog>,
+    budget: std::time::Duration,
+) -> Option<Result<usize, String>> {
+    // `&mut handle` is itself a Future (tokio's JoinHandle is Unpin), so
+    // expiring the wait leaves the handle usable for the logger below.
+    let mut handle = catalog.sync_detached();
+    match tokio::time::timeout(budget, &mut handle).await {
+        Ok(Ok(outcome)) => Some(outcome),
+        Ok(Err(e)) => Some(Err(format!("sync task failed: {e}"))),
+        Err(_) => {
+            tracing::warn!(
+                component = "tool-catalog",
+                "sync exceeded {budget:?} — continuing in background"
+            );
+            tokio::spawn(async move {
+                match handle.await {
+                    Ok(Ok(frames)) if frames > 0 => tracing::info!(
+                        component = "tool-catalog",
+                        frames,
+                        "background catalog sync finished"
+                    ),
+                    Ok(Ok(_)) => {}
+                    Ok(Err(e)) => {
+                        tracing::warn!(component = "tool-catalog", error = %e, "background catalog sync failed")
+                    }
+                    Err(e) => {
+                        tracing::warn!(component = "tool-catalog", error = %e, "background catalog sync task failed")
+                    }
+                }
+            });
+            None
+        }
+    }
 }
 
 /// One serialized sync + freshness gate on the shared replica. Skipped when
@@ -1949,21 +2002,17 @@ async fn sync_shared_catalog(sync_timeout: std::time::Duration) {
         return;
     }
 
-    match tokio::time::timeout(sync_timeout, catalog.sync()).await {
-        Ok(Ok(frames)) if frames > 0 => {
+    match sync_catalog_bounded(&catalog, sync_timeout).await {
+        Some(Ok(frames)) if frames > 0 => {
             tracing::info!(component = "tool-catalog", frames, "catalog synced");
         }
-        Ok(Ok(_)) => {} // already up to date
-        Ok(Err(e)) => tracing::warn!(component = "tool-catalog", error = %e, "catalog sync failed"),
-        Err(_) => {
-            // Do NOT leave the sync dead: a dropped sync mid-WAL-apply
-            // poisons the replica file. Hand it to the background to finish.
-            tracing::warn!(
-                component = "tool-catalog",
-                "sync exceeded {sync_timeout:?} — continuing in background"
-            );
-            catalog.sync_detached();
+        Some(Ok(_)) => {} // already up to date
+        Some(Err(e)) => {
+            tracing::warn!(component = "tool-catalog", error = %e, "catalog sync failed")
         }
+        // Still running in the background; the gate below re-checks freshness
+        // instead of assuming the sync landed.
+        None => {}
     }
     *LAST_SYNC_AT.lock().unwrap() = Some(std::time::Instant::now());
 
@@ -1984,8 +2033,15 @@ async fn sync_shared_catalog(sync_timeout: std::time::Duration) {
                 ?remote,
                 "replica STALE — retrying sync"
             );
-            let _ = tokio::time::timeout(sync_timeout, catalog.sync()).await;
-            catalog.sync_detached(); // never leave a dropped sync behind
+            match sync_catalog_bounded(&catalog, sync_timeout).await {
+                Some(Ok(frames)) => {
+                    tracing::info!(component = "tool-catalog", frames, "retry sync finished")
+                }
+                Some(Err(e)) => {
+                    tracing::warn!(component = "tool-catalog", error = %e, "retry sync failed")
+                }
+                None => {} // still running in the background
+            }
             *LAST_SYNC_AT.lock().unwrap() = Some(std::time::Instant::now());
             match catalog.fingerprints(&cfg).await {
                 Ok((local, remote)) if local != remote => tracing::error!(
