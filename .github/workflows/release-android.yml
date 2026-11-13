@@ -68,11 +68,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # GitHub Actions expressions have no arithmetic operators, so
+  # `10000 + github.run_number` cannot be written inline. Compute it in a
+  # shell step and expose the result as an output for both variant jobs.
+  version-code:
+    runs-on: ubuntu-latest
+    outputs:
+      value: ${{ steps.compute.outputs.value }}
+    steps:
+      - id: compute
+        run: echo "value=$((10000 + ${{ github.run_number }}))" >> "$GITHUB_OUTPUT"
+
   build-qris:
+    needs: version-code
     uses: ./.github/workflows/release-android-build.yml
     with:
       tag: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
-      version_code: ${{ 10000 + github.run_number }}
+      version_code: ${{ needs.version-code.outputs.value }}
       variant: qris
       features: release-android
       build_aab: false
@@ -83,10 +95,11 @@ jobs:
     secrets: inherit
 
   build-play:
+    needs: version-code
     uses: ./.github/workflows/release-android-build.yml
     with:
       tag: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
-      version_code: ${{ 10000 + github.run_number }}
+      version_code: ${{ needs.version-code.outputs.value }}
       variant: play
       features: release-android-play
       build_aab: true
