@@ -607,6 +607,16 @@ struct AuthEmailRequest {
     email: String,
 }
 
+/// Body `POST /api/auth_reset_confirm` — the emailed code plus the NEW
+/// password (camelCase → snake_case via rename, the Axum landmine).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AuthResetConfirmRequest {
+    email: String,
+    code: String,
+    new_password: String,
+}
+
 async fn session_cookie_response(token: &str) -> Response {
     // The cookie carries the Ed25519 bearer token from the auth worker — the
     // middleware resolves it to the user email (with an in-memory cache).
@@ -738,6 +748,30 @@ async fn auth_sign_in_handler(
     let token = logic::local_auth::stored_token(&user.email)
         .ok_or_else(|| (StatusCode::INTERNAL_SERVER_ERROR, "missing auth token".to_string()))?;
     Ok(session_cookie_response(&token).await)
+}
+
+/// The reset code lives entirely at the worker (generated, emailed,
+/// verified); both handlers stay plain pass-throughs. 429 keeps the
+/// worker's rate-limit text so the caller knows to wait.
+async fn auth_reset_request_handler(
+    Json(req): Json<AuthEmailRequest>,
+) -> Result<Response, (StatusCode, String)> {
+    match logic::local_auth::auth_reset_request(&req.email).await {
+        Ok(()) => Ok(StatusCode::NO_CONTENT.into_response()),
+        Err(e) if e.contains("too many reset requests") => {
+            Err((StatusCode::TOO_MANY_REQUESTS, e))
+        }
+        Err(e) => Err((StatusCode::BAD_REQUEST, e)),
+    }
+}
+
+async fn auth_reset_confirm_handler(
+    Json(req): Json<AuthResetConfirmRequest>,
+) -> Result<Response, (StatusCode, String)> {
+    logic::local_auth::auth_reset_confirm(&req.email, &req.code, &req.new_password)
+        .await
+        .map(|_| StatusCode::NO_CONTENT.into_response())
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
 #[derive(Serialize)]
@@ -2492,7 +2526,9 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/auth_sign_up", post(auth_sign_up_handler))
         .route("/api/auth_sign_in", post(auth_sign_in_handler))
         .route("/api/auth_send_code", post(auth_send_code_handler))
-        .route("/api/auth_verify_code", post(auth_verify_code_handler));
+        .route("/api/auth_verify_code", post(auth_verify_code_handler))
+        .route("/api/auth_reset_request", post(auth_reset_request_handler))
+        .route("/api/auth_reset_confirm", post(auth_reset_confirm_handler));
 
     let protected = Router::new()
         .route("/api/whoami", post(whoami_handler))

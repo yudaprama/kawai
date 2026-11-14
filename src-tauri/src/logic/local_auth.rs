@@ -89,7 +89,13 @@ fn random_salt() -> std::result::Result<String, String> {
 }
 
 async fn post_json(path: &str, body: serde_json::Value) -> std::result::Result<(u16, serde_json::Value), String> {
-    let url = format!("{}{path}", worker_base_url());
+    post_json_at(&worker_base_url(), path, body).await
+}
+
+/// `post_json` against an explicit base URL — the seam the reset tests use
+/// (a mock listener on 127.0.0.1) without touching the process-wide env.
+async fn post_json_at(base: &str, path: &str, body: serde_json::Value) -> std::result::Result<(u16, serde_json::Value), String> {
+    let url = format!("{base}{path}");
     eprintln!("[auth] POST {url}");
     let started = std::time::Instant::now();
     let resp = worker_client()
@@ -197,6 +203,16 @@ fn persist_token(user_email: &str, token: &str) {
     // The freshly minted bearer also unlocks the worker's model-routed LLM
     // gateway (`remote-llm` reads this per turn).
     remote_llm::set_gateway_bearer(Some(token.to_string()));
+}
+
+/// Drop the locally persisted session for `user_email` (token file, restore
+/// pointer, gateway bearer). Unlike the logout path there is nothing to
+/// revoke at the worker: the password reset already killed every outstanding
+/// bearer server-side (session epoch bump).
+pub fn clear_stored_token(user_email: &str) {
+    let _ = std::fs::remove_file(kawai_paths::auth_token(user_email));
+    let _ = std::fs::remove_file(kawai_paths::last_session());
+    remote_llm::set_gateway_bearer(None);
 }
 
 /// Read the stored bearer token for a signed-in user, if any.
@@ -494,6 +510,110 @@ pub async fn auth_sign_in(email_addr: &str, password: &str) -> std::result::Resu
     result
 }
 
+/// Kick off a password reset: the WORKER generates the 6-digit code and
+/// emails it — the code never passes through this client. Verification
+/// happens server-side because it only means something there: the reset
+/// updates an EXISTING account, so anyone who knows the email could call
+/// the confirm endpoint directly, and a code verified on-device proves
+/// nothing (the sign-up pattern gets away with it only because the worker's
+/// 409-on-duplicates is the actual gate). The caller cannot learn whether
+/// the email exists from the response.
+pub async fn auth_reset_request(email_addr: &str) -> std::result::Result<(), String> {
+    auth_reset_request_at(&worker_base_url(), email_addr).await
+}
+
+/// `auth_reset_request` against an explicit base URL — the seam the tests
+/// use (a mock listener on 127.0.0.1) without touching the process-wide env.
+async fn auth_reset_request_at(base: &str, email_addr: &str) -> std::result::Result<(), String> {
+    let email = email_addr.trim().to_lowercase();
+    if !email.contains('@') {
+        return Err("invalid email address".into());
+    }
+    let hash = user_hash(&email);
+    let (status, json) =
+        post_json_at(base, "/auth/reset_request", serde_json::json!({ "email": email })).await?;
+    if status != 200 {
+        let msg = error_text(status, &json);
+        // The rate-limit text IS worth surfacing (the user must wait); an
+        // unknown email looks exactly like a known one — generic either way.
+        tracing::warn!(
+            component = "auth",
+            user_id_hash = %hash,
+            stage = "reset_request",
+            status,
+            "reset request rejected"
+        );
+        return Err(msg);
+    }
+    tracing::info!(component = "auth", user_id_hash = %hash, "reset code requested");
+    Ok(())
+}
+
+/// Complete a password reset with the emailed code. The client derives the
+/// new credential exactly like sign-up (fresh 16-byte salt, same
+/// `SHA-256(hex(salt) || vault::encode_string(password))` scheme) and the
+/// worker — which just verified the code — installs it. Success revokes
+/// every outstanding bearer at the worker (session epoch bump), so this
+/// device's stored token must go too: the user signs in again with the new
+/// password.
+pub async fn auth_reset_confirm(
+    email_addr: &str,
+    code: &str,
+    new_password: &str,
+) -> std::result::Result<(), String> {
+    auth_reset_confirm_at(&worker_base_url(), email_addr, code, new_password).await
+}
+
+/// `auth_reset_confirm` against an explicit base URL — the tests' seam.
+async fn auth_reset_confirm_at(
+    base: &str,
+    email_addr: &str,
+    code: &str,
+    new_password: &str,
+) -> std::result::Result<(), String> {
+    let email = email_addr.trim().to_lowercase();
+    if !email.contains('@') {
+        return Err("invalid email address".into());
+    }
+    if new_password.is_empty() {
+        return Err("password must not be empty".into());
+    }
+    let hash = user_hash(&email);
+    let salt = random_salt()?;
+    let credential = derive_credential(&salt, new_password);
+    let (status, json) = post_json_at(
+        base,
+        "/auth/reset_confirm",
+        serde_json::json!({
+            "email": email,
+            "code": code.trim(),
+            "salt": salt,
+            "credential": credential
+        }),
+    )
+    .await?;
+    if status != 200 {
+        let msg = error_text(status, &json);
+        tracing::warn!(
+            component = "auth",
+            user_id_hash = %hash,
+            stage = "reset_confirm",
+            status,
+            "reset confirm rejected"
+        );
+        return Err(msg);
+    }
+    // All other bearers died at the worker — drop this device's copy so the
+    // next launch lands on the sign-in screen instead of a dead session.
+    clear_stored_token(&email);
+    tracing::info!(
+        component = "auth",
+        user_id_hash = %hash,
+        "password reset confirmed; stored session dropped"
+    );
+    Ok(())
+}
+
 /// Short, stable, non-reversible per-user tag for telemetry grouping. The raw
 /// email must never become a Loki label (cardinality + privacy), and it must
 /// not be a plain digest either — this is for correlating a device's logs,
@@ -675,5 +795,93 @@ mod tests {
         let a = derive_credential("abcd1234", "hunter2");
         assert_eq!(a, derive_credential("abcd1234", "hunter2"));
         assert_ne!(a, derive_credential("abcd1234", "hunter3"));
+    }
+
+    /// Mock that CAPTURES the request body so a test can pin the exact JSON
+    /// the worker receives (normalized email, trimmed code, fresh salt,
+    /// derived credential).
+    fn spawn_capturing_worker(
+        status: &'static str,
+        body: &'static str,
+    ) -> (String, std::sync::Arc<std::sync::Mutex<Option<String>>>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let captured: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let sink = captured.clone();
+        std::thread::spawn(move || {
+            if let Ok((mut sock, _)) = listener.accept() {
+                use std::io::{Read, Write};
+                let mut buf = [0u8; 8192];
+                let n = sock.read(&mut buf).unwrap_or(0);
+                let raw = String::from_utf8_lossy(&buf[..n]).to_string();
+                if let Some(payload) = raw.split("\r\n\r\n").nth(1) {
+                    *sink.lock().unwrap() = Some(payload.to_string());
+                }
+                let resp = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = sock.write_all(resp.as_bytes());
+            }
+        });
+        (format!("http://{addr}"), captured)
+    }
+
+    /// 200 → ok; 429 → the worker's rate-limit text passes through (the user
+    /// must wait), everything the worker says stays the user-facing message.
+    #[tokio::test]
+    async fn auth_reset_request_maps_worker_answers() {
+        let ok = spawn_mock_worker("200 OK", r#"{"ok":true}"#);
+        auth_reset_request_at(&ok, "a@b.c")
+            .await
+            .expect("a 200 must pass");
+
+        let limited = spawn_mock_worker(
+            "429 Too Many Requests",
+            r#"{"error":"too many reset requests — try again later"}"#,
+        );
+        let err = auth_reset_request_at(&limited, "a@b.c")
+            .await
+            .expect_err("429 must fail");
+        assert!(err.contains("too many reset requests"), "{err}");
+    }
+
+    /// The confirm payload must carry the normalized email, the trimmed code,
+    /// a FRESH 16-byte salt, and the credential derived with the sign-up
+    /// scheme — the worker validates the shape and installs exactly this.
+    #[tokio::test]
+    async fn auth_reset_confirm_sends_code_salt_and_credential() {
+        let (base, captured) = spawn_capturing_worker("200 OK", r#"{"ok":true}"#);
+        auth_reset_confirm_at(&base, " A@B.C ", " 123456 ", "hunter2")
+            .await
+            .expect("confirm must pass");
+        let raw = captured
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("request body captured");
+        let json: serde_json::Value = serde_json::from_str(&raw).expect("valid json");
+        assert_eq!(json["email"], "a@b.c");
+        assert_eq!(json["code"], "123456");
+        let salt = json["salt"].as_str().expect("salt is a string");
+        assert_eq!(salt.len(), 32, "salt must be 16-byte hex");
+        assert!(salt.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(json["credential"], derive_credential(salt, "hunter2"));
+    }
+
+    /// A wrong-code 400 surfaces the worker's GENERIC text verbatim — the
+    /// client must not add anything that distinguishes wrong from expired
+    /// from consumed.
+    #[tokio::test]
+    async fn auth_reset_confirm_surfaces_the_generic_rejection() {
+        let base = spawn_mock_worker(
+            "400 Bad Request",
+            r#"{"error":"code is invalid or expired"}"#,
+        );
+        let err = auth_reset_confirm_at(&base, "a@b.c", "000000", "hunter2")
+            .await
+            .expect_err("400 must fail");
+        assert_eq!(err, "code is invalid or expired");
     }
 }

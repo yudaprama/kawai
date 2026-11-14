@@ -188,6 +188,8 @@ pub fn run() {
         commands::auth_send_code,
         commands::auth_verify_code,
         commands::auth_sign_in,
+        commands::auth_reset_request,
+        commands::auth_reset_confirm,
         commands::cancel_stream,
         commands::logout,
         commands::whoami,

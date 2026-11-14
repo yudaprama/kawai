@@ -292,6 +292,34 @@ pub async fn auth_sign_in(
     establish_local_session(&user.email, session)
 }
 
+/// Public RPC: ask the worker to email a password-reset code. The code is
+/// generated and verified worker-side — the client never sees it.
+#[tauri::command]
+pub async fn auth_reset_request(email: String) -> Result<(), String> {
+    logic::local_auth::auth_reset_request(&email).await
+}
+
+/// Public RPC: complete the password reset with the emailed code. The reset
+/// revokes every outstanding bearer at the worker, so a locally signed-in
+/// session for this email is dropped as well.
+#[tauri::command]
+pub async fn auth_reset_confirm(
+    email: String,
+    code: String,
+    new_password: String,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let email = email.trim().to_lowercase();
+    logic::local_auth::auth_reset_confirm(&email, &code, &new_password).await?;
+    // If this device was signed in as the reset user, its session is already
+    // dead server-side — clear the local state so the UI shows sign-in.
+    let signed_in = session.read().ok().and_then(|g| g.clone());
+    if signed_in.as_deref() == Some(email.as_str()) {
+        clear_local_session(&session, &email);
+    }
+    Ok(())
+}
+
 /// Set the in-memory session to a signed-in email (the identity).
 fn establish_local_session(email: &str, session: State<'_, Session>) -> Result<UserInfo, String> {
     *session

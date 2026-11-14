@@ -809,7 +809,11 @@
     "codePlaceholder": "6-digit code sent to your email",
     "verifyAndCreateButton": "Verify & Create Account",
     "sendCodeSignUpButton": "Send Code & Sign Up",
-    "didntGetCode": "Didn't get the code?"
+    "didntGetCode": "Didn't get the code?",
+    "newPassword": "New password",
+    "sendResetCodeButton": "Send Reset Code",
+    "resetConfirmButton": "Reset Password",
+    "resetSuccess": "Password updated — sign in with your new password."
   },
   "toasts": {
     "sessionCreated": "Session created",

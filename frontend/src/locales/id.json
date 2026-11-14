@@ -809,7 +809,11 @@
     "codePlaceholder": "Kode 6 digit dikirim ke emailmu",
     "verifyAndCreateButton": "Verifikasi & Buat Akun",
     "sendCodeSignUpButton": "Kirim Kode & Daftar",
-    "didntGetCode": "Tidak menerima kode?"
+    "didntGetCode": "Tidak menerima kode?",
+    "newPassword": "Kata sandi baru",
+    "sendResetCodeButton": "Kirim Kode Reset",
+    "resetConfirmButton": "Reset Kata Sandi",
+    "resetSuccess": "Kata sandi diperbarui — masuk dengan kata sandi barumu."
   },
   "toasts": {
     "sessionCreated": "Sesi dibuat",
