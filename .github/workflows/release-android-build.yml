@@ -62,6 +62,10 @@ on:
         description: 'Upload the AAB to the Play internal track (gated on signing + PLAY_UPLOAD_ENABLED).'
         required: true
         type: boolean
+      native_artifact:
+        description: 'Artifact containing the prebuilt Android LiteRT-LM shared object.'
+        required: true
+        type: string
       loki_level:
         description: 'KAWAI_LOKI_LEVEL baked at compile time (off|error|warn|info|debug|trace).'
         required: false
@@ -192,60 +196,30 @@ jobs:
         with:
           targets: aarch64-linux-android
 
+      - name: Cache Rust dependencies and Android target output
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: android-${{ inputs.features }}
+          cache-on-failure: true
+
       - uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
       # ── LiteRT-LM C library (android_arm64) ─────────────────────────────
-      # Same bazel source as the desktop release, different config. Bazelisk
-      # honors the vendored .bazelversion pin so this matches upstream.
-      - name: Mount bazel cache
-        uses: actions/cache@v4
+      # The caller builds this architecture-specific linker input once per
+      # release. Artifact transfer avoids racing two cold Bazel builds while
+      # each variant still stages its own checked-out companion libraries.
+      - name: Download prebuilt LiteRT-LM
+        uses: actions/download-artifact@v4
         with:
-          path: ~/.cache/bazel
-          key: bazel-linux-android_arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
-          restore-keys: bazel-linux-android_arm64-
+          name: ${{ inputs.native_artifact }}
+          path: cognee-litert-lm/native/aarch64-linux-android
 
-      - name: Install bazelisk
-        run: |
-          # GitHub-hosted runners intermittently time out on github release
-          # downloads (v0.3.80 lost two runs: a Maven 504 and this step's
-          # bare wget exiting 4 after 2.5 min of silence).
-          sudo wget -q --tries=10 --timeout=30 --waitretry=5 -O /usr/local/bin/bazelisk \
-            https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
-          sudo chmod +x /usr/local/bin/bazelisk
-          bazelisk version
-
-      # The .so and its companions land in native/aarch64-linux-android — the
-      # link dir cognee-litert-lm's build.rs infers for this target — and are
-      # then packed into jniLibs so the Android linker resolves them from the
-      # app's nativeLibraryDir at load time (both the link and the runtime half
-      # of the litert feature). The two variant jobs share this cache key, so
-      # whichever finishes first warms it for the other.
-      - name: Build litert-lm for Android (arm64)
-        run: |
-          set -euo pipefail
-          cd cognee-litert-lm/vendor/LiteRT-LM
-          # -z max-page-size=16384: Google Play requires all native libs in
-          # updates targeting Android 15+ to be 16 KB aligned (ELF LOAD
-          # p_align); the default lld page size here is 4 KB and Play rejects
-          # the AAB with a bare "Validation of uploaded file failed."
-          # -soname: the Linux/Android link branch passes
-          # c/litert_lm_c_api_linux.lds, a VERSION SCRIPT, so the library
-          # exports a versioned symbol node (LITERT_LM_C_API_1.0). Every
-          # consumer then records a DT_VERNEED entry naming liblitert-lm.so,
-          # and bionic resolves that name against the loaded dependency's
-          # DT_SONAME (linker.cpp VersionTracker::init_verneed). With no
-          # DT_SONAME the soname is "" and dlopen of libkawai_lib.so dies at
-          # launch with `cannot find "liblitert-lm.so" from verneed[0] in
-          # DT_NEEDED list` — an instant crash, before any Rust code runs.
-          bazelisk build //c:litert-lm --config=android_arm64 --jobs=6 \
-            --linkopt=-Wl,-soname,liblitert-lm.so \
-            --linkopt=-Wl,-z,max-page-size=16384
-          mkdir -p ../../native/aarch64-linux-android
-          cp bazel-bin/c/liblitert-lm.so ../../native/aarch64-linux-android/
-          cp prebuilt/android_arm64/*.so ../../native/aarch64-linux-android/
+      - name: Verify prebuilt LiteRT-LM
+        run: test -s cognee-litert-lm/native/aarch64-linux-android/liblitert-lm.so
 
       - name: Stage litert libs into jniLibs
         run: bash scripts/stage-litert-android.sh

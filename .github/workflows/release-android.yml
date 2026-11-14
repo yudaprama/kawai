@@ -79,8 +79,68 @@ jobs:
       - id: compute
         run: echo "value=$((10000 + ${{ github.run_number }}))" >> "$GITHUB_OUTPUT"
 
-  build-qris:
+
+  # LiteRT-LM is identical for the QRIS and Play feature sets. Build its
+  # arm64 shared object once, then give both isolated variant runners the
+  # same linker input. A cache cannot reliably deduplicate concurrent cold
+  # jobs because it is saved only when its writer completes.
+  prepare-native:
     needs: version-code
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          token: ${{ secrets.RELEASE_TOKEN }}
+          submodules: recursive
+          lfs: true
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'cmdline-tools;latest'
+
+      - name: Install Android NDK
+        run: |
+          set -euo pipefail
+          SDKM="$(ls -d "$ANDROID_HOME"/cmdline-tools/latest*/bin/sdkmanager | sort -V | tail -n1)"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install "ndk;28.2.13676358"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+
+      - name: Restore Bazel cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel
+          key: bazel-linux-android_arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/WORKSPACE', 'cognee-litert-lm/vendor/LiteRT-LM/.bazelrc') }}
+          restore-keys: bazel-linux-android_arm64-
+
+      - name: Install bazelisk
+        run: |
+          sudo wget -q --tries=10 --timeout=30 --waitretry=5 -O /usr/local/bin/bazelisk \
+            https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
+          sudo chmod +x /usr/local/bin/bazelisk
+
+      - name: Build LiteRT-LM for Android (arm64)
+        run: |
+          set -euo pipefail
+          cd cognee-litert-lm/vendor/LiteRT-LM
+          bazelisk build //c:litert-lm --config=android_arm64 --jobs=6 \
+            --linkopt=-Wl,-soname,liblitert-lm.so \
+            --linkopt=-Wl,-z,max-page-size=16384
+          mkdir -p ../../native/aarch64-linux-android
+          cp bazel-bin/c/liblitert-lm.so ../../native/aarch64-linux-android/
+
+      - name: Upload LiteRT-LM linker input
+        uses: actions/upload-artifact@v4
+        with:
+          name: litert-android-native
+          path: cognee-litert-lm/native/aarch64-linux-android/liblitert-lm.so
+          if-no-files-found: error
+          retention-days: 1
+
+  build-qris:
+    needs: [version-code, prepare-native]
     uses: ./.github/workflows/release-android-build.yml
     with:
       tag: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
@@ -92,10 +152,11 @@ jobs:
       attach_release: true
       upload_play: false
       loki_level: ${{ inputs.loki_level || 'warn' }}
+      native_artifact: litert-android-native
     secrets: inherit
 
   build-play:
-    needs: version-code
+    needs: [version-code, prepare-native]
     uses: ./.github/workflows/release-android-build.yml
     with:
       tag: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
@@ -107,4 +168,5 @@ jobs:
       attach_release: false
       upload_play: true
       loki_level: ${{ inputs.loki_level || 'warn' }}
+      native_artifact: litert-android-native
     secrets: inherit
