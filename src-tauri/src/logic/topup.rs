@@ -100,7 +100,27 @@ const HISTORY_LIMIT: u64 = 50;
 
 #[cfg(test)]
 mod tests {
-    use super::worker_unreachable;
+    use super::{iap_available, worker_unreachable};
+
+    /// The account hash is the Google Play `obfuscatedAccountId`: the worker
+    /// re-computes sha256(email) and REFUSES the purchase when it differs, so
+    /// the exact byte spelling here is a money guard, not cosmetics.
+    #[test]
+    fn iap_account_hash_is_lowercase_sha256_hex_of_the_identity() {
+        let available = iap_available("user@kawai.pro");
+        assert_eq!(
+            available.account_hash,
+            "b7d868761abddfc1bf6847735f51084cea7959abdf1e268c9cafef559affaa63"
+        );
+        // 64 hex chars, lowercase — the worker's encoder is lowercase too.
+        assert_eq!(available.account_hash.len(), 64);
+        assert!(available
+            .account_hash
+            .chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)));
+        // Compile-time build flag: only `release-android-play` ships it.
+        assert_eq!(available.available, cfg!(feature = "iap"));
+    }
 
     #[test]
     fn grace_applies_only_to_unreachability() {

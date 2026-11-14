@@ -106,21 +106,34 @@ export function TopupPage() {
   // barang digital wajib lewat Play Billing). Probe ke backend, bukan
   // probing plugin — plugin yang tidak ter-registered membuat semua invoke
   // gagal, sedangkan flag ini compile-time dari backend.
-  const [iapBuild, setIapBuild] = useState<{ accountHash: string } | null>(null);
-  useEffect(() => {
+  //
+  // Empat keadaan, dan hanya `qris` yang boleh merender jalur QRIS: build
+  // Play TIDAK BOLEH jatuh ke QRIS hanya karena probe gagal (itu justru
+  // kanal yang dilarang Play), jadi `probing` dan `failed` merender keadaan
+  // netral + tombol coba lagi, bukan lane QRIS.
+  type TopupChannel =
+    | { kind: "probing" }
+    | { kind: "qris" }
+    | { kind: "iap"; accountHash: string }
+    | { kind: "failed"; message: string };
+  const [channel, setChannel] = useState<TopupChannel>({ kind: "probing" });
+  const probeChannel = useCallback(() => {
     let cancelled = false;
+    setChannel({ kind: "probing" });
     call<TopupIapAvailable>("topup_iap_available")
       .then(({ available, accountHash }) => {
-        if (!cancelled) setIapBuild(available ? { accountHash } : null);
+        if (cancelled) return;
+        setChannel(available ? { kind: "iap", accountHash } : { kind: "qris" });
       })
-      .catch(() => {
-        // Backend tanpa op (build lama) — perlakukan sebagai jalur QRIS.
-        if (!cancelled) setIapBuild(null);
+      .catch((err) => {
+        if (!cancelled) setChannel({ kind: "failed", message: errText(err) });
       });
     return () => {
       cancelled = true;
     };
   }, []);
+  useEffect(() => probeChannel(), [probeChannel]);
+  const qrisLane = channel.kind === "qris";
 
   // ── Balance card — shared store (the rail chip, the submit gate and this
   // page all read the same value; `useTokenBalance` reads on mount) ─────────
@@ -164,18 +177,19 @@ export function TopupPage() {
       .finally(() => setLoadingPreview(false));
   }, []);
   useEffect(() => {
-    // Build IAP tidak pernah memakai QRIS — jangan hit worker-nya.
-    if (iapBuild != null) return;
+    // Hanya lane QRIS yang memakai preview — build IAP jangan hit worker-nya,
+    // dan probe yang belum/gagal selesai juga belum boleh menebak.
+    if (!qrisLane) return;
     loadPreview();
-  }, [loadPreview, iapBuild]);
+  }, [loadPreview, qrisLane]);
 
   // ── Active-claim recovery ─────────────────────────────────────────────────
   // A pending claim survives reload/remount (one row per email server-side):
   // show its QR immediately instead of letting a fresh claim of a different
   // nominal hit the claim path. Best-effort — on failure the picker works.
   useEffect(() => {
-    // Build IAP tidak pernah memakai QRIS — jangan hit worker-nya.
-    if (iapBuild != null) return;
+    // Hanya lane QRIS yang punya claim aktif.
+    if (!qrisLane) return;
     let cancelled = false;
     void call<TopupClaim | null>("topup_qris_active")
       .then((data) => {
@@ -187,7 +201,7 @@ export function TopupPage() {
     return () => {
       cancelled = true;
     };
-  }, [iapBuild]);
+  }, [qrisLane]);
 
   // ── Amount picker (pay-as-you-go) ─────────────────────────────────────────
   const [amountInput, setAmountInput] = useState("");
@@ -381,7 +395,7 @@ export function TopupPage() {
         {/* Voucher card — terletak setelah saldo, di luar claim ternary.
             Build IAP menyembunyikannya: kode yang dijual di luar Play untuk
             barang digital melanggar kebijakan Play Billing. */}
-        {iapBuild == null && (
+        {qrisLane && (
           <section className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-medium">Voucher</h3>
@@ -431,9 +445,33 @@ export function TopupPage() {
           </section>
         )}
 
-        {iapBuild ? (
+        {channel.kind === "iap" ? (
           // ── Google Play Billing (build release-android-play) ─────────────
-          <IapPanel accountHash={iapBuild.accountHash} />
+          <IapPanel accountHash={channel.accountHash} />
+        ) : channel.kind === "probing" ? (
+          // Probe kanal belum selesai — jangan tebak QRIS (di build Play itu
+          // kanal yang dilarang). Netral, tanpa memanggil worker apa pun.
+          <section className="flex items-center justify-center rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-8">
+            <Spinner />
+          </section>
+        ) : channel.kind === "failed" ? (
+          <section className="border-warning/30 space-y-2 rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-4 text-sm">
+            <p className="text-warning font-medium">Kanal top-up tidak terbaca</p>
+            <p className="text-muted-foreground font-mono text-xs break-words">{channel.message}</p>
+            <p className="text-muted-foreground text-xs">
+              Saldo dan riwayat tetap aman. Coba lagi — jangan menebak kanal pembayaran.
+            </p>
+            <Button
+              onClick={() => {
+                probeChannel();
+              }}
+              size="sm"
+              variant="outline"
+            >
+              <Icon name="rotate-ccw" className="size-3.5" />
+              Coba lagi
+            </Button>
+          </section>
         ) : claim ? (
           isTerminal ? (
             // ── Terminal states ─────────────────────────────────────────────

@@ -212,7 +212,13 @@ bun run bundle:litert
 # and a service account must be invited to the app with "Release" before any
 # upload; the IAP products (tokens_10k/25k/50k/100k — kawai-server/worker/src/
 # iap.ts catalog) must be created in Play Console before the IAP panel sells
-# anything. The first AAB itself may come from CI.
+# anything. The first AAB itself may come from CI. Verification is
+# server-side only (kawai-server/worker/src/iap.ts): the worker checks
+# purchaseState + packageName + the MANDATORY sha256(email)
+# `obfuscatedAccountId` bind (a purchase with no bind is refused, never
+# credited), then credits idempotently per orderId. Known gap: refunds /
+# chargebacks are not reconciled yet — a refunded purchase keeps its tokens
+# until a `voidedpurchases` reconciliation job exists.
 
 # Build the LiteRT-LM C library (first build ~15-30 min; cached afterwards)
 cd cognee-litert-lm/vendor/LiteRT-LM && bazel build //c:litert-lm --config=macos_arm64 --jobs=6

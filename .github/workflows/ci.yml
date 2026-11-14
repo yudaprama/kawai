@@ -221,10 +221,12 @@ jobs:
           cargo tree --duplicates 2>&1 | grep -E "^[a-z].* v[0-9]" | cut -d' ' -f1 | sort | uniq -c | sort -nr | head -n 20 | tee -a "$GITHUB_STEP_SUMMARY"
         working-directory: src-tauri
 
-      # kawai-server auth worker (TypeScript, Cloudflare Workers): type gate for
-      # the D1 auth directory + Ed25519 token mint/verify (see kawai-server/worker).
-      - name: typecheck (kawai-server worker)
-        run: bun install --frozen-lockfile && bun run typecheck
+      # kawai-server auth worker (TypeScript, Cloudflare Workers): type + unit
+      # gate for the D1 auth directory, Ed25519 token mint/verify and the IAP
+      # redeem money guarantees (idempotency per orderId, ledger double-credit
+      # guard, mandatory account bind — see kawai-server/worker/src/iap.test.ts).
+      - name: typecheck + test (kawai-server worker)
+        run: bun install --frozen-lockfile && bun run typecheck && bun test
         working-directory: kawai-server/worker
 
       - name: cargo test (crates/engines/analytics)
