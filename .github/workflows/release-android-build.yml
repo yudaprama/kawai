@@ -35,9 +35,9 @@ on:
         required: true
         type: string
       version_code:
-        description: 'Android versionCode (10000 + the PARENT run_number, so both variants of one release share it).'
+        description: 'Android versionCode (10000 + the PARENT run_number, so both variants of one release share it). STRING, not number: GitHub silently drops the child run when a needs.* string output is passed to a number-typed workflow_call input; the use sites fromJSON() it back into a real JSON number.'
         required: true
-        type: number
+        type: string
       variant:
         description: 'qris | play — selects the config merge and upload steps.'
         required: true
@@ -298,11 +298,11 @@ jobs:
           set -euo pipefail
           if [ "${{ inputs.variant }}" = "play" ]; then
             cat > "$RUNNER_TEMP/tauri-android-version.json" <<EOF
-          {"bundle": {"android": {"versionCode": ${{ inputs.version_code }}}}, "app": {"security": {"capabilities": ["default", "iap"]}}}
+          {"bundle": {"android": {"versionCode": ${{ fromJSON(inputs.version_code) }}}}, "app": {"security": {"capabilities": ["default", "iap"]}}}
           EOF
           else
             cat > "$RUNNER_TEMP/tauri-android-version.json" <<EOF
-          {"bundle": {"android": {"versionCode": ${{ inputs.version_code }}}}}
+          {"bundle": {"android": {"versionCode": ${{ fromJSON(inputs.version_code) }}}}}
           EOF
           fi
 
