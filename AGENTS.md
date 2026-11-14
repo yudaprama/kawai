@@ -221,9 +221,17 @@ bun run bundle:litert
 # server-side only (kawai-server/worker/src/iap.ts): the worker checks
 # purchaseState + packageName + the MANDATORY sha256(email)
 # `obfuscatedAccountId` bind (a purchase with no bind is refused, never
-# credited), then credits idempotently per orderId. Known gap: refunds /
-# chargebacks are not reconciled yet — a refunded purchase keeps its tokens
-# until a `voidedpurchases` reconciliation job exists.
+# credited), then credits idempotently per orderId. Refunds/chargebacks are
+# reconciled server-side too: POST /internal/iap/refunds (+ /cursor) behind the
+# SAME RECAP_SECRET bearer as /internal/recap* — purchases.voidedpurchases.list
+# (one-time products, 24h window overlap, ms cursor with CAS, idempotent per
+# orderId via iap_refunds) debits the ledger as `iap_refund:<orderId>`; the
+# balance is ALLOWED to go negative (refund charges reality — recap's rule),
+# and an account with >=2 refunds in 30 days hits a credit hold
+# (purchase_hold_refunds, 403) instead of a debt. A run refuses (409
+# refund_window_too_large) rather than silently truncating. The cron pass lives
+# in crates/ops/recap beside the billing recap; this build + wiring deploy only
+# after the first end-to-end purchase is proven on the internal track.
 
 # Build the LiteRT-LM C library (first build ~15-30 min; cached afterwards)
 cd cognee-litert-lm/vendor/LiteRT-LM && bazel build //c:litert-lm --config=macos_arm64 --jobs=6

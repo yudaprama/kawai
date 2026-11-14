@@ -44,6 +44,8 @@ const ERROR_TEXT: Record<string, string> = {
   purchase_token_taken: "Token pembelian ini sudah dipakai untuk transaksi lain.",
   purchase_package_mismatch: "Pembelian ini bukan untuk aplikasi kawai.",
   purchase_verify_failed: "Google Play belum bisa memverifikasi pembelian — coba lagi sebentar.",
+  purchase_hold_refunds:
+    "Pembelian ini ditahan karena akun ini punya 2 refund dalam 30 hari terakhir — hubungi dukungan agar pembayaran ini dikreditkan.",
   order_id_taken: "Nomor pesanan ini sudah terpakai di akun lain.",
   unknown_product: "Produk ini tidak ada di katalog.",
   claim_failed: "Pembelian gagal dicatat — coba lagi.",
@@ -55,6 +57,7 @@ const ERROR_TEXT: Record<string, string> = {
 const TERMINAL_ERRORS = [
   "purchase_account_mismatch",
   "purchase_account_unbound",
+  "purchase_hold_refunds",
   "purchase_package_mismatch",
   "purchase_not_purchased_canceled",
   "purchase_not_purchased_unknown",
