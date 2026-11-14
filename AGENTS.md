@@ -210,9 +210,14 @@ bun run bundle:litert
 # is not equivalent because Play rejects a re-used versionCode.
 # Only the APP CREATION is manual: the Play Developer API cannot create apps,
 # and a service account must be invited to the app with "Release" before any
-# upload; the IAP products (tokens_10k/25k/50k/100k — kawai-server/worker/src/
-# iap.ts catalog) must be created in Play Console before the IAP panel sells
-# anything. The first AAB itself may come from CI. Verification is
+# upload. The IAP products (tokens_10k/25k/50k/100k — kawai-server/worker/src/
+# iap.ts catalog) are created by scripts/play-iap-products.py (idempotent
+# oneTimeProducts.patch + activation, IDR anchors at QRIS parity, other regions
+# converted by Play). It only works once a billing-enabled AAB is live: Play
+# refuses product creation until an uploaded artifact declares
+# com.android.vending.BILLING, which only release-android-play carries
+# (tauri-plugin-iap's manifest), so the script runs AFTER the first Play-variant
+# upload. Verification is
 # server-side only (kawai-server/worker/src/iap.ts): the worker checks
 # purchaseState + packageName + the MANDATORY sha256(email)
 # `obfuscatedAccountId` bind (a purchase with no bind is refused, never
