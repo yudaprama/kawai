@@ -114,20 +114,12 @@ export function useSupervisorChat(userId?: string | null) {
     patch({ messages: [] } as Partial<SupervisorChatState>);
   }, [unloadModel, patch]);
 
-  // Sign out: clear the auth session AND the cached chat state (userId stays
-  // in state otherwise, so the gate never shows until a reload).
+  // Sign out: the auth store is shared with AuthGate, so clearing it unmounts
+  // the whole signed-in tree (and with it every cached chat field) — no
+  // per-field reset here.
   const signOut = useCallback(async () => {
     await logout();
-    patch({
-      userId: null,
-      sessionId: null,
-      sessions: [],
-      archivedSessions: [],
-      sessionsLoading: false,
-      sessionsError: null,
-      messages: [],
-    } as Partial<SupervisorChatState>);
-  }, [logout, patch]);
+  }, [logout]);
 
   return {
     ...state,

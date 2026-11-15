@@ -40,7 +40,7 @@ OpenHuman concept | Kawai equivalent today | Delta
 MemoryGuard 18 capability families | 5 `MEMORY_KINDS` (preference/rule/event/fact/goal), one flat table | Needs **namespaces** column + per-family prompt visibility
 AgentExperience store | TurnMemory (`session_artifacts` table) logs process outputs, survives restarts | Needs a **distilled experience row** (task → lesson → tool sequence) written at plan completion
 FacetCache (class/key/stability/user_state) | — | New table + new prompt block + rebuild path
-Onboarding ContextGatheringStep | `auth-gate.tsx` → `use-auth.ts` (local email+password login) | New post-auth **context gathering step**; Google OAuth ingestion needs the deep-link OAuth flow re-introduced (the `tauri-plugin-deep-link` OAuth callback plumbing was removed with Supabase auth)
+Onboarding ContextGatheringStep | `auth-gate.tsx` → `use-auth.tsx` (local email+password login) | New post-auth **context gathering step**; Google OAuth ingestion needs the deep-link OAuth flow re-introduced (the `tauri-plugin-deep-link` OAuth callback plumbing was removed with Supabase auth)
 
 Key existing infrastructure we reuse as-is:
 
@@ -221,7 +221,7 @@ New crate `crates/integrations/gmail` (pure client, reqwest; no kawai deps):
 - OAuth: Google installed-app flow. `gmail_connect_start()` returns the
   consent URL (scope `gmail.readonly` only) + PKCE verifier; Google redirects
   to `kawai://gmail?code=…`; frontend deep-link handler (pattern identical to
-  `kawai://auth` in `use-auth.ts`) captures it and calls
+  `kawai://auth` in `use-auth.tsx`) captures it and calls
   `gmail_connect_finish(code, verifier)`. Tokens (access + refresh) go to the
   **OS keychain** via `keychain.rs`, never the DB.
 - Scan API (called by the onboarding engine, in-memory only):

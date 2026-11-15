@@ -556,7 +556,7 @@ validates a plan or builds a plan — extract it and share it instead.
 - **Identity → logic**: wrappers extract the user id (web: `Extension<user_id>`; desktop: `State<Session>`) and pass it as the first arg into `logic` fns. The frontend never sends a user id.
 - Auth operations (one snake_case string each): `auth_send_code`, `auth_verify_code`, `auth_sign_up`, `auth_sign_in`, `auth_reset_request`, `auth_reset_confirm`, `whoami`, `logout`.
 - Router split (`web.rs router()`): `public` holds `greet`, `list_agents`, `generate_activity`, `logout`, the Monad chain-read ops (`check_monad_balance`, `monad_chain_status`, `get_token_balance`, `get_token_info`, `estimate_gas`), and the auth ops above; everything else — including `whoami`, the device-wallet ops (`monad_wallet_address`/`_create`/`_sign_message`/`_delete`) and every fund-moving op — sits on the `protected` router behind `auth_middleware`. On desktop the same split is per-command (`State<Session>`).
-- The auth UI lives in `frontend/src/features/auth/` (`auth-gate.tsx` sign-in/sign-up form, `use-auth.ts` whoami/logout bootstrap).
+- The auth UI lives in `frontend/src/features/auth/` (`auth-gate.tsx` sign-in/sign-up/reset form, `use-auth.tsx` = `AuthProvider` + `useAuth` whoami/sign-out store).
 
 ## Database (local SQLite via libsql)
 

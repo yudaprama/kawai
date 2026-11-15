@@ -4,6 +4,7 @@ import ReactDOM from "react-dom/client";
 import { SentryErrorBoundary } from "@/components/error-boundary";
 import { AuthGate } from "@/features/auth/auth-gate";
 import { ContextGatheringStep } from "@/features/auth/context-gathering-step";
+import { AuthProvider } from "@/features/auth/use-auth";
 import { OnboardingProvider } from "@/features/auth/onboarding-provider";
 import { getLocale } from "@/lib/i18n";
 import { installViewportResync } from "@/lib/viewport-resync";
@@ -59,13 +60,15 @@ if (rootEl) {
     <React.StrictMode>
       <SentryErrorBoundary>
         <TooltipProvider>
-          <AuthGate>
-            <OnboardingProvider>
-              <ContextGatheringStep>
-                <App />
-              </ContextGatheringStep>
-            </OnboardingProvider>
-          </AuthGate>
+          <AuthProvider>
+            <AuthGate>
+              <OnboardingProvider>
+                <ContextGatheringStep>
+                  <App />
+                </ContextGatheringStep>
+              </OnboardingProvider>
+            </AuthGate>
+          </AuthProvider>
           <Toaster />
         </TooltipProvider>
       </SentryErrorBoundary>
