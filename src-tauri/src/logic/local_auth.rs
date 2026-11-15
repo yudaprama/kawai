@@ -176,6 +176,24 @@ fn error_text(status: u16, json: &serde_json::Value) -> String {
         })
 }
 
+/// The one line a SIGN-IN rejection may show. The worker keeps "no account
+/// found for this email" (404 — the salt lookup answers the same) apart from
+/// "incorrect password" (401), and repeating either text turns the form into
+/// an account-enumeration oracle. The real status and message still go to
+/// `tracing`; the caller gets the same answer for both.
+const SIGN_IN_REJECTED: &str = "incorrect email or password";
+
+/// Collapse the identity verdicts of a sign-in attempt into [`SIGN_IN_REJECTED`].
+/// Anything else keeps its own text: a rate limit must still say so, and a 400
+/// ("email and credential are required") is a client bug, not a verdict about
+/// the address.
+fn sign_in_rejection(status: u16, message: &str) -> String {
+    match status {
+        401 | 404 => SIGN_IN_REJECTED.to_string(),
+        _ => message.to_string(),
+    }
+}
+
 /// Persist the bearer token for future worker calls (0600, per-user dir).
 /// The per-user dir is created on demand — a fresh sign-in on a new device
 /// receives its token before any other data exists.
@@ -389,16 +407,46 @@ pub async fn worker_post(
     Ok((status, json))
 }
 
+/// Why a credential POST failed. The status rides along because the two
+/// callers promise different things: sign-up's texts are the product's own
+/// (duplicate email, weak password), while sign-in must not repeat the
+/// worker's identity verdict — see [`sign_in_rejection`].
+enum AuthReject {
+    /// The worker answered with a non-200 status.
+    Status(u16, String),
+    /// No answer at all, or a 200 whose body carries no bearer.
+    Failure(String),
+}
+
+impl From<AuthReject> for String {
+    fn from(reject: AuthReject) -> String {
+        match reject {
+            AuthReject::Status(_, message) | AuthReject::Failure(message) => message,
+        }
+    }
+}
+
+/// The worker's own answer — for logs only; the user-facing text is decided by
+/// the caller (see [`sign_in_rejection`]).
+impl std::fmt::Display for AuthReject {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthReject::Status(status, message) => write!(f, "HTTP {status}: {message}"),
+            AuthReject::Failure(message) => f.write_str(message),
+        }
+    }
+}
+
 /// POST to an auth endpoint, check status, persist the token, and return the
 /// user record. Shared by sign-up and sign-in.
 async fn post_auth_and_persist(
     path: &str,
     body: serde_json::Value,
     email: &str,
-) -> std::result::Result<UserRecord, String> {
-    let (status, json) = post_json(path, body).await?;
+) -> std::result::Result<UserRecord, AuthReject> {
+    let (status, json) = post_json(path, body).await.map_err(AuthReject::Failure)?;
     if status != 200 {
-        return Err(error_text(status, &json));
+        return Err(AuthReject::Status(status, error_text(status, &json)));
     }
     let token = json["token"].as_str().unwrap_or_default().to_string();
     if token.is_empty() {
@@ -406,7 +454,7 @@ async fn post_auth_and_persist(
         // interstitial or a truncated body answers exactly like this (the
         // body parses to `Value::Null`, so the status check passes). Reporting
         // success here made the next `whoami` look like a revoked session.
-        return Err("malformed auth response".into());
+        return Err(AuthReject::Failure("malformed auth response".into()));
     }
     persist_token(email, &token);
     Ok(UserRecord {
@@ -433,7 +481,8 @@ pub async fn auth_sign_up(email_addr: &str, password: &str) -> std::result::Resu
         serde_json::json!({ "email": email, "salt": salt, "credential": credential }),
         &email,
     )
-    .await?;
+    .await
+    .map_err(String::from)?;
 
     // Fire-and-forget welcome email — never blocks or fails signup.
     if let Err(e) = email::send_welcome_email(&email).await {
@@ -463,9 +512,13 @@ pub async fn auth_sign_in(email_addr: &str, password: &str) -> std::result::Resu
             user_id_hash = %hash,
             stage = "salt",
             status,
+            error = %msg,
             "sign-in rejected at salt lookup"
         );
-        return Err(msg);
+        // A missing account answers 404 here, before any password is even
+        // compared — the same line as a wrong password, or this form tells an
+        // attacker which addresses are registered.
+        return Err(sign_in_rejection(status, &msg));
     }
     let salt = match json["salt"].as_str() {
         Some(s) => s.to_string(),
@@ -487,7 +540,13 @@ pub async fn auth_sign_in(email_addr: &str, password: &str) -> std::result::Resu
         serde_json::json!({ "email": email, "salt": salt, "credential": credential }),
         &email,
     )
-    .await;
+    .await
+    // 401 (wrong password) and 404 (unknown address) become ONE line: the
+    // worker's split is exactly the enumeration oracle this path must not be.
+    .map_err(|reject| match reject {
+        AuthReject::Status(status, message) => sign_in_rejection(status, &message),
+        AuthReject::Failure(message) => message,
+    });
     match &result {
         // INFO, not WARN: a successful sign-in is not an operational event and
         // must not ship to Loki (which only carries WARN/ERROR).
@@ -839,6 +898,22 @@ mod tests {
         let json = serde_json::json!({ "error": "incorrect password" });
         assert_eq!(error_text(401, &json), "incorrect password");
         assert_eq!(error_text(404, &serde_json::json!({})), "no account found for this email");
+    }
+
+    /// The sign-in form must not answer "which half was wrong" — 404 (no such
+    /// account; the salt lookup answers the same before any password check) and
+    /// 401 (wrong password) collapse into one line. Everything else keeps its
+    /// own text: a rate limit must still say so, and a 400 is a client bug, not
+    /// a verdict about the address.
+    #[test]
+    fn sign_in_rejections_do_not_reveal_whether_an_account_exists() {
+        assert_eq!(
+            sign_in_rejection(404, "no account found for this email"),
+            SIGN_IN_REJECTED
+        );
+        assert_eq!(sign_in_rejection(401, "incorrect password"), SIGN_IN_REJECTED);
+        assert_eq!(sign_in_rejection(429, "too many requests"), "too many requests");
+        assert_eq!(sign_in_rejection(400, "email is required"), "email is required");
     }
 
     /// Regression: `post_json` used to `eprintln!` the whole worker response.

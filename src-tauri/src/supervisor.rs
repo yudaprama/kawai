@@ -5622,9 +5622,59 @@ fn attach_span_parent(
     Some(r)
 }
 
+/// Pool for the deliverable writer: the configured cloud pool when there is
+/// one, else the offline tier — the SAME rule the planner and the replan
+/// reviser follow. A build with no cloud configuration must still WRITE the
+/// answer from the step results; without this the writer is skipped entirely
+/// and the user gets the bounded RAW preview even though the on-device engine
+/// could have synthesized it.
+fn deliverable_pool(cloud: Option<remote_llm::RemoteLlm>) -> remote_llm::RemoteLlm {
+    match cloud {
+        Some(pool) => pool,
+        None => {
+            tracing::info!(
+                component = "supervisor",
+                "no cloud pool — deliverable writer runs on the on-device engine (offline tier)"
+            );
+            remote_llm::RemoteLlm::local_only()
+        }
+    }
+}
+
+/// The pool-selection contract is engine-agnostic (no LLM call is made), so
+/// it is pinned OUTSIDE the `litert`-gated `tests` module at the bottom of
+/// this file: it needs no model fixture and stays meaningful even if that
+/// module's LLM-dependent tests are skipped or reordered.
+#[cfg(test)]
+mod deliverable_pool_contract {
+    use super::*;
+
+    /// The deliverable writer must never be skipped just because no cloud
+    /// pool is configured: with `None` (no vault keys, no gateway session) it
+    /// falls back to the offline tier, which serves from the on-device engine.
+    /// `provider_label()` is "local" exactly when the pool has no HTTP
+    /// candidates — that is what makes `RemoteLlm::stream` skip the candidate
+    /// loop and run its local last-resort arm. Regression pin: the writer used
+    /// to return `None` on `from_env()` == `None`, dumping the bounded RAW
+    /// preview while a loaded engine sat idle.
+    #[test]
+    fn falls_back_to_the_on_device_tier_without_a_cloud_pool() {
+        let offline = deliverable_pool(None);
+        assert_eq!(
+            offline.provider_label(),
+            "local",
+            "no cloud pool must select the offline (on-device) tier"
+        );
+        // The offline tier carries no per-provider materials cap (0 = pack per
+        // the local prompt contract, the local arm's own 12k limit applies).
+        assert_eq!(offline.materials_budget(), 0);
+    }
+}
+
 /// One cloud call that turns the plan's step results into the user-facing
-/// answer for the goal. Returns `None` when the remote pool is unavailable
-/// or every candidate fails — the caller falls back to the raw tool output.
+/// answer for the goal. Returns `None` when no LLM can serve the call (cloud
+/// pool exhausted AND the on-device engine unavailable) — the caller falls
+/// back to the raw tool output.
 async fn synthesize_final_answer(
     goal: &str,
     materials: &str,
@@ -5642,16 +5692,16 @@ async fn synthesize_final_answer(
     }
     #[cfg(not(test))]
     {
-        let mut remote = remote_llm::RemoteLlm::from_env()
-            .map(|r| {
-                r.with_output_cap(4_000)
-                    .with_agent("deliverable-writer")
-                    .with_conversation(format!("kawai-session-{session_id}"))
-                    .with_user(user_id)
-                    // DAG: the deliverable consumes the planner's plan —
-                    // link it to the planner's latest generation.
-                    .with_parent_agent("planner")
-            });
+        let mut remote = Some(
+            deliverable_pool(remote_llm::RemoteLlm::from_env())
+                .with_output_cap(4_000)
+                .with_agent("deliverable-writer")
+                .with_conversation(format!("kawai-session-{session_id}"))
+                .with_user(user_id)
+                // DAG: the deliverable consumes the planner's plan —
+                // link it to the planner's latest generation.
+                .with_parent_agent("planner"),
+        );
         let remote = attach_span_parent(run_span, &mut remote)?;
         let system = "You are Kawai, a task-completion assistant. A deterministic supervisor just executed a \
             plan of tool steps toward the user's goal. Write the ANSWER to the user's goal from the step \
@@ -5674,7 +5724,7 @@ async fn synthesize_final_answer(
         let mut stream = match remote.stream(system, &task, materials).await {
             Ok(s) => s,
             Err(e) => {
-                tracing::error!(component = "supervisor", detail = %e.diagnostic(), "deliverable writer: planner pool unavailable — falling back to raw output");
+                tracing::error!(component = "supervisor", detail = %e.diagnostic(), "deliverable writer: no LLM served the call (cloud pool exhausted, on-device engine unavailable) — falling back to raw output");
                 return None;
             }
         };

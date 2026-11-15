@@ -5,15 +5,16 @@ import type { TranslationKey } from "@/lib/i18n";
  *
  * The command wrappers surface plain strings — `error_text` in
  * `logic/local_auth.rs` ("incorrect password", "no account found for this
- * email", "an account with this email already exists") and
- * `transport_error` ("auth server unreachable: …"). Rendered raw they would
- * put English inside an Indonesian UI, and those four cases are exactly the
- * ones the form can explain better than the wire text. Anything unrecognized
- * passes through unchanged — a wrong guess is worse than the real detail.
+ * email", "an account with this email already exists"), the sign-in form's
+ * collapsed verdict ("incorrect email or password") and `transport_error`
+ * ("auth server unreachable: …"). Rendered raw they would put English inside
+ * an Indonesian UI, and those cases are exactly the ones the form can explain
+ * better than the wire text. Anything unrecognized passes through unchanged —
+ * a wrong guess is worse than the real detail.
  */
 export function authErrorMessage(t: (key: TranslationKey) => string, raw: string): string {
   const s = raw.toLowerCase();
-  if (s.includes("incorrect password") || s.includes("no account found")) {
+  if (s.includes("incorrect password") || s.includes("incorrect email or password") || s.includes("no account found")) {
     return t("auth.error.invalidCredentials");
   }
   if (s.includes("already exists") || s.includes("already registered")) {

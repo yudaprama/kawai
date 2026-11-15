@@ -7,9 +7,12 @@ const t = (key: string) => key;
 describe("authErrorMessage", () => {
   it("maps the backend's sign-in rejections to one message", () => {
     // `error_text` answers 401 with "incorrect password" and 404 with "no
-    // account found for this email" — the form must not reveal which one.
+    // account found for this email"; the SIGN-IN path already collapses both
+    // into "incorrect email or password" so the wire text never reveals which
+    // half was wrong. All three land on the same localized line.
     expect(authErrorMessage(t, "incorrect password")).toBe("auth.error.invalidCredentials");
     expect(authErrorMessage(t, "no account found for this email")).toBe("auth.error.invalidCredentials");
+    expect(authErrorMessage(t, "incorrect email or password")).toBe("auth.error.invalidCredentials");
   });
 
   it("maps duplicate-email and weak-password answers", () => {
