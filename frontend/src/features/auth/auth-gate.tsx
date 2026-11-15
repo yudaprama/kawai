@@ -22,11 +22,19 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [notice, setNotice] = useState<string | null>(null);
 
   // Switch modes; the code/waiting state resets, the typed email stays.
+  // The password is dropped on the reset form and when leaving it: carrying
+  // it into "forgot" pre-fills the NEW-password field with the old one (so
+  // "Reset Password" re-sets the same password and looks like it worked), and
+  // a still-on eye toggle would show it in clear. Sign-in ↔ sign-up keeps it.
   const goTo = (next: "signin" | "signup" | "forgot") => {
     setMode(next);
     setCodeSent(false);
     setCode("");
     setError(null);
+    if (next === "forgot" || mode === "forgot") {
+      setPassword("");
+      setShowPassword(false);
+    }
     if (next !== "signin") setNotice(null);
   };
 

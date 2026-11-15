@@ -296,7 +296,9 @@ pub async fn auth_sign_in(
 /// generated and verified worker-side — the client never sees it.
 #[tauri::command]
 pub async fn auth_reset_request(email: String) -> Result<(), String> {
-    logic::local_auth::auth_reset_request(&email).await
+    logic::local_auth::auth_reset_request(&email)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Public RPC: complete the password reset with the emailed code. The reset

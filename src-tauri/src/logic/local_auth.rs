@@ -205,14 +205,16 @@ fn persist_token(user_email: &str, token: &str) {
     remote_llm::set_gateway_bearer(Some(token.to_string()));
 }
 
-/// Drop the locally persisted session for `user_email` (token file, restore
-/// pointer, gateway bearer). Unlike the logout path there is nothing to
-/// revoke at the worker: the password reset already killed every outstanding
-/// bearer server-side (session epoch bump).
+/// Drop the persisted token file for `user_email` (dead server-side — the
+/// password reset's epoch bump revoked every bearer for this email).
+///
+/// Deliberately does NOT touch the restore pointer or the gateway bearer:
+/// both are process-global state owned by whichever user is signed in. The
+/// command wrapper clears them via `clear_local_session` when (and only
+/// when) the signed-in user IS the reset user; a reset for A while B is
+/// signed in must not un-restore B's session or strip B's gateway tier.
 pub fn clear_stored_token(user_email: &str) {
     let _ = std::fs::remove_file(kawai_paths::auth_token(user_email));
-    let _ = std::fs::remove_file(kawai_paths::last_session());
-    remote_llm::set_gateway_bearer(None);
 }
 
 /// Read the stored bearer token for a signed-in user, if any.
@@ -510,6 +512,45 @@ pub async fn auth_sign_in(email_addr: &str, password: &str) -> std::result::Resu
     result
 }
 
+/// Why a reset request failed. The transport wrappers need the CLASS, not
+/// just the text: the worker's quota answer means "wait", a malformed address
+/// is the caller's mistake, and an upstream/delivery failure is neither — its
+/// detail is diagnostics (a missing `BREVO_API_KEY` names the wrangler
+/// command that fixes it) and must never reach the UI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResetRequestError {
+    /// Rejected before any network call — the address is malformed.
+    Invalid(String),
+    /// `POST /auth/reset_request` → 429: the per-address quota is exhausted.
+    RateLimited(String),
+    /// Transport, worker or email-delivery failure (diagnostic only).
+    Upstream(String),
+}
+
+impl ResetRequestError {
+    /// User-facing text. `Upstream` deliberately keeps its detail out.
+    pub fn message(&self) -> &str {
+        match self {
+            Self::Invalid(m) | Self::RateLimited(m) => m,
+            Self::Upstream(_) => "could not send the reset code",
+        }
+    }
+
+    /// Diagnostic detail for logs (the user-facing text for the non-upstream
+    /// classes, the upstream body/transport text otherwise).
+    pub fn detail(&self) -> &str {
+        match self {
+            Self::Invalid(m) | Self::RateLimited(m) | Self::Upstream(m) => m,
+        }
+    }
+}
+
+impl std::fmt::Display for ResetRequestError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.message())
+    }
+}
+
 /// Kick off a password reset: the WORKER generates the 6-digit code and
 /// emails it — the code never passes through this client. Verification
 /// happens server-side because it only means something there: the reset
@@ -518,20 +559,28 @@ pub async fn auth_sign_in(email_addr: &str, password: &str) -> std::result::Resu
 /// nothing (the sign-up pattern gets away with it only because the worker's
 /// 409-on-duplicates is the actual gate). The caller cannot learn whether
 /// the email exists from the response.
-pub async fn auth_reset_request(email_addr: &str) -> std::result::Result<(), String> {
+pub async fn auth_reset_request(email_addr: &str) -> std::result::Result<(), ResetRequestError> {
     auth_reset_request_at(&worker_base_url(), email_addr).await
 }
 
 /// `auth_reset_request` against an explicit base URL — the seam the tests
 /// use (a mock listener on 127.0.0.1) without touching the process-wide env.
-async fn auth_reset_request_at(base: &str, email_addr: &str) -> std::result::Result<(), String> {
+async fn auth_reset_request_at(
+    base: &str,
+    email_addr: &str,
+) -> std::result::Result<(), ResetRequestError> {
     let email = email_addr.trim().to_lowercase();
     if !email.contains('@') {
-        return Err("invalid email address".into());
+        return Err(ResetRequestError::Invalid("invalid email address".into()));
     }
     let hash = user_hash(&email);
-    let (status, json) =
-        post_json_at(base, "/auth/reset_request", serde_json::json!({ "email": email })).await?;
+    let (status, json) = post_json_at(
+        base,
+        "/auth/reset_request",
+        serde_json::json!({ "email": email }),
+    )
+    .await
+    .map_err(ResetRequestError::Upstream)?;
     if status != 200 {
         let msg = error_text(status, &json);
         // The rate-limit text IS worth surfacing (the user must wait); an
@@ -541,9 +590,14 @@ async fn auth_reset_request_at(base: &str, email_addr: &str) -> std::result::Res
             user_id_hash = %hash,
             stage = "reset_request",
             status,
+            error = %msg,
             "reset request rejected"
         );
-        return Err(msg);
+        return Err(match status {
+            429 => ResetRequestError::RateLimited(msg),
+            400 => ResetRequestError::Invalid(msg),
+            _ => ResetRequestError::Upstream(format!("HTTP {status}: {msg}")),
+        });
     }
     tracing::info!(component = "auth", user_id_hash = %hash, "reset code requested");
     Ok(())
@@ -628,6 +682,43 @@ fn user_hash(email: &str) -> String {
 mod tests {
     use super::*;
 
+    /// Read ONE HTTP request off `sock` in full: headers, then exactly
+    /// `Content-Length` bytes of body.
+    ///
+    /// A single `read()` returns whatever the first TCP segment happened to
+    /// carry — usually the whole request on loopback, but a split segment
+    /// leaves the captured body empty/truncated and turns a body-asserting
+    /// test into an intermittent failure. Read until the framing says the
+    /// request is complete (or the peer closes).
+    fn read_http_request(sock: &mut std::net::TcpStream) -> String {
+        use std::io::Read;
+        let mut raw: Vec<u8> = Vec::new();
+        let mut buf = [0u8; 1024];
+        let mut complete_at: Option<usize> = None;
+        loop {
+            let n = match sock.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => n,
+            };
+            raw.extend_from_slice(&buf[..n]);
+            if complete_at.is_none() {
+                if let Some(head_end) = raw.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let head = String::from_utf8_lossy(&raw[..head_end]).to_lowercase();
+                    let len = head
+                        .lines()
+                        .find_map(|l| l.strip_prefix("content-length:"))
+                        .and_then(|v| v.trim().parse::<usize>().ok())
+                        .unwrap_or(0);
+                    complete_at = Some(head_end + 4 + len);
+                }
+            }
+            if complete_at.is_some_and(|total| raw.len() >= total) {
+                break;
+            }
+        }
+        String::from_utf8_lossy(&raw).into_owned()
+    }
+
     /// One-shot mock worker: accepts a single connection, answers `status` /
     /// `body`, and returns its base URL for `verify_bearer_at`.
     fn spawn_mock_worker(status: &'static str, body: &'static str) -> String {
@@ -635,9 +726,8 @@ mod tests {
         let addr = listener.local_addr().expect("addr");
         std::thread::spawn(move || {
             if let Ok((mut sock, _)) = listener.accept() {
-                use std::io::{Read, Write};
-                let mut buf = [0u8; 1024];
-                let _ = sock.read(&mut buf);
+                use std::io::Write;
+                let _ = read_http_request(&mut sock);
                 let resp = format!(
                     "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                     body.len()
@@ -811,10 +901,8 @@ mod tests {
         let sink = captured.clone();
         std::thread::spawn(move || {
             if let Ok((mut sock, _)) = listener.accept() {
-                use std::io::{Read, Write};
-                let mut buf = [0u8; 8192];
-                let n = sock.read(&mut buf).unwrap_or(0);
-                let raw = String::from_utf8_lossy(&buf[..n]).to_string();
+                use std::io::Write;
+                let raw = read_http_request(&mut sock);
                 if let Some(payload) = raw.split("\r\n\r\n").nth(1) {
                     *sink.lock().unwrap() = Some(payload.to_string());
                 }
@@ -828,8 +916,9 @@ mod tests {
         (format!("http://{addr}"), captured)
     }
 
-    /// 200 → ok; 429 → the worker's rate-limit text passes through (the user
-    /// must wait), everything the worker says stays the user-facing message.
+    /// 200 → ok; 429 → a `RateLimited` carrying the worker's text (the user
+    /// must wait); 400 → the caller's address is wrong; anything else is
+    /// `Upstream` and its detail never becomes the user message.
     #[tokio::test]
     async fn auth_reset_request_maps_worker_answers() {
         let ok = spawn_mock_worker("200 OK", r#"{"ok":true}"#);
@@ -844,7 +933,37 @@ mod tests {
         let err = auth_reset_request_at(&limited, "a@b.c")
             .await
             .expect_err("429 must fail");
-        assert!(err.contains("too many reset requests"), "{err}");
+        assert_eq!(
+            err,
+            ResetRequestError::RateLimited("too many reset requests — try again later".into())
+        );
+        assert!(err.message().contains("too many reset requests"));
+
+        let invalid = auth_reset_request_at("http://127.0.0.1:9", "not-an-email")
+            .await
+            .expect_err("a malformed address must fail before the network");
+        assert!(
+            matches!(invalid, ResetRequestError::Invalid(_)),
+            "{invalid:?}"
+        );
+    }
+
+    /// A worker/delivery failure is neither the caller's fault nor readable by
+    /// the user: the ops detail (here a missing Brevo secret, which names the
+    /// wrangler command that fixes it) stays in `detail()`, and the message the
+    /// UI/`Display` shows is generic.
+    #[tokio::test]
+    async fn auth_reset_request_hides_upstream_detail_from_the_user() {
+        let base = spawn_mock_worker(
+            "502 Bad Gateway",
+            r#"{"error":"BREVO_API_KEY secret not set — run: npx wrangler secret put BREVO_API_KEY"}"#,
+        );
+        let err = auth_reset_request_at(&base, "a@b.c")
+            .await
+            .expect_err("502 must fail");
+        assert!(matches!(err, ResetRequestError::Upstream(_)), "{err:?}");
+        assert!(err.detail().contains("BREVO_API_KEY"), "{}", err.detail());
+        assert_eq!(err.to_string(), "could not send the reset code");
     }
 
     /// The confirm payload must carry the normalized email, the trimmed code,

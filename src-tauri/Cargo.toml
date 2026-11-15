@@ -105,6 +105,9 @@ mexc = { path = "../crates/toolsets/mexc", optional = true }
 # (in-process standalone pipeline, no Redis) exposed as recon/scan/catalog/
 # subdomain AgentTools.
 security-tools = { path = "../crates/toolsets/security-tools", optional = true }
+# CodeGraph agent tools (opt-in `codegraph` feature): LRU-cached sidecar CLI
+# explore/status, shared with the AgentTool surface in agent_registry.
+codegraph = { path = "../crates/toolsets/codegraph", optional = true }
 # Google Play Billing / StoreKit IAP (tauri-plugin-iap, Billing Library v9 via
 # the plugin's Kotlin module). Only the Play-distributed Android build enables
 # it (`release-android-play`): Play policy requires digital goods to be sold
@@ -201,6 +204,10 @@ web = ["dep:axum", "dep:tower-http", "office", "graph"] # office+graph are pure-
 litert = ["dep:local-llm", "dep:entertainment", "dep:finance", "dep:news_media", "dep:sports", "dep:food_drink", "dep:geospace", "dep:knowledge", "dep:religion", "dep:utility", "dep:coinmarketcap", "remote-llm/litert", "kawai-agent/litert", "kawai-embedding/litert", "kawai-knowledge/media"] # media rides litert: it embeds through the same on-device EG2 engine (audio/video decode needs ffmpeg present at runtime); remote-llm/litert adds the on-device engine as the pool's LAST failover candidate
 # GraphRAG — re-exported from kawai-knowledge behind its own feature.
 graph = ["kawai-knowledge/graph", "kawai-agent/graph"]
+# Remote SQL sources (Postgres/MySQL via sqlx) — opt-in, off by default so
+# default builds only serve local SQLite. Declared (not just cfg'd) so the
+# deferred path stays buildable and the check-cfg gate stays clean.
+analytics-sql = ["kawai-analytics/analytics-sql"]
 # Office document tools (logic::office): pure-Rust create/read/edit/info via
 # office_oxide and PDF via pdf_oxide (both in-process) — plus the knowledge
 # pipeline (crates/engines/knowledge: kawai-embedding + libsql vector/FTS)
@@ -218,6 +225,9 @@ accounting = ["dep:accounting-tools"]
 # openssl chain is vendored for the android target. Authenticated-scan login
 # and PDF report generation degrade to erroring stubs there by design.
 security = ["dep:security-tools"]
+# CodeGraph — sidecar-only explore/status tools + ops (zero cost off; the
+# gated code paths in logic::codegraph + agent_registry compile only here).
+codegraph = ["dep:codegraph"]
 # MEXC: the fill-sync tool rides the accounting agent's toolset (the books are
 # the accounting agent's job), so the books read one venue-generic fill history.
 mexc = ["dep:mexc"]

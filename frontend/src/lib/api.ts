@@ -30,6 +30,12 @@ async function httpCall<T>(command: string, args?: Record<string, unknown>): Pro
     }
     throw new Error(message);
   }
+  // 204 No Content is the success answer for every op that has nothing to
+  // return (`auth_reset_request`, `delete_chat_session`, `office_delete_file`,
+  // the `local_llm_*` toggles, …). `res.json()` on an empty body throws
+  // `SyntaxError: Unexpected end of JSON input`, which surfaced as a failed
+  // op — the reset code WAS mailed while the form reported an error.
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 

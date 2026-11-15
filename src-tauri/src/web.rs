@@ -645,7 +645,13 @@ fn cookie_cache(
     CACHE.get_or_init(|| std::sync::RwLock::new(std::collections::HashMap::new()))
 }
 
-const COOKIE_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+// Bounded staleness, not just a perf knob: an out-of-band worker-side
+// revocation (the password reset's session-epoch bump) CANNOT evict entries
+// here — it happens at the worker, and the reset request may arrive on a
+// different process than the cached cookie. Anything longer keeps accepting
+// a bearer the worker already rejects (the same hazard the logout eviction
+// comment warns about). 60s = one worker verify per active token per minute.
+const COOKIE_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(60);
 const COOKIE_CACHE_CAP: usize = 1024;
 
 /// Drop a token from the cache — used by logout once the worker has revoked
@@ -656,7 +662,26 @@ fn forget_cookie_email(token: &str) {
     }
 }
 
-/// Token → email, with a 5-minute in-memory cache so protected requests do
+/// Drop every cached token belonging to `email` — a password reset revokes
+/// them at the worker (epoch bump), so the tokens are dead before the client
+/// can name them individually.
+fn forget_cookie_emails_for(email: &str) {
+    if let Ok(mut guard) = cookie_cache().write() {
+        guard.retain(|_, (cached, _)| !cached.eq_ignore_ascii_case(email));
+    }
+}
+
+/// `Set-Cookie` that erases the session cookie (logout and password reset).
+fn clear_session_cookie(status: StatusCode) -> Response {
+    let cookie = format!("{SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
+    let mut resp = status.into_response();
+    if let Ok(val) = HeaderValue::from_str(&cookie) {
+        resp.headers_mut().append(header::SET_COOKIE, val);
+    }
+    resp
+}
+
+/// Token → email, with a 60-second in-memory cache so protected requests do
 /// not hit the auth worker on every call. `None` when the token is invalid.
 ///
 /// The map is bounded: expired entries are dropped on every insert, and when
@@ -751,27 +776,42 @@ async fn auth_sign_in_handler(
 }
 
 /// The reset code lives entirely at the worker (generated, emailed,
-/// verified); both handlers stay plain pass-throughs. 429 keeps the
-/// worker's rate-limit text so the caller knows to wait.
+/// verified); the handler is a pass-through that keeps the error CLASS:
+/// the quota answer stays 429 (the caller must wait), bad input stays 400,
+/// and an upstream/delivery failure is 502 with a generic message — the
+/// worker's ops text (a missing `BREVO_API_KEY` names the wrangler command)
+/// belongs in the log, never in the UI.
 async fn auth_reset_request_handler(
     Json(req): Json<AuthEmailRequest>,
 ) -> Result<Response, (StatusCode, String)> {
+    use logic::local_auth::ResetRequestError;
     match logic::local_auth::auth_reset_request(&req.email).await {
         Ok(()) => Ok(StatusCode::NO_CONTENT.into_response()),
-        Err(e) if e.contains("too many reset requests") => {
-            Err((StatusCode::TOO_MANY_REQUESTS, e))
+        Err(ResetRequestError::RateLimited(msg)) => Err((StatusCode::TOO_MANY_REQUESTS, msg)),
+        Err(ResetRequestError::Invalid(msg)) => Err((StatusCode::BAD_REQUEST, msg)),
+        Err(ResetRequestError::Upstream(detail)) => {
+            tracing::warn!(component = "auth", error = %detail, "reset request failed upstream");
+            Err((
+                StatusCode::BAD_GATEWAY,
+                "could not send the reset code".to_string(),
+            ))
         }
-        Err(e) => Err((StatusCode::BAD_REQUEST, e)),
     }
 }
 
+/// On success the worker has already bumped the session epoch, so every
+/// bearer handed out before the reset is dead — including this browser's
+/// cookie. Drop the cookie AND the token→email cache entries for the reset
+/// user: a cached entry would keep answering `auth_middleware` from memory
+/// for up to `COOKIE_CACHE_TTL` after the credential changed.
 async fn auth_reset_confirm_handler(
     Json(req): Json<AuthResetConfirmRequest>,
 ) -> Result<Response, (StatusCode, String)> {
     logic::local_auth::auth_reset_confirm(&req.email, &req.code, &req.new_password)
         .await
-        .map(|_| StatusCode::NO_CONTENT.into_response())
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    forget_cookie_emails_for(&req.email.trim().to_lowercase());
+    Ok(clear_session_cookie(StatusCode::NO_CONTENT))
 }
 
 #[derive(Serialize)]
@@ -1016,12 +1056,7 @@ async fn logout_handler(headers: HeaderMap) -> Response {
         }
         forget_cookie_email(token);
     }
-    let cookie = format!("{SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
-    let mut resp = StatusCode::NO_CONTENT.into_response();
-    if let Ok(val) = HeaderValue::from_str(&cookie) {
-        resp.headers_mut().append(header::SET_COOKIE, val);
-    }
-    resp
+    clear_session_cookie(StatusCode::NO_CONTENT)
 }
 
 /// Protected: identity is injected by `auth_middleware` as `Extension<String>`.
