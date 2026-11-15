@@ -4,7 +4,6 @@ import { type ChatMessage, type ChatSession, type OfficeFileSummary, call, errTe
 import { getLocale, translate } from "@/lib/i18n";
 import { groupSessions, historyToMessages, sessionToMarkdown } from "@/features/chat/lib/chat-helpers";
 import { logError, logWarn } from "@/lib/logger";
-import type { StreamControl } from "@/lib/stream";
 import { showErrorToast, slugify } from "@/lib/utils";
 import type { SupervisorChatState } from "./use-supervisor-chat";
 
@@ -20,13 +19,11 @@ export function useChatSessions({
   patch,
   state,
   resetModelContext,
-  streamCtrl,
   clearMessages,
 }: {
   patch: (p: Partial<SupervisorChatState>) => void;
   state: SupervisorChatState;
   resetModelContext: () => Promise<void>;
-  streamCtrl: React.MutableRefObject<StreamControl | null>;
   clearMessages: () => void;
 }) {
   const sessionIdRef = useRef<number | null>(null);
@@ -97,9 +94,8 @@ export function useChatSessions({
   );
 
   const newChat = useCallback(async () => {
-    if (streamCtrl.current) return;
     await resetSession(null);
-  }, [streamCtrl, resetSession]);
+  }, [resetSession]);
 
   // Monotonic request token for `list_chat_messages`: a slower response for a
   // session the user already navigated away from must never land. Without it,
@@ -127,11 +123,10 @@ export function useChatSessions({
 
   const selectSession = useCallback(
     async (sessionId: number) => {
-      if (streamCtrl.current) return;
       await resetSession(sessionId);
       await loadMessages(sessionId);
     },
-    [streamCtrl, resetSession, loadMessages],
+    [resetSession, loadMessages],
   );
 
   const pendingDeletes = useRef(new Map<number, number>());
@@ -150,7 +145,6 @@ export function useChatSessions({
    *  already pending are skipped so a solo delete can't collide with one). */
   const deleteSessions = useCallback(
     async (sessionIds: number[]) => {
-      if (streamCtrl.current) return;
       const ids = sessionIds.filter((id) => !pendingDeletes.current.has(id));
       if (ids.length === 0) return;
       const idSet = new Set(ids);
@@ -194,7 +188,7 @@ export function useChatSessions({
         },
       });
     },
-    [state.sessions, state.archivedSessions, patch, streamCtrl, resetSession, loadSessions, selectSession],
+    [state.sessions, state.archivedSessions, patch, resetSession, loadSessions, selectSession],
   );
 
   const renameSession = useCallback(
@@ -322,10 +316,10 @@ export function useChatSessions({
 
   const retryHistoryLoad = useCallback(async () => {
     const sid = sessionIdRef.current;
-    if (sid == null || streamCtrl.current) return;
+    if (sid == null) return;
     patch({ historyError: null });
     await loadMessages(sid);
-  }, [streamCtrl, loadMessages, patch]);
+  }, [loadMessages, patch]);
 
   const groupedSessions = groupSessions(state.sessions);
 

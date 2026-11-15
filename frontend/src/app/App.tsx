@@ -102,8 +102,13 @@ export default function App() {
   }, [agentsAttempt]);
 
   const chat = useSupervisorChat();
-  const { status } = chat;
-  const busy = status === "submitted" || status === "streaming";
+  // A run in flight belongs to the WORKBENCH, not the chat hook — the hook's
+  // own status never leaves "ready", so deriving `busy` from it left every
+  // app-level guard permanently open (Cmd/Ctrl+N and the session dialog's
+  // destructive actions ran straight through a live plan). The Workbench
+  // publishes the real value (planning → running → stopping → review).
+  const [workbenchBusy, setWorkbenchBusy] = useState(false);
+  const busy = workbenchBusy;
 
   const ka = useKnowledgeActions(chat);
 
@@ -349,6 +354,7 @@ export default function App() {
             newSessionRef={workbenchNewRef}
             railBackRef={workbenchRailBackRef}
             attachFilesRef={workbenchAttachRef}
+            onBusyChange={setWorkbenchBusy}
           />
         )}
       </div>

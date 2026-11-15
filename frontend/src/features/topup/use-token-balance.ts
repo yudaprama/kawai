@@ -193,9 +193,14 @@ export function peekFreshTokenBalance(maxAgeMs: number = FOCUS_REFRESH_MS): numb
  * indefinitely and stretches the documented TTL.
  */
 export function publishTokenBalance(tokens: number, persist = true): void {
-  lastReadAt = Date.now();
   publish({ tokens, pending: false });
-  if (persist) persistBalance(tokens);
+  // Freshness is a claim about the WORKER, so only a worker-read value may
+  // re-stamp it. An offline/cache snapshot published here must not make the
+  // submit gate skip its own authoritative read for the TTL window.
+  if (persist) {
+    lastReadAt = Date.now();
+    persistBalance(tokens);
+  }
 }
 
 /** Amber-warning band: a positive balance too small to be comfortable. */

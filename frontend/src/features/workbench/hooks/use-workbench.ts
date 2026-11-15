@@ -1117,10 +1117,14 @@ export function useWorkbench() {
   /** Open a past session in the workbench: clears the in-memory runs and
    *  points sessionId at the picked session — the restore effect below then
    *  rehydrates the latest persisted plan record (runs + deliverable + deck).
-   *  No-op while a run is in flight (same guard as the chat session pick). */
+   *  No-op while a run is in flight — INCLUDING the planning round: `plan_task`
+   *  leaves `status` at its idle value and only sets `planning`, so guarding on
+   *  status alone let a switch mid-plan file the finished run under the session
+   *  the user had just left. */
   const selectSession = useCallback(
     (id: number) => {
       if (supervisor.status === "running" || supervisor.status === "stopping") return;
+      if (supervisor.planning) return;
       if (sessionId === id) return;
       setRuns([]);
       setDeck(null);
@@ -1131,7 +1135,7 @@ export function useWorkbench() {
       setDynamicChips([]);
       setSessionId(id);
     },
-    [supervisor.status, sessionId],
+    [supervisor.status, supervisor.planning, sessionId],
   );
 
   /** The just-started run's goal lands in `runs` via `run()`; keep the latest

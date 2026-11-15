@@ -92,6 +92,12 @@ export interface WorkbenchPageProps {
   attachFilesRef?: React.MutableRefObject<
     ((files: { id: string; originalName: string; ext: string }[]) => void) | null
   >;
+  /** App-owned: reports whether a plan is in flight (planning, running,
+   *  stopping, awaiting confirmation, under review). The chat hook's own
+   *  status is always "ready" — execution lives here — so this is the only
+   *  signal the app-level guards (Cmd/Ctrl+N, the session dialog's
+   *  destructive actions) can stand down on. */
+  onBusyChange?: (busy: boolean) => void;
 }
 
 /** The kawai Workbench — the work-centric primary surface (PLAN-workbench.md).
@@ -108,6 +114,7 @@ export function WorkbenchPage({
   newSessionRef,
   railBackRef,
   attachFilesRef,
+  onBusyChange,
 }: WorkbenchPageProps) {
   const { t } = useI18n();
   const workbench = useWorkbench();
@@ -172,6 +179,18 @@ export function WorkbenchPage({
   const runInFlight = ["running", "stopping", "awaitingConfirmation"].includes(supervisor.status);
   const planningUnseeded =
     !seededForActiveRun && (supervisor.planning != null || runInFlight || supervisor.status === "reviewing");
+
+  // Publish "a plan is in flight" upward (App owns the guards that must stand
+  // down: Cmd/Ctrl+N and the session dialog's delete/archive/select). Planning
+  // counts — `status` still reads the PREVIOUS run's terminal value until
+  // planStarted, so `planning` is the reliable in-planning signal.
+  const runBusy = supervisor.planning != null || runInFlight || supervisor.status === "reviewing";
+  useEffect(() => {
+    onBusyChange?.(runBusy);
+  }, [onBusyChange, runBusy]);
+  // Leaving the Workbench (asset page, media lane) unmounts it — and its
+  // teardown cancels the run — so the app must not keep believing one runs.
+  useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
 
   /** User-initiated navigation — cancels the deliverable steal. */
   const userPick = useCallback((runId: string, doc: string) => {

@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ChatStatus, UIMessage } from "@/lib/ai-types";
 import type { ChatSession } from "@/lib/api";
 import { useAuth } from "@/features/auth/use-auth";
-import { setTokenBalanceOwner } from "@/features/topup/use-token-balance";
 import { useChatModel } from "./use-chat-model";
 import { useChatSessions } from "./use-chat-sessions";
 export interface SupervisorConfirmation {
@@ -58,7 +57,6 @@ export function useSupervisorChat(userId?: string | null) {
     sessionId: null,
   });
 
-  const streamCtrl = useRef<{ cancel: () => void } | null>(null);
   const patch = useCallback((partial: Partial<SupervisorChatState>) => {
     setState((prev) => ({ ...prev, ...partial }));
   }, []);
@@ -66,12 +64,10 @@ export function useSupervisorChat(userId?: string | null) {
   const { userId: authUserId, authError, logout } = useAuth();
   const effectiveUserId = userId ?? authUserId;
   useEffect(() => {
-    if (effectiveUserId) {
-      patch({ userId: effectiveUserId });
-      // The offline balance snapshot is per-account (browser profiles on
-      // kawai-web switch identities) — scope it BEFORE anything can read it.
-      setTokenBalanceOwner(effectiveUserId);
-    }
+    // The offline balance snapshot is per-account and is scoped by
+    // `AuthProvider` BEFORE this subtree mounts (see `use-auth.tsx`) — this
+    // effect only mirrors the identity into local state.
+    if (effectiveUserId) patch({ userId: effectiveUserId });
     if (authError) patch({ authError });
   }, [effectiveUserId, authError, patch]);
 
@@ -97,18 +93,10 @@ export function useSupervisorChat(userId?: string | null) {
     patch,
     state,
     resetModelContext,
-    streamCtrl,
     clearMessages,
   });
 
-  const stop = useCallback(() => {
-    streamCtrl.current?.cancel();
-    streamCtrl.current = null;
-    patch({ status: "ready" });
-  }, [patch]);
-
   const unloadModelWithGuard = useCallback(async () => {
-    if (streamCtrl.current) return;
     await unloadModel();
     // unloadModel in useChatModel only clears model fields; we also clear messages per original semantics
     patch({ messages: [] } as Partial<SupervisorChatState>);
@@ -124,7 +112,6 @@ export function useSupervisorChat(userId?: string | null) {
   return {
     ...state,
     groupedSessions,
-    stop,
     newChat,
     selectSession,
     deleteSessions,

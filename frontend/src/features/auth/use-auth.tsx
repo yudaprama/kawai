@@ -1,6 +1,7 @@
 import type { UserInfo } from "@/lib/api";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { call, errText } from "@/lib/api";
+import { setTokenBalanceOwner } from "@/features/topup/use-token-balance";
 
 export interface AuthApi {
   userId: string | null;
@@ -40,6 +41,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const u: UserInfo = await call<UserInfo>("whoami");
       if (epoch.current !== started) return;
+      // Scoping must happen BEFORE the identity lands: the signed-in subtree
+      // mounts on the `setUserId` below and its mount effects (the Saldo chip
+      // reads on mount) run before any effect this provider could register —
+      // React runs child effects first. Do it here, not in an effect.
+      setTokenBalanceOwner(u.userId);
       setUserId(u.userId);
       setAuthError(null);
     } catch (err) {
@@ -58,6 +64,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback((id: string) => {
     epoch.current += 1;
+    // See `refresh`: the balance snapshot is per-account, and the subtree that
+    // reads it mounts on the `setUserId` below.
+    setTokenBalanceOwner(id);
     setUserId(id);
     setAuthError(null);
   }, []);

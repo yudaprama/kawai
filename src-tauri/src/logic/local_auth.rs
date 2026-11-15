@@ -200,9 +200,11 @@ fn persist_token(user_email: &str, token: &str) {
             tracing::error!(component = "auth", "failed to write auth token {}: {e}", path.display());
         }
     }
-    // The freshly minted bearer also unlocks the worker's model-routed LLM
-    // gateway (`remote-llm` reads this per turn).
-    remote_llm::set_gateway_bearer(Some(token.to_string()));
+    // NOTE: no gateway-bearer publish here. This runs on BOTH transports, and
+    // the web server is multi-user — an ambient credential would let one
+    // account's bearer fund every other account's cloud tier. The desktop
+    // edge publishes it instead (`commands::establish_local_session`), which
+    // is single-user by construction.
 }
 
 /// Drop the persisted token file for `user_email` (dead server-side — the
@@ -263,26 +265,6 @@ pub fn restore_session() -> Option<String> {
     Some(email)
 }
 
-/// Resolve a bearer token to its email via the worker (`POST /auth/whoami`).
-/// Used by the web session middleware to validate the cookie.
-pub async fn resolve_bearer(token: &str) -> Option<String> {
-    let url = format!("{}/auth/whoami", worker_base_url());
-    let resp = worker_client()
-        .post(url)
-        .bearer_auth(token)
-        .send()
-        .await
-        .ok()?;
-    if resp.status().as_u16() != 200 {
-        return None;
-    }
-    let json: serde_json::Value = resp.json().await.ok()?;
-    json["email"]
-        .as_str()
-        .map(|s| s.to_string())
-        .filter(|s| !s.is_empty())
-}
-
 /// Outcome of server-checking a bearer. The distinction matters at session
 /// restore: an explicit rejection must end the local session, while an
 /// unreachable worker must not — offline use is a supported mode.
@@ -326,7 +308,16 @@ async fn verify_bearer_at(base: &str, token: &str) -> BearerCheck {
         let text = resp.text().await.unwrap_or_default();
         let json: serde_json::Value =
             serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
-        return BearerCheck::Rejected(short_error(status, &json));
+        // Only an explicit auth rejection may end the local session — the
+        // caller DELETES the persisted bearer on `Rejected`. The worker
+        // answers every bearer refusal with 401 (`/auth/whoami` →
+        // `authenticate`), so anything else (429, 500/502/503 from the edge,
+        // a 404 from a misrouted deployment) is an ANSWER ABOUT THE WORKER,
+        // not about the credential: keep the session and re-check later.
+        return match status {
+            401 | 403 => BearerCheck::Rejected(short_error(status, &json)),
+            _ => BearerCheck::Unreachable(format!("worker answered HTTP {status}")),
+        };
     }
     let email = resp
         .json::<serde_json::Value>()
@@ -410,9 +401,14 @@ async fn post_auth_and_persist(
         return Err(error_text(status, &json));
     }
     let token = json["token"].as_str().unwrap_or_default().to_string();
-    if !token.is_empty() {
-        persist_token(email, &token);
+    if token.is_empty() {
+        // A 200 with no bearer is not a sign-in: a captive portal, a proxy
+        // interstitial or a truncated body answers exactly like this (the
+        // body parses to `Value::Null`, so the status check passes). Reporting
+        // success here made the next `whoami` look like a revoked session.
+        return Err("malformed auth response".into());
     }
+    persist_token(email, &token);
     Ok(UserRecord {
         email: email.to_string(),
     })

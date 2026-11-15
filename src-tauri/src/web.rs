@@ -624,7 +624,13 @@ async fn session_cookie_response(token: &str) -> Response {
     let cookie = format!(
         "{SESSION_COOKIE}={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={COOKIE_MAX_AGE}"
     );
-    let email = resolve_cookie_email(token).await.unwrap_or_default();
+    let email = match resolve_cookie_email(token).await {
+        CookieIdentity::Verified(email) => email,
+        // The caller just minted this bearer at the worker, so a non-verified
+        // answer is an outage — hand back an empty identity rather than fail
+        // the response (the cookie is already being set).
+        CookieIdentity::Rejected | CookieIdentity::Unreachable => String::new(),
+    };
     let mut resp = Json(logic::whoami(&email)).into_response();
     if let Ok(val) = HeaderValue::from_str(&cookie) {
         resp.headers_mut().append(header::SET_COOKIE, val);
@@ -681,32 +687,57 @@ fn clear_session_cookie(status: StatusCode) -> Response {
     resp
 }
 
+/// Outcome of mapping the session cookie to an identity. The three states are
+/// load-bearing: the middleware must not answer 401 for a worker that simply
+/// did not answer, or an outage signs every browser out.
+enum CookieIdentity {
+    Verified(String),
+    /// The worker explicitly rejected the bearer (revoked, expired, reset).
+    Rejected,
+    /// The worker could not be reached / answered a non-auth status.
+    Unreachable,
+}
+
 /// Token → email, with a 60-second in-memory cache so protected requests do
-/// not hit the auth worker on every call. `None` when the token is invalid.
+/// not hit the auth worker on every call. Only a verified token is cached.
 ///
 /// The map is bounded: expired entries are dropped on every insert, and when
 /// it is still at capacity the oldest entry is evicted. Without that, one
 /// entry per bearer token would live for the life of the process.
-async fn resolve_cookie_email(token: &str) -> Option<String> {
+async fn resolve_cookie_email(token: &str) -> CookieIdentity {
     use std::time::Instant;
     let cache = cookie_cache();
 
     if let Ok(guard) = cache.read() {
         if let Some((email, at)) = guard.get(token) {
             if at.elapsed() < COOKIE_CACHE_TTL {
-                return Some(email.clone());
+                return CookieIdentity::Verified(email.clone());
             }
         }
     }
-    // Cache miss / stale — ask the worker.
-    let email = tokio::time::timeout(
+    // Cache miss / stale — ask the worker through the shared bearer check so
+    // "rejected" and "could not ask" stay apart (see `BearerCheck`).
+    let checked = tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        logic::local_auth::resolve_bearer(token),
+        logic::local_auth::verify_bearer(token),
     )
-    .await
-    .ok()
-    .flatten();
-    if let Some(email) = &email {
+    .await;
+    let identity = match checked {
+        Ok(logic::local_auth::BearerCheck::Verified(email)) => CookieIdentity::Verified(email),
+        Ok(logic::local_auth::BearerCheck::Rejected(reason)) => {
+            tracing::info!(component = "auth", "session cookie rejected: {reason}");
+            CookieIdentity::Rejected
+        }
+        Ok(logic::local_auth::BearerCheck::Unreachable(reason)) => {
+            tracing::warn!(component = "auth", error = %reason, "session cookie check unavailable");
+            CookieIdentity::Unreachable
+        }
+        Err(_) => {
+            tracing::warn!(component = "auth", "session cookie check timed out");
+            CookieIdentity::Unreachable
+        }
+    };
+    if let CookieIdentity::Verified(email) = &identity {
         if let Ok(mut guard) = cache.write() {
             guard.retain(|_, (_, at)| at.elapsed() < COOKIE_CACHE_TTL);
             if guard.len() >= COOKIE_CACHE_CAP {
@@ -721,16 +752,22 @@ async fn resolve_cookie_email(token: &str) -> Option<String> {
             guard.insert(token.to_string(), (email.clone(), Instant::now()));
         }
     }
-    email
+    identity
 }
 
 async fn auth_send_code_handler(
     Json(req): Json<AuthEmailRequest>,
 ) -> Result<Response, (StatusCode, String)> {
-    logic::email::send_sign_up_code(&req.email)
-        .await
-        .map(|_| StatusCode::NO_CONTENT.into_response())
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+    match logic::email::send_sign_up_code(&req.email).await {
+        Ok(()) => Ok(StatusCode::NO_CONTENT.into_response()),
+        // The endpoint is public and drives a real SMTP send: a resend loop
+        // must answer 429, not a generic 400, so clients can back off.
+        Err(logic::email::EmailError::TooManyRequests) => Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            logic::email::EmailError::TooManyRequests.to_string(),
+        )),
+        Err(e) => Err((StatusCode::BAD_REQUEST, e.to_string())),
+    }
 }
 
 #[derive(Deserialize)]
@@ -2510,8 +2547,21 @@ async fn auth_middleware(mut req: Request, next: Next) -> Response {
     // to call the auth worker directly — a network hop per call, parked on a
     // runtime worker via `block_in_place` + `Handle::block_on`. The resolver
     // is already async, so just await it: cache hit = no network at all.
-    let Some(email) = resolve_cookie_email(&token).await else {
-        return error_response(StatusCode::UNAUTHORIZED, "invalid or expired session");
+    //
+    // 401 is reserved for "the worker rejected this bearer". An unreachable
+    // worker answers 503 instead: the session is unknown, not invalid, and
+    // 401 would sign every browser out for the duration of a worker outage.
+    let email = match resolve_cookie_email(&token).await {
+        CookieIdentity::Verified(email) => email,
+        CookieIdentity::Rejected => {
+            return error_response(StatusCode::UNAUTHORIZED, "invalid or expired session");
+        }
+        CookieIdentity::Unreachable => {
+            return error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "auth server unreachable — retry shortly",
+            );
+        }
     };
     req.extensions_mut().insert(email);
     next.run(req).await

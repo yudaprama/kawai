@@ -332,6 +332,12 @@ fn establish_local_session(email: &str, session: State<'_, Session>) -> Result<U
     // tool one-shots with no user in scope — to this email via telemetry's
     // process-wide current user (the billing recap reads that metric label).
     kawai_telemetry::set_current_user(Some(email));
+    // The freshly minted bearer also unlocks the worker's model-routed LLM
+    // gateway. Published HERE (not in `persist_token`, which the multi-user
+    // web server also runs) so the ambient credential never crosses accounts.
+    if let Some(token) = logic::local_auth::stored_token(email) {
+        remote_llm::set_gateway_bearer(Some(token));
+    }
     Ok(logic::whoami(email))
 }
 

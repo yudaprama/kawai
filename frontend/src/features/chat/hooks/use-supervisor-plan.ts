@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 
 import { refreshTokenBalance } from "@/features/topup/use-token-balance";
@@ -327,6 +327,23 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   // → the supervisor serves already-completed steps from its persisted
   // ExecutionMemo seed and only re-runs what failed or never ran.
   const lastPlanRef = useRef<{ plan: unknown; sessionId: number; agentId: string } | null>(null);
+
+  // Unmount is a teardown, not a pause: cancel the in-flight stream so the
+  // backend stops executing (and billing) steps whose events have nowhere to
+  // land. Unmount happens on sign-out AND on every switch to an asset page /
+  // media lane (App swaps the center pane), and a plan record is persisted
+  // from THIS component as each step lands — so the run's remaining work can
+  // never be surfaced afterwards. Cancelling is the only honest outcome: no
+  // billed tokens for results nobody can read. Orphaning the generation also
+  // makes a late event unable to fold into the next mount's state.
+  useEffect(
+    () => () => {
+      streamGenRef.current += 1;
+      streamCtrl.current?.cancel();
+      streamCtrl.current = null;
+    },
+    [],
+  );
 
   // Keep stepsRef in sync with state.steps for persist snapshots.
   const dispatch = useCallback((event: SupervisorEvent) => {
