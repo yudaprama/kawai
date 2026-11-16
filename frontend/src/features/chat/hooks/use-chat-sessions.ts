@@ -33,10 +33,21 @@ export function useChatSessions({
     sessionIdRef.current = state.sessionId;
   }, [state.sessionId]);
 
+  // Monotonic request token for `list_chat_messages`: a slower response for a
+  // session the user already navigated away from must never land. Without it,
+  // two rapid session switches can render the FIRST session's transcript under
+  // the SECOND session's id.
+  const loadSeq = useRef(0);
+
   /** Reset to a fresh (no-session) state. Optionally sets the session to an existing id. */
   const resetSession = useCallback(
     async (sessionId: number | null) => {
       await resetModelContext();
+      // Invalidate any in-flight transcript read: clearing the messages does
+      // not stop a `list_chat_messages` that is already on the wire, and it
+      // would otherwise land in the just-cleared state (a new chat showing the
+      // previous session's history until the next load).
+      loadSeq.current += 1;
       sessionIdRef.current = sessionId;
       patch({ sessionId, historyError: null });
       clearMessages();
@@ -97,12 +108,8 @@ export function useChatSessions({
     await resetSession(null);
   }, [resetSession]);
 
-  // Monotonic request token for `list_chat_messages`: a slower response for a
-  // session the user already navigated away from must never land. Without it,
-  // two rapid session switches can render the FIRST session's transcript under
-  // the SECOND session's id.
-  const loadSeq = useRef(0);
-
+  // Monotonic request token for `list_chat_messages` — declared above
+  // `resetSession`, which bumps it (declared next to the reads it guards).
   const loadMessages = useCallback(
     async (sessionId: number) => {
       const seq = ++loadSeq.current;
@@ -248,28 +255,46 @@ export function useChatSessions({
         : priorArchived.filter((s) => !idSet.has(s.id));
       patch({ sessions: optimisticSessions, archivedSessions: optimisticArchived });
 
-      let updated: ChatSession[];
-      try {
-        updated = await Promise.all(
-          ids.map((sessionId) => call<ChatSession>("set_chat_session_archived", { sessionId, archived })),
-        );
-      } catch (err) {
-        logError("set_chat_session_archived", err);
+      // Per-id calls are NOT atomic server-side, so settle the batch instead of
+      // failing it whole: `Promise.all` threw away the rows that DID move and
+      // the caller reverted every one of them, so the UI showed a batch as
+      // un-archived while the server had already archived part of it (the next
+      // list read then flipped them back "by itself").
+      const settled = await Promise.allSettled(
+        ids.map((sessionId) => call<ChatSession>("set_chat_session_archived", { sessionId, archived })),
+      );
+      const updated: ChatSession[] = [];
+      const failures: number[] = [];
+      settled.forEach((result, i) => {
+        if (result.status === "fulfilled") updated.push(result.value);
+        else failures.push(ids[i]);
+      });
+      if (failures.length > 0) {
+        const first = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
+        logError("set_chat_session_archived", first?.reason);
         showErrorToast(
           `${archived ? "Couldn't archive" : "Couldn't restore"} ${
-            ids.length === 1 ? "the session" : `${ids.length} sessions`
-          } — ${errText(err)}`,
+            failures.length === 1 ? "the session" : `${failures.length} sessions`
+          } — ${errText(first?.reason)}`,
         );
-        patch({ sessions: priorSessions, archivedSessions: priorArchived });
-        return;
+        if (updated.length === 0) {
+          patch({ sessions: priorSessions, archivedSessions: priorArchived });
+          return;
+        }
       }
 
       // Reconcile: drop every touched id from both lists, then reinsert each
-      // server row where it belongs (rows that failed server-side stay out —
-      // the error toast above said so; reload resyncs on the next list read).
+      // server row where it belongs. A row whose call FAILED goes back where it
+      // came from — it still exists server-side, so leaving it out made the
+      // batch look half-applied until the next list read resurrected it.
       const finalSessions = optimisticSessions.filter((s) => !idSet.has(s.id));
       const finalArchived = optimisticArchived.filter((s) => !idSet.has(s.id));
       for (const u of updated) (u.archived ? finalArchived : finalSessions).push(u);
+      if (failures.length > 0) {
+        const failed = new Set(failures);
+        for (const s of priorSessions) if (failed.has(s.id)) finalSessions.push(s);
+        for (const s of priorArchived) if (failed.has(s.id)) finalArchived.push(s);
+      }
       finalSessions.sort(byCreatedDesc);
       finalArchived.sort(byCreatedDesc);
       patch({ sessions: finalSessions, archivedSessions: finalArchived });

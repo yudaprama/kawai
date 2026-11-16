@@ -64,6 +64,11 @@ function SessionsButton({ onOpen, iconOnly = false }: { onOpen: () => void; icon
 // ── Page ────────────────────────────────────────────────────────────────────
 
 export interface WorkbenchPageProps {
+  /** Whether the workbench owns the center pane right now. The page stays
+   *  MOUNTED while an asset page or a media lane is shown (a live run must
+   *  keep folding), so its window-level listeners — Esc-to-stop, the mobile
+   *  rail auto-open — are gated on this instead of on the mount. */
+  active?: boolean;
   /** Knowledge integration for the composer's @ menu + image drop. */
   onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
   /** Import file handler — returns the imported office files (for auto-attach). */
@@ -105,6 +110,7 @@ export interface WorkbenchPageProps {
  *  the goal composer pinned at the bottom. Right: the deliverable. Results
  *  never enter chat. */
 export function WorkbenchPage({
+  active = true,
   onImageToKnowledge,
   onAddFiles,
   onAddLink,
@@ -576,6 +582,7 @@ export function WorkbenchPage({
   // the composer's editable-context rule — the composer opts back in via
   // data-chat-composer; dialogs own their own Esc.
   useEffect(() => {
+    if (!active) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       const el = e.target instanceof HTMLElement ? e.target : null;
@@ -606,7 +613,7 @@ export function WorkbenchPage({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [mobileRail, supervisor.status, supervisor.stop, t]);
+  }, [active, mobileRail, supervisor.status, supervisor.stop, t]);
 
   // Publish the rail-back handler upward (App's Android hardware-back
   // arbitration): close the mobile rail and report whether one was open.
@@ -625,10 +632,11 @@ export function WorkbenchPage({
   // Below lg the sidebar is a drawer — force it open when the plan needs the
   // user (confirmation gates, review) so the run can't stall invisibly.
   useEffect(() => {
+    if (!active) return;
     if (!["awaitingConfirmation", "reviewing"].includes(supervisor.status)) return;
     if (typeof window === "undefined" || !window.matchMedia("(max-width: 1023px)").matches) return;
     setMobileRail(true);
-  }, [supervisor.status]);
+  }, [active, supervisor.status]);
 
   // Publish the App-level "New" while mounted (App owns the rail button +
   // Cmd/Ctrl+N) — the workbench keeps its own session/runs/view state, so

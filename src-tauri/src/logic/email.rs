@@ -219,8 +219,15 @@ pub fn verify_sign_up_code(to: &str, code: &str) -> bool {
     let verdict = match map.get_mut(&to) {
         None => return false,
         Some(pending) => {
-            if pending.sent_at.elapsed() >= CODE_TTL || pending.code.is_empty() {
+            if pending.sent_at.elapsed() >= CODE_TTL {
                 Verdict::Drop
+            } else if pending.code.is_empty() {
+                // The mail is still in flight (`reserve_slot` holds the slot
+                // with an empty code). Dropping here removed the entry, so the
+                // send's `get_mut` found nothing and the code it had just
+                // emailed was discarded — the address could not verify until
+                // the cooldown expired. A miss leaves the entry untouched.
+                Verdict::Miss
             } else if pending.code == input {
                 Verdict::Accept
             } else {
@@ -296,6 +303,31 @@ mod tests {
         assert!(verify_sign_up_code(live, "111111"), "a miss must not consume");
 
         assert!(!verify_sign_up_code("nobody@example.com", "000000"));
+    }
+
+    /// A verify that lands while the mail is still in flight (the reservation
+    /// holds an EMPTY code) must not consume the slot: the send would then
+    /// find no entry and discard the code it just mailed, leaving the address
+    /// unverifiable for the whole cooldown.
+    #[test]
+    fn in_flight_reservation_survives_a_verify() {
+        let email = "in-flight@example.com";
+        // Exactly what `reserve_slot` inserts before the SMTP round-trip.
+        codes().lock().unwrap().insert(
+            email.into(),
+            PendingCode { code: String::new(), sent_at: Instant::now(), attempts: 0 },
+        );
+        assert!(!verify_sign_up_code(email, "123456"));
+
+        // The send completes and stores the code on the SAME entry.
+        {
+            let mut map = codes().lock().unwrap();
+            let pending = map.get_mut(email).expect("reservation was not dropped");
+            assert!(pending.code.is_empty(), "a miss must not burn attempts");
+            assert_eq!(pending.attempts, 0);
+            pending.code = "123456".into();
+        }
+        assert!(verify_sign_up_code(email, "123456"), "the emailed code must verify");
     }
 
     /// The 6-digit space is walkable one guess at a time, so a wrong entry

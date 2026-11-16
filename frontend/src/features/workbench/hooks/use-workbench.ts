@@ -189,9 +189,18 @@ export function isDeliverableStep(s: SupervisorStep): boolean {
 /** One run at a time — the same gate every submit path enforces. A second
  *  submit that slips through would append a phantom "running" record that
  *  never starts and never errors. Throws so the caller's remaining steps
- *  (and its follow-up/quote arming) stay untouched for the retry. */
-function ensureIdleRun(status: string, setSessionError: (msg: string) => void): void {
-  if (["running", "stopping", "awaitingConfirmation"].includes(status)) {
+ *  (and its follow-up/quote arming) stay untouched for the retry.
+ *
+ *  `planning` is a status of its own: `plan_task` leaves `status` at its idle
+ *  value and only sets `planning`, so a status-only guard let a submit during
+ *  the planning round through (the same trap `selectSession` guards against).
+ *  The launch that follows is then a silent no-op — `streamCtrl` is already
+ *  set — leaving an orphan run record and user message behind. */
+function ensureIdleRun(
+  supervisor: { status: string; planning: unknown },
+  setSessionError: (msg: string) => void,
+): void {
+  if (supervisor.planning != null || ["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)) {
     const msg = "A run is already in progress — stop it or wait for it to finish before submitting.";
     setSessionError(msg);
     throw new Error(msg);
@@ -557,8 +566,12 @@ export function useWorkbench() {
   }, [sessionId, supervisor.restorePersisted, pickDeck]);
 
   // Composer is unlocked only when no run is active (config-first, locked
-  // during a run) — see PLAN-workbench.md.
-  const composing = !["running", "stopping", "awaitingConfirmation", "reviewing"].includes(supervisor.status);
+  // during a run) — see PLAN-workbench.md. `planning` counts: `plan_task`
+  // leaves `status` idle, so a status-only check left the composer unlocked
+  // over a live planning round (same trap as `ensureIdleRun`).
+  const composing =
+    supervisor.planning == null &&
+    !["running", "stopping", "awaitingConfirmation", "reviewing"].includes(supervisor.status);
 
   /** A deliverable is quotable when the last run finished complete with a
    *  deliverable, its full output, and the planKey lookup key for agents to
@@ -751,7 +764,7 @@ export function useWorkbench() {
       // (drafting), but a submit during run/stopping/confirmation rejects
       // with the reason — the draft survives for the retry (PromptInput
       // clears only on resolution).
-      ensureIdleRun(supervisor.status, setSessionError);
+      ensureIdleRun(supervisor, setSessionError);
       setLastUserText(trimmed);
       // Pin the explicit target BEFORE any await — the planner must quote
       // exactly what the user armed, not whatever completes later.
@@ -842,7 +855,7 @@ export function useWorkbench() {
         onStart?: () => void;
       },
     ) => {
-      ensureIdleRun(supervisor.status, setSessionError);
+      ensureIdleRun(supervisor, setSessionError);
       const sym = ticker.trim().toUpperCase();
       if (!sym) return;
       const assetClass = domain ?? "stock";
@@ -883,7 +896,7 @@ export function useWorkbench() {
         onStart?: () => void;
       },
     ) => {
-      ensureIdleRun(supervisor.status, setSessionError);
+      ensureIdleRun(supervisor, setSessionError);
       const link = url.trim();
       if (!link) return;
       // Balance gate + lazy session — the shared fail-closed pre-flight.
@@ -913,7 +926,7 @@ export function useWorkbench() {
         onStart?: () => void;
       },
     ) => {
-      ensureIdleRun(supervisor.status, setSessionError);
+      ensureIdleRun(supervisor, setSessionError);
       // Balance gate + lazy session — the shared fail-closed pre-flight.
       const sid = await preflightRun(
         `Futures risk audit — ${interval}/${risk}`.slice(0, 80),
@@ -950,7 +963,7 @@ export function useWorkbench() {
         onStart?: () => void;
       },
     ) => {
-      ensureIdleRun(supervisor.status, setSessionError);
+      ensureIdleRun(supervisor, setSessionError);
       const sid = await preflightRun(
         `Futures risk audit (MEXC) — ${interval}/${risk}`.slice(0, 80),
         "Couldn't start the audit",
@@ -982,7 +995,7 @@ export function useWorkbench() {
         onStart?: () => void;
       },
     ) => {
-      ensureIdleRun(supervisor.status, setSessionError);
+      ensureIdleRun(supervisor, setSessionError);
       // Named in the session title and the goal line, so a MEXC-only review
       // is never confused with an all-venue one after the run.
       const label = opts?.venue ? ` — ${opts.venue}` : "";
@@ -1012,7 +1025,7 @@ export function useWorkbench() {
         onStart?: () => void;
       },
     ) => {
-      ensureIdleRun(supervisor.status, setSessionError);
+      ensureIdleRun(supervisor, setSessionError);
       const sid = await preflightRun(`Monthly close — ${period}`.slice(0, 80), "Couldn't start the monthly close");
       const goal = `Monthly close — ${period}`.slice(0, 140);
       launchFixedRun(beginRun, goal, sid, (s) => supervisor.runMonthlyClose({ period }, s), opts);
@@ -1045,7 +1058,7 @@ export function useWorkbench() {
       // One run at a time — ensureIdleRun. A second submit that slips
       // through would be dropped silently by runCryptoScreener (streamCtrl
       // already busy): a phantom run that never starts and never errors.
-      ensureIdleRun(supervisor.status, setSessionError);
+      ensureIdleRun(supervisor, setSessionError);
       // Balance gate + lazy session — the shared fail-closed pre-flight.
       const sid = await preflightRun(
         `Crypto screener — ${universe}/${interval}`.slice(0, 80),
@@ -1100,7 +1113,7 @@ export function useWorkbench() {
           return target;
         }
       })();
-      ensureIdleRun(supervisor.status, setSessionError);
+      ensureIdleRun(supervisor, setSessionError);
       const sid = await preflightRun(`Security audit — ${host}`.slice(0, 80), "Couldn't start the security audit");
       const goal = `Security audit — ${host}${categories?.length ? ` · ${categories.join(", ")}` : ""}`.slice(0, 140);
       launchFixedRun(

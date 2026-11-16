@@ -800,13 +800,13 @@ async fn auth_sign_up_handler(
 async fn auth_sign_in_handler(
     Json(req): Json<AuthCredentialsRequest>,
 ) -> Result<Response, (StatusCode, String)> {
+    // Every identity verdict already collapses to one line inside
+    // `auth_sign_in` (`sign_in_rejection`: 401 and 404 both become
+    // "incorrect email or password"), so there is nothing left to classify
+    // here — matching on the message text only invited a stale branch.
     let user = logic::local_auth::auth_sign_in(&req.email, &req.password)
         .await
-        .map_err(|e| match e.as_str() {
-            "no account found for this email" => (StatusCode::NOT_FOUND, e),
-            "incorrect password" => (StatusCode::UNAUTHORIZED, e),
-            _ => (StatusCode::UNAUTHORIZED, e),
-        })?;
+        .map_err(|e| (StatusCode::UNAUTHORIZED, e))?;
     let token = logic::local_auth::stored_token(&user.email)
         .ok_or_else(|| (StatusCode::INTERNAL_SERVER_ERROR, "missing auth token".to_string()))?;
     Ok(session_cookie_response(&token).await)

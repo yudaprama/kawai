@@ -73,6 +73,11 @@ export function setTokenBalanceOwner(user: string): void {
   // per-owner keys and stay.
   snapshot = { tokens: null, pending: false };
   lastReadAt = 0;
+  // Drop the previous owner's in-flight read. Its result is already discarded
+  // by the scope check in `refreshTokenBalance`, but leaving it here made the
+  // NEW owner's first read dedupe onto it and return nothing — the chip stayed
+  // blank after an account switch until some unrelated trigger.
+  inflight = null;
   for (const listener of listeners) listener();
 }
 
@@ -154,7 +159,7 @@ export function refreshTokenBalance(): Promise<number | null> {
   // Scope at read START: an account switch while the read is in flight must
   // not land the PREVIOUS owner's balance in the new owner's store.
   const scope = ownerScope;
-  inflight = call<TopupBalance>("topup_balance")
+  const read = call<TopupBalance>("topup_balance")
     .then(({ tokens }) => {
       if (ownerScope !== scope) return null;
       lastReadAt = Date.now();
@@ -167,11 +172,15 @@ export function refreshTokenBalance(): Promise<number | null> {
       // Display-only: keep the last known tokens, just clear `pending`.
       publish({ pending: false });
       return null;
-    })
-    .finally(() => {
-      inflight = null;
     });
-  return inflight;
+  inflight = read;
+  // Clear only OUR entry: an account switch (which nulls `inflight`) or a
+  // newer read may have replaced it, and clearing theirs would let two reads
+  // run concurrently against the same dedupe slot.
+  void read.finally(() => {
+    if (inflight === read) inflight = null;
+  });
+  return read;
 }
 
 /**

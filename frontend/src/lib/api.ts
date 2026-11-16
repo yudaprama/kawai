@@ -21,12 +21,20 @@ async function httpCall<T>(command: string, args?: Record<string, unknown>): Pro
     body: JSON.stringify(args ?? {}),
   });
   if (!res.ok) {
+    // Read the body ONCE as text. Most Axum handlers answer `(StatusCode,
+    // String)`, which serializes as `text/plain` — `res.json()` throws on it
+    // and the old fallback threw away the only copy of the real message
+    // ("incorrect email or password" → "Unauthorized"). The `{ error }` shape
+    // (`error_response`, the auth middleware) still wins when present.
+    const raw = (await res.text().catch(() => "")).slice(0, 500);
     let message = res.statusText || `HTTP ${res.status}`;
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body?.error) message = body.error;
-    } catch {
-      /* non-JSON error body — keep the status text */
+    if (raw.trim() !== "") {
+      try {
+        const body = JSON.parse(raw) as { error?: string };
+        message = typeof body?.error === "string" ? body.error : raw;
+      } catch {
+        message = raw;
+      }
     }
     throw new Error(message);
   }

@@ -265,7 +265,16 @@ function writePlanRecord(sessionId: number, record: PersistedPlan): void {
     const rowId = partialRowRef.current;
     partialRowRef.current = null;
     if (rowId != null) {
-      return call("update_chat_message", { sessionId, messageId: rowId, content }).then(() => {});
+      // Put the id back when the update fails: the terminal retry below calls
+      // `write()` again, and a null ref made it APPEND a second row while the
+      // stale partial row stayed behind (the run then renders twice — once
+      // "interrupted", once complete).
+      return call("update_chat_message", { sessionId, messageId: rowId, content })
+        .then(() => {})
+        .catch((err) => {
+          if (partialRowRef.current == null) partialRowRef.current = rowId;
+          throw err;
+        });
     }
     return call("append_chat_message", { sessionId, role: "assistant", content }).then(() => {});
   };
@@ -330,11 +339,10 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
 
   // Unmount is a teardown, not a pause: cancel the in-flight stream so the
   // backend stops executing (and billing) steps whose events have nowhere to
-  // land. Unmount happens on sign-out AND on every switch to an asset page /
-  // media lane (App swaps the center pane), and a plan record is persisted
-  // from THIS component as each step lands — so the run's remaining work can
-  // never be surfaced afterwards. Cancelling is the only honest outcome: no
-  // billed tokens for results nobody can read. Orphaning the generation also
+  // land. The page itself stays MOUNTED across asset/media navigation (App
+  // hides it instead of unmounting, so a live run keeps folding there), which
+  // leaves sign-out and app teardown as the only unmounts — and both must not
+  // leave a run billing in the background. Orphaning the generation also
   // makes a late event unable to fold into the next mount's state.
   useEffect(
     () => () => {

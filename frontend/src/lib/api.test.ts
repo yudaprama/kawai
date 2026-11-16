@@ -52,3 +52,49 @@ describe("call() over HTTP", () => {
     );
   });
 });
+
+describe("call() over HTTP — error body shapes", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  // Regression: most Axum handlers answer `(StatusCode, String)`, which
+  // serializes as text/plain. Reading only JSON threw that body away, so every
+  // backend message (wrong password, reset-code cooldown, "Token habis")
+  // reached the UI as the bare status text — "Unauthorized".
+  it("surfaces a plain-text body instead of the status line", async () => {
+    stubFetch(new Response("incorrect email or password", { status: 401, statusText: "Unauthorized" }));
+
+    await expect(call("auth_sign_in", { email: "a@b.c", password: "x" })).rejects.toThrow(
+      "incorrect email or password",
+    );
+  });
+
+  it("keeps a JSON body with no `error` field rather than the status line", async () => {
+    stubFetch(
+      new Response(JSON.stringify({ detail: "nope" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    await expect(call("some_op")).rejects.toThrow('{"detail":"nope"}');
+  });
+
+  it("falls back to the status text on an empty body", async () => {
+    stubFetch(new Response("", { status: 500, statusText: "Internal Server Error" }));
+
+    await expect(call("some_op")).rejects.toThrow("Internal Server Error");
+  });
+
+  it("caps a runaway body — an HTML error page is not a chat message", async () => {
+    stubFetch(new Response(`<html>${"x".repeat(4000)}</html>`, { status: 404, statusText: "Not Found" }));
+
+    const err = await call("some_op").then(
+      () => null,
+      (e: unknown) => e as Error,
+    );
+    expect(err?.message).toHaveLength(500);
+  });
+});

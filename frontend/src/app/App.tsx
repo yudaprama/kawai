@@ -322,6 +322,11 @@ export default function App() {
     },
   };
 
+  // Which pane owns the center. The workbench keeps its mount in every case
+  // (see the center-pane block below) — this only decides what is VISIBLE.
+  const centerPane: "asset" | "media" | "workbench" =
+    assetWorkspace != null ? "asset" : isMediaMode(mode) ? "media" : "workbench";
+
   return (
     <div className="bg-background text-foreground safe-t safe-b safe-x flex h-dvh w-full flex-col overflow-clip">
       <ModeBar
@@ -337,14 +342,17 @@ export default function App() {
         walletAvailable={walletAvailable}
       />
       <div className="flex min-h-0 min-w-0 flex-1">
-        {assetWorkspace ? (
-          <AssetChromeContext.Provider value={assetChrome}>{assetWorkspace}</AssetChromeContext.Provider>
-        ) : isMediaMode(mode) ? (
-          // Lanes come and go with the bar, so the shell re-mounts per lane —
-          // every lane restores its results + in-flight job from localStorage.
-          <GeneratorPage key={mode} lane={mode} />
-        ) : (
+        {/* The workbench stays MOUNTED while another pane owns the center: a
+            live supervisor run folds its events into state only the workbench
+            holds (and persists the plan record from there), so unmounting on
+            navigation would orphan the run — the stream is cancelled on
+            teardown, leaving history with an "interrupted" record nobody can
+            resume. Hiding it keeps the run folding in the background, which is
+            the documented contract for asset/media navigation. The mount is
+            hidden, not inert — `active` gates its window-level listeners. */}
+        <div className={centerPane === "workbench" ? "flex min-h-0 min-w-0 flex-1" : "hidden"}>
           <WorkbenchPage
+            active={centerPane === "workbench"}
             onAddFiles={ka.addKnowledgeFiles}
             onAddLink={ka.addKnowledgeLink}
             onImageToKnowledge={ka.imageToKnowledge}
@@ -356,7 +364,14 @@ export default function App() {
             attachFilesRef={workbenchAttachRef}
             onBusyChange={setWorkbenchBusy}
           />
-        )}
+        </div>
+        {centerPane === "asset" ? (
+          <AssetChromeContext.Provider value={assetChrome}>{assetWorkspace}</AssetChromeContext.Provider>
+        ) : centerPane === "media" && isMediaMode(mode) ? (
+          // Lanes come and go with the bar, so the shell re-mounts per lane —
+          // every lane restores its results + in-flight job from localStorage.
+          <GeneratorPage key={mode} lane={mode} />
+        ) : null}
       </div>
       <SessionHistoryDialog
         open={sessionsOpen}
