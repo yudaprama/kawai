@@ -43,10 +43,11 @@ export default function App() {
   // is not a mode — lighting up "Text" there would claim the Workbench shows).
   const [mode, setMode] = useState<AppMode>("text");
   const [view, setView] = useState<AssetViewId | null>(null);
-  // The backend compiles Monad support behind the opt-in `monad` feature; probe
-  // once so the wallet nav entry only appears in builds that have it.
+  // The hot wallet is device-scoped and only exists behind Tauri IPC. Never
+  // expose its navigation in the multi-user web transport.
   const [walletAvailable, setWalletAvailable] = useState(false);
   useEffect(() => {
+    if (!runningInTauri) return;
     void tauriWalletAdapter.isAvailable().then(setWalletAvailable);
   }, []);
   const [codegraphAvailable, setCodegraphAvailable] = useState(false);

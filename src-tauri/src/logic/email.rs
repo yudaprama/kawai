@@ -59,7 +59,7 @@ pub async fn send_welcome_email(to: &str) -> Result<(), EmailError> {
 // ── Sign-up verification codes (client-side flow, desktop option A) ─────────
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 /// A pending sign-up code for one address.
@@ -74,9 +74,20 @@ struct PendingCode {
 
 /// email → pending code. In-memory only: restarting the app invalidates
 /// pending codes, which is acceptable for a sign-up flow.
+static CODES: LazyLock<Mutex<HashMap<String, PendingCode>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Verified email → verification time. Proofs are single-use and expire with
+/// the code they were derived from.
+static VERIFIED_EMAILS: LazyLock<Mutex<HashMap<String, Instant>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
 fn codes() -> &'static Mutex<HashMap<String, PendingCode>> {
-    static CODES: OnceLock<Mutex<HashMap<String, PendingCode>>> = OnceLock::new();
-    CODES.get_or_init(|| Mutex::new(HashMap::new()))
+    &CODES
+}
+
+fn verified_emails() -> &'static Mutex<HashMap<String, Instant>> {
+    &VERIFIED_EMAILS
 }
 
 const CODE_TTL: Duration = Duration::from_secs(10 * 60);
@@ -243,6 +254,11 @@ pub fn verify_sign_up_code(to: &str, code: &str) -> bool {
     match verdict {
         Verdict::Accept => {
             map.remove(&to);
+            drop(map);
+            if let Ok(mut verified) = verified_emails().lock() {
+                verified.retain(|_, verified_at| verified_at.elapsed() < CODE_TTL);
+                verified.insert(to, Instant::now());
+            }
             true
         }
         Verdict::Drop => {
@@ -251,6 +267,17 @@ pub fn verify_sign_up_code(to: &str, code: &str) -> bool {
         }
         Verdict::Miss => false,
     }
+}
+
+/// Consume a recent verification proof for `email`. The proof is scoped to
+/// the normalized email and cannot authorize a second registration.
+pub fn take_verified_sign_up_email(email: &str) -> bool {
+    let email = email.trim().to_lowercase();
+    let Ok(mut verified) = verified_emails().lock() else {
+        return false;
+    };
+    verified.retain(|_, verified_at| verified_at.elapsed() < CODE_TTL);
+    verified.remove(&email).is_some()
 }
 
 
@@ -280,6 +307,38 @@ mod tests {
 
         assert!(verify_sign_up_code(" Seed-Once@Example.com ", " 123456 "));
         assert!(!verify_sign_up_code(email, "123456"), "code is single use");
+    }
+
+    #[test]
+    fn verified_email_proof_is_required_and_single_use() {
+        let email = "proof@example.com";
+        assert!(!take_verified_sign_up_email(email));
+        codes().lock().unwrap().insert(
+            email.into(),
+            PendingCode { code: "123456".into(), sent_at: Instant::now(), attempts: 0 },
+        );
+
+        assert!(verify_sign_up_code(email, "123456"));
+        assert!(take_verified_sign_up_email(email));
+        assert!(!take_verified_sign_up_email(email));
+    }
+
+    #[test]
+    fn expired_or_incorrect_verification_grants_no_proof() {
+        let expired = "expired-proof@example.com";
+        verified_emails()
+            .lock()
+            .unwrap()
+            .insert(expired.into(), Instant::now() - (CODE_TTL + Duration::from_secs(1)));
+        assert!(!take_verified_sign_up_email(expired));
+
+        let incorrect = "incorrect-proof@example.com";
+        codes().lock().unwrap().insert(
+            incorrect.into(),
+            PendingCode { code: "123456".into(), sent_at: Instant::now(), attempts: 0 },
+        );
+        assert!(!verify_sign_up_code(incorrect, "000000"));
+        assert!(!take_verified_sign_up_email(incorrect));
     }
 
     /// Expired codes, wrong codes and unknown emails are rejected — and a wrong

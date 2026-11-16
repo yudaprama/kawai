@@ -951,118 +951,6 @@ async fn estimate_gas_handler(
         .map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
-// ── Device-scoped Monad hot wallet (public; same ops as the Tauri commands) ──
-
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct MonadSignMessageRequest {
-    message: String,
-}
-
-async fn monad_wallet_address_handler() -> Result<Json<Option<logic::monad_wallet::WalletAddress>>, (StatusCode, String)> {
-    logic::monad_wallet::address().map(Json).map_err(err500)
-}
-
-async fn monad_wallet_create_handler() -> Result<Json<logic::monad_wallet::WalletAddress>, (StatusCode, String)> {
-    logic::monad_wallet::create().map(Json).map_err(err500)
-}
-
-async fn monad_wallet_sign_message_handler(
-    Json(req): Json<MonadSignMessageRequest>,
-) -> Result<Json<String>, (StatusCode, String)> {
-    logic::monad_wallet::sign_message(&req.message)
-        .await
-        .map(Json)
-        .map_err(err500)
-}
-
-async fn monad_wallet_delete_handler() -> Result<Json<()>, (StatusCode, String)> {
-    logic::monad_wallet::delete().map(Json).map_err(err500)
-}
-
-// ── User fund-moving ops (signed on-device by the user's own keychain key) —
-//    mounted on the PROTECTED router: they spend the user's funds, so on web
-//    they require a session. Desktop has no session for wallet ops by design.
-
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct TransferRequest {
-    to: String,
-    /// Decimal string ("1.5") — parsed in integer math in the Rust layer.
-    amount: String,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct TokenTransferRequest {
-    token_address: String,
-    to: String,
-    amount: String,
-    decimals: u8,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct DepositRequest {
-    amount: String,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-struct ReceiptRequest {
-    tx_hash: String,
-}
-
-async fn transfer_native_handler(
-    Json(req): Json<TransferRequest>,
-) -> Result<Json<logic::monad_wallet::TxResult>, (StatusCode, String)> {
-    logic::monad_wallet::transfer_native(&req.to, &req.amount)
-        .await
-        .map(Json)
-        .map_err(err500)
-}
-
-async fn transfer_token_handler(
-    Json(req): Json<TokenTransferRequest>,
-) -> Result<Json<logic::monad_wallet::TxResult>, (StatusCode, String)> {
-    logic::monad_wallet::transfer_token(&req.token_address, &req.to, &req.amount, req.decimals)
-        .await
-        .map(Json)
-        .map_err(err500)
-}
-
-async fn transfer_usdt_handler(
-    Json(req): Json<TransferRequest>,
-) -> Result<Json<logic::monad_wallet::TxResult>, (StatusCode, String)> {
-    logic::monad_wallet::transfer_usdt(&req.to, &req.amount)
-        .await
-        .map(Json)
-        .map_err(err500)
-}
-
-async fn deposit_to_vault_handler(
-    Json(req): Json<DepositRequest>,
-) -> Result<Json<logic::monad_wallet::TxResult>, (StatusCode, String)> {
-    logic::monad_wallet::deposit_to_vault(&req.amount)
-        .await
-        .map(Json)
-        .map_err(err500)
-}
-
-async fn get_transaction_receipt_handler(
-    Json(req): Json<ReceiptRequest>,
-) -> Result<Json<Option<logic::monad_wallet::ReceiptInfo>>, (StatusCode, String)> {
-    logic::monad_wallet::transaction_receipt(&req.tx_hash)
-        .await
-        .map(Json)
-        .map_err(err500)
-}
-
-/// Device tx history (local JSON log) — activity read, behind auth on web
-/// like the receipt op; the Tauri command is sessionless (device-scoped).
-async fn monad_wallet_history_handler() -> Result<Json<Vec<logic::monad_wallet::TxRecord>>, (StatusCode, String)> {
-    logic::monad_wallet::history().map(Json).map_err(err500)
-}
 
 async fn generate_activity_handler(
     Json(input): Json<ActivityInput>,
@@ -1389,9 +1277,15 @@ async fn office_import_file_handler(
     Extension(user_id): Extension<String>,
     Json(req): Json<OfficeImportFileRequest>,
 ) -> Result<Json<logic::office::OfficeFile>, (StatusCode, String)> {
+    if req.source_path.is_some() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "sourcePath is only available through the desktop app".into(),
+        ));
+    }
     logic::import_office_file(
         &user_id,
-        req.source_path.as_deref(),
+        None,
         req.name.as_deref(),
         req.data_base64.as_deref(),
     )
@@ -1735,7 +1629,13 @@ async fn office_export_file_handler(
     Extension(user_id): Extension<String>,
     Json(req): Json<OfficeExportFileRequest>,
 ) -> Result<Json<std::collections::HashMap<String, String>>, (StatusCode, String)> {
-    logic::office::export_file(&user_id, &req.file_id, req.dest_path.as_deref())
+    if req.dest_path.is_some() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "destPath is only available through the desktop app".into(),
+        ));
+    }
+    logic::office::export_file(&user_id, &req.file_id, None)
         .map(|path| {
             Json(std::collections::HashMap::from([(
                 "path".to_string(),
@@ -2617,25 +2517,6 @@ pub fn router(dist_dir: PathBuf) -> Router {
 
     let protected = Router::new()
         .route("/api/whoami", post(whoami_handler))
-        // Monad hot wallet — AUTH REQUIRED on web. The key lives in the
-        // SERVER process keychain there (one wallet per instance, not per
-        // user), so signing and deleting it must never be reachable
-        // unauthenticated: `sign_message` would sign arbitrary payloads with
-        // it and `delete` drops it irrecoverably. Desktop/mobile reach the
-        // same logic through Tauri commands, which carry the app's own
-        // identity boundary.
-        .route("/api/monad_wallet_address", post(monad_wallet_address_handler))
-        .route("/api/monad_wallet_create", post(monad_wallet_create_handler))
-        .route("/api/monad_wallet_sign_message", post(monad_wallet_sign_message_handler))
-        .route("/api/monad_wallet_delete", post(monad_wallet_delete_handler))
-        // User fund-moving ops (signed by the user's own device key) — auth
-        // required on web per the fund-moving boundary.
-        .route("/api/transfer_native", post(transfer_native_handler))
-        .route("/api/transfer_token", post(transfer_token_handler))
-        .route("/api/transfer_usdt", post(transfer_usdt_handler))
-        .route("/api/deposit_to_vault", post(deposit_to_vault_handler))
-        .route("/api/get_transaction_receipt", post(get_transaction_receipt_handler))
-        .route("/api/monad_wallet_history", post(monad_wallet_history_handler))
         .route(
             "/api/create_chat_session",
             post(create_chat_session_handler),
@@ -2747,7 +2628,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/connector_poll", post(connector_poll_handler))
         .route("/api/connector_disconnect", post(connector_disconnect_handler))
         .route("/api/connector_open_url", post(connector_open_url_handler))
-        .route_layer(from_fn(auth_middleware));
+        ;
 
     #[cfg(feature = "litert")]
     let protected = protected
@@ -2912,6 +2793,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
     let protected = protected
         .route("/api/synthesize_speech", post(synthesize_speech_handler));
 
+    let protected = protected.route_layer(from_fn(auth_middleware));
     let router = Router::new().merge(public).merge(protected);
     // Supervisor confirmation mailbox (litert only — see mod supervisor).
     #[cfg(feature = "litert")]
@@ -2931,6 +2813,29 @@ pub async fn serve(addr: &str, dist_dir: PathBuf) -> Result<(), String> {
         })
         .await
         .map_err(|e| format!("serve kawai-web: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{body::Body, http::Request};
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn every_late_protected_route_requires_authentication() {
+        let response = router(PathBuf::from("/nonexistent-static-dir"))
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/synthesize_speech")
+                    .body(Body::from("{}"))
+                    .expect("valid request"),
+            )
+            .await
+            .expect("router responds");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
 }
 
 /// Prologue shared by the supervisor handlers: this identity's session must

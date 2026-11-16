@@ -462,8 +462,8 @@ async fn post_auth_and_persist(
     })
 }
 
-/// Register a new account on the centralized directory: fail when the email
-/// already exists, then send a welcome email (best-effort).
+/// Register a newly verified account on the centralized directory: fail when
+/// the email already exists, then send a welcome email (best-effort).
 pub async fn auth_sign_up(email_addr: &str, password: &str) -> std::result::Result<UserRecord, String> {
     // Validasi lokal dulu supaya errornya sama dengan dulu (sebelum network).
     if !email_addr.contains('@') {
@@ -473,6 +473,9 @@ pub async fn auth_sign_up(email_addr: &str, password: &str) -> std::result::Resu
         return Err("password must not be empty".into());
     }
     let email = email_addr.trim().to_lowercase();
+    if !email::take_verified_sign_up_email(&email) {
+        return Err("verify your email before creating an account".into());
+    }
     let salt = random_salt()?;
     let credential = derive_credential(&salt, password);
 
