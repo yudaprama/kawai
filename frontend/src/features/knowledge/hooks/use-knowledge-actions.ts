@@ -12,10 +12,7 @@ import { showErrorToast } from "@/lib/utils";
 import { platform, runningInTauri } from "@/platform";
 import { useArmedConfirm } from "@/components/shared/confirm-action";
 
-export function useKnowledgeActions(chat: {
-  sessionId: number | null;
-  ensureSessionId: (hint?: string) => Promise<number | null>;
-}) {
+export function useKnowledgeActions(chat: { sessionId: number | null; ensureSessionId: () => Promise<number | null> }) {
   // Destructure the stable callbacks — `knowledge` itself is a fresh object
   // literal every render, so depending on it would rebuild every callback
   // below on each render and defeat memoization.
@@ -177,7 +174,7 @@ export function useKnowledgeActions(chat: {
     async (dataUrl: string, name: string): Promise<string[]> => {
       let sid = chat.sessionId;
       if (sid == null) {
-        sid = await chat.ensureSessionId(name);
+        sid = await chat.ensureSessionId();
       }
       const mime = dataUrl.slice(5, dataUrl.indexOf(";"));
       const ext = mime.split("/")[1] ?? "png";
@@ -210,7 +207,7 @@ export function useKnowledgeActions(chat: {
     async (file: KnowledgeFileInfo) => {
       let sid = chat.sessionId;
       if (sid == null) {
-        sid = await chat.ensureSessionId(file.originalName);
+        sid = await chat.ensureSessionId();
         if (sid == null) return;
         setKnowledgeSessionId(sid);
       }

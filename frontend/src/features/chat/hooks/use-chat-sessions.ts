@@ -84,25 +84,22 @@ export function useChatSessions({
     })();
   }, [state.userId, loadSessions]);
 
-  const ensureSessionId = useCallback(
-    async (titleHint = "New chat"): Promise<number | null> => {
-      if (sessionIdRef.current != null) return sessionIdRef.current;
-      try {
-        const s = await call<ChatSession>("create_chat_session", {
-          title: titleHint.slice(0, 80) || "New chat",
-        });
-        sessionIdRef.current = s.id;
-        patch({ sessionId: s.id });
-        void loadSessions();
-        return s.id;
-      } catch (err) {
-        logError("create_chat_session", err);
-        showErrorToast(`Couldn't start a new chat — ${errText(err)}`);
-        return null;
-      }
-    },
-    [patch, loadSessions],
-  );
+  const ensureSessionId = useCallback(async (): Promise<number | null> => {
+    if (sessionIdRef.current != null) return sessionIdRef.current;
+    try {
+      // Created untitled; `append_chat_message` seeds the title from the
+      // first user message.
+      const s = await call<ChatSession>("create_chat_session", {});
+      sessionIdRef.current = s.id;
+      patch({ sessionId: s.id });
+      void loadSessions();
+      return s.id;
+    } catch (err) {
+      logError("create_chat_session", err);
+      showErrorToast(`Couldn't start a new chat — ${errText(err)}`);
+      return null;
+    }
+  }, [patch, loadSessions]);
 
   const newChat = useCallback(async () => {
     await resetSession(null);
