@@ -138,6 +138,11 @@ export function useFilePreview(file: PreviewFile) {
       return;
     }
     let cancelled = false;
+    // Drop the PREVIOUS file's bytes before fetching: the states lag one render
+    // behind the key, and every stale frame carries the old file's content
+    // under the new file's name — `ExternalFileOpen`'s download button would
+    // even offer the old bytes labeled as the new file while the read runs.
+    setData(undefined);
     setIsLoading(true);
     setError(null);
     fetchPreviewBytes(key, fileId, thumb)

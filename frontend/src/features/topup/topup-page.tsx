@@ -225,6 +225,14 @@ export function TopupPage() {
   const [checking, setChecking] = useState(false);
   const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
   const claimStartRef = useRef(0);
+  /** The claim currently OWNING the tx view. A status read that started for an
+   *  older claim must not land after a newer claim took over — an old bill
+   *  flipping `credited` mid-read would otherwise render the NEW claim as
+   *  paid. Kept in a ref (state lags one render behind the async boundary). */
+  const claimTxIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    claimTxIdRef.current = claim?.txId ?? null;
+  }, [claim]);
 
   const resetClaim = useCallback(() => {
     setClaim(null);
@@ -282,9 +290,13 @@ export function TopupPage() {
    *  pembayaran" retry. A null body (no such tx) clears the txId state. */
   const checkStatus = useCallback(async () => {
     if (!claim) return;
+    const mine = claim;
     setChecking(true);
     try {
-      const info = await call<TopupStatusInfo | null>("topup_qris_status", { txId: claim.txId });
+      const info = await call<TopupStatusInfo | null>("topup_qris_status", { txId: mine.txId });
+      // A newer claim replaced this one while the read was on the wire: its
+      // answer belongs to the old tx and must not paint the new claim's view.
+      if (claimTxIdRef.current !== mine.txId) return;
       if (info == null) {
         resetClaim();
         setClaimError("Transaksi tidak ditemukan — silakan klaim baru");
