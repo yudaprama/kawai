@@ -50,7 +50,20 @@ async fn main() {
         std::env::var("KAWAI_SMOKE_PASSWORD"),
     ) {
         match kawai_lib::logic::local_auth::auth_sign_in(&email, &password).await {
-            Ok(_) => eprintln!("[planner_smoke] gateway session armed for the smoke account"),
+            Ok(user) => {
+                // Publish the freshly minted bearer exactly like the desktop
+                // edge (`commands::establish_local_session`). The publish used
+                // to live in `persist_token` (planner_smoke 2026-11-16: CI
+                // served every call from openrouter and failed two tasks when
+                // openrouter rate-limited, because the pure `auth_sign_in` no
+                // longer armed the gateway tier); it moved to the command
+                // layer since the web transport is multi-user — headless
+                // callers must publish it themselves.
+                if let Some(token) = kawai_lib::logic::local_auth::stored_token(&user.email) {
+                    remote_llm::set_gateway_bearer(Some(token));
+                }
+                eprintln!("[planner_smoke] gateway session armed for the smoke account")
+            }
             Err(e) => {
                 eprintln!("[planner_smoke] smoke sign-in failed — continuing without the gateway tier: {e}")
             }
