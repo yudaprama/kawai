@@ -84,4 +84,73 @@ async fn main() {
         }
     }
     println!("\n[turn 2 done]");
+
+    // Third: cancel mid-generation. Start a long generation, drop the stream
+    // after the first token, and prove the backend recovers: the detached
+    // blocking task issues the native cancel_process, replaces the
+    // cancelled-turn conversation with a fresh one (conversation epoch bump —
+    // a cancelled turn leaves a partial assistant prefix in the KV cache),
+    // and the next request streams normally instead of erroring with
+    // "a generation is already running". fresh=false so the epoch bump below
+    // can only come from the cancel-replacement swap.
+    let epoch_before = local_llm::conversation_epoch();
+    let mut cancelled_run = false;
+    {
+        let mut stream = Box::pin(local_llm::local_chat(
+            "smoke".into(),
+            "Write a 400-word story about a lighthouse keeper. Be thorough and descriptive."
+                .into(),
+            None,
+            None,
+            false,
+        ));
+        while let Some(ev) = stream.next().await {
+            if matches!(ev, local_llm::LocalChatEvent::Token { .. }) {
+                cancelled_run = true;
+                // Break + drop the pinned stream: consumer gone mid-generation.
+                break;
+            }
+        }
+    }
+    let t_cancel = std::time::Instant::now();
+    let mut replaced = false;
+    for _ in 0..150 {
+        if local_llm::conversation_epoch() > epoch_before {
+            replaced = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    println!(
+        "[cancel] dropped stream mid-generation={cancelled_run}; conversation replaced in {:.1}s (replaced={replaced})",
+        t_cancel.elapsed().as_secs_f64()
+    );
+    if cancelled_run && !replaced {
+        // The cancel path is deterministic once a token arrived before the
+        // drop — a 15s window is generous for cancel_process + terminal
+        // callback + fresh swap. Fail loudly rather than silently skip.
+        panic!("[cancel] stream was dropped mid-generation but the conversation was never replaced (epoch stuck at {epoch_before})");
+    }
+    if !cancelled_run {
+        println!("[cancel] generation finished before the drop landed; cancel path not exercised");
+    }
+
+    // Fourth: prove the pipeline still streams after the cancelled turn.
+    let mut stream = Box::pin(local_llm::local_chat(
+        "smoke".into(),
+        "Say OK.".into(),
+        None,
+        None,
+        false,
+    ));
+    while let Some(ev) = stream.next().await {
+        match ev {
+            local_llm::LocalChatEvent::Error { message } => {
+                panic!("[cancel] post-cancel turn errored: {message}")
+            }
+            local_llm::LocalChatEvent::Token { text } => print!("{text}"),
+            _ => {}
+        }
+    }
+    println!("\n[turn 3 done]");
 }
