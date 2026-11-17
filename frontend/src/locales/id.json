@@ -1186,5 +1186,129 @@
       "guide": "Tempel API key dan secret MEXC agar agent bisa menarik fill futures Anda ke pembukuan. MEXC di sini BACA SAJA — kawai mengimpor fill, PnL, dan biaya, dan tidak pernah memasang order di MEXC. Tidak punya akun MEXC? Lewati saja.",
       "guideDetail": "Buat di MEXC → Account → API, lalu batasi ke IP Anda. Yang dibutuhkan hanya kunci read-only: agent mengimpor riwayat deal futures Anda beberapa hari terakhir supaya review bisa menghitung PnL dan biaya. Tidak ada izin trading yang perlu dinyalakan — eksekusi MEXC belum ada, jadi biarkan izin trading mati."
     }
+  },
+  "topup": {
+    "balanceLabel": "Saldo token",
+    "balanceLowHint": "Saldo menipis — isi ulang sebelum menjalankan run berikutnya.",
+    "chip": {
+      "label": "Saldo",
+      "openAria": "Saldo token: {{value}} — buka Top Up",
+      "lowSuffix": "saldo menipis",
+      "lowToast": "Saldo token menipis — isi ulang lewat Top Up"
+    },
+    "voucher": {
+      "oneTimeCode": "Kode sekali-pakai",
+      "placeholder": "Masukkan kode voucher",
+      "redeem": "Tebus voucher",
+      "redeeming": "Menebus…",
+      "successTitle": "Berhasil!",
+      "credited": "+{{tokens}} token dimasukkan",
+      "balanceNow": "Saldo sekarang: {{balance}} token",
+      "failedTitle": "Gagal"
+    },
+    "channel": {
+      "unreadableTitle": "Kanal top-up tidak terbaca",
+      "safeNote": "Saldo dan riwayat tetap aman. Coba lagi — kanal pembayaran tidak ditebak."
+    },
+    "claim": {
+      "creditedTitle": "Masuk ✓",
+      "balanceLine": "Saldo token:",
+      "topUpAgain": "Top up lagi",
+      "rejectedTitle": "Ditolak admin",
+      "rejectedNote": "Transfer tidak cocok dengan mutasi bank.",
+      "expiredTitle": "Klaim kedaluwarsa",
+      "expiredNote": "Nominal telah dibebaskan — transfer ke QR lama tidak dikreditkan.",
+      "newClaim": "Klaim baru",
+      "totalLabel": "Total pembayaran",
+      "youReceive": "Anda akan menerima {{tokens}} token",
+      "whyDifferent": "Mengapa nominalnya berbeda?",
+      "amountLabel": "Nominal top-up",
+      "adjustmentLabel": "Penyesuaian verifikasi",
+      "adjustmentNote": "Penyesuaian nominal membantu sistem mencocokkan pembayaran secara otomatis dan tidak menambah jumlah token.",
+      "payExact": "Bayar tepat {{amount}} agar pembayaran terverifikasi otomatis.",
+      "differentNote": "Nominal berbeda mungkin memerlukan pemeriksaan manual.",
+      "crediting": "Pembayaran diterima — sedang menambahkan token…",
+      "waiting": "Menunggu pembayaran — diperiksa otomatis",
+      "lastCheck": "terakhir {{time}}",
+      "changeAmount": "Ganti nominal",
+      "checkPayment": "Periksa pembayaran",
+      "notFound": "Transaksi tidak ditemukan — silakan klaim baru"
+    },
+    "qr": {
+      "validUntil": "QR berlaku hingga",
+      "expiresIn": "QR berakhir dalam",
+      "download": "Unduh QR",
+      "saveFailed": "Gagal menyimpan QR"
+    },
+    "picker": {
+      "title": "Nominal top-up",
+      "tokensReceivedLabel": "Token diterima",
+      "tokensReceived": "{{tokens}} token · Rp1 = {{perIdr}} token",
+      "totalAfterQr": "Total pembayaran akan ditampilkan setelah QR dibuat.",
+      "rangeHint": "Masukkan {{min}}–{{max}}, kelipatan {{step}}",
+      "createQr": "Buat QR Pembayaran"
+    },
+    "preview": {
+      "qrisNotConfigured": "QRIS belum dikonfigurasi",
+      "loadFailed": "Gagal memuat pengaturan",
+      "notLoaded": "Pengaturan top-up belum dimuat."
+    },
+    "history": {
+      "title": "Riwayat",
+      "refresh": "Muat ulang",
+      "unavailable": "Riwayat tidak tersedia",
+      "empty": "Belum ada transaksi.",
+      "pendingProcessing": "Top up QRIS — diproses",
+      "pendingWaiting": "Top up QRIS — menunggu pembayaran",
+      "reasonQris": "Top up QRIS",
+      "reasonUsage": "Pemakaian run",
+      "reasonMedia": "Generasi media",
+      "reasonAdminAdjustment": "Penyesuaian admin",
+      "reasonVoucher": "Voucher",
+      "reasonIap": "Google Play"
+    },
+    "iap": {
+      "catalogTitle": "Nominal top-up",
+      "viaPlay": "via Google Play",
+      "creditedTitle": "Pembelian berhasil — token masuk",
+      "creditedDetail": "+{{tokens}} token · Saldo sekarang: {{balance}} token",
+      "waitingTitle": "Menunggu pembayaran",
+      "waitingBody": "Selesaikan pembayaran (mis. kode bayar di minimarket/dompet digital). Token masuk otomatis begitu Google Play mengonfirmasi — diperiksa tiap 30 detik, atau buka ulang aplikasi nanti.",
+      "waitingExpiredBody": "Pemeriksaan otomatis berhenti setelah 30 menit. Buka ulang aplikasi atau tekan “Periksa pembelian” di bawah setelah pembayaran selesai.",
+      "errorTitle": "Pembelian belum terkredit",
+      "terminalNote": "Pembelian ini tidak bisa dikreditkan ke akun ini — tidak akan dicoba ulang otomatis. Hubungi dukungan bila menurut Anda ini keliru.",
+      "recoverNote": "Dana tidak hilang — pembelian yang sudah dibayar diambil otomatis saat halaman dibuka ulang.",
+      "checkPurchase": "Periksa pembelian",
+      "catalogFailed": "Gagal memuat katalog",
+      "catalogEmpty": "Katalog top-up belum tersedia.",
+      "productsMissingTitle": "Produk belum tersedia di Google Play",
+      "productsMissingBody": "Produk IAP ({{ids}}) belum aktif di Play Console untuk akun ini — daftar di internal testing terlebih dulu, lalu periksa ulang.",
+      "recheck": "Cek ulang",
+      "openingPlay": "Membuka Play…",
+      "verifying": "Memverifikasi…",
+      "buy": "Beli",
+      "footer": "Pembayaran diproses oleh Google Play Billing. Token ditambahkan setelah pembelian terverifikasi; pembelian belum selesai diambil ulang otomatis saat aplikasi dibuka.",
+      "canceled": "Pembelian dibatalkan.",
+      "noOrderId": "Google Play tidak mengirim orderId — tekan “Periksa pembelian” untuk mengulang.",
+      "errIapNotConfigured": "Top-up lewat Google Play belum diaktifkan untuk aplikasi ini.",
+      "errAccountMismatch": "Pembelian ini dibuat oleh akun kawai lain di perangkat ini.",
+      "errAccountUnbound": "Pembelian ini tidak terhubung ke akun kawai — hubungi dukungan dengan kode pembelian.",
+      "errPendingPayment": "Pembayaran belum selesai — selesaikan dulu di Google Play.",
+      "errPurchaseCanceled": "Pembelian dibatalkan.",
+      "errUnknownPurchaseState": "Google Play menolak status pembelian ini.",
+      "errTokenTaken": "Token pembelian ini sudah dipakai untuk transaksi lain.",
+      "errPackageMismatch": "Pembelian ini bukan untuk aplikasi kawai.",
+      "errVerifyFailed": "Google Play belum bisa memverifikasi pembelian — coba lagi sebentar.",
+      "errRefundHold": "Pembelian ini ditahan karena akun ini punya 2 refund dalam 30 hari terakhir — hubungi dukungan agar pembayaran ini dikreditkan.",
+      "errOrderIdTaken": "Nomor pesanan ini sudah terpakai di akun lain.",
+      "errUnknownProduct": "Produk ini tidak ada di katalog.",
+      "errClaimFailed": "Pembelian gagal dicatat — coba lagi.",
+      "errCreditFailed": "Kredit token gagal dicatat — coba lagi."
+    },
+    "toasts": {
+      "offlineCached": "Offline — memakai saldo cache; diverifikasi saat online",
+      "unreadable": "Saldo tidak terbaca — coba lagi ({{error}})",
+      "exhausted": "Token habis — isi ulang lewat Top Up"
+    }
   }
 }

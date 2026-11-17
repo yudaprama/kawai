@@ -150,13 +150,6 @@ export function translate(locale: Locale, key: TranslationKey, params?: Translat
   return interpolate(message, params, key);
 }
 
-/** Translate with an explicit locale — used by surfaces pinned to one
- *  language regardless of the app locale (the QRIS money flow stays
- *  Indonesian by design). */
-export function translateFixed(key: TranslationKey, params?: TranslationParams): string {
-  return translate("id", key, params);
-}
-
 // ---------------------------------------------------------------------------
 // Intl formatting helpers (locale-aware, for the run/session timestamps)
 

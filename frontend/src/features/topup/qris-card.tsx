@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
 import { platform } from "@/platform";
+import { useI18n } from "@/hooks/use-i18n";
 import gpnLogo from "@/assets/GPN.svg";
 import qrisLogo from "@/assets/QRIS-withtext.svg";
 
@@ -94,6 +95,7 @@ export interface QrisCardProps {
 }
 
 export function QrisCard({ qrPayload, amountLabel }: QrisCardProps) {
+  const { t } = useI18n();
   const qrRef = useRef<HTMLDivElement>(null);
 
   const merchant = useMemo(() => {
@@ -112,12 +114,12 @@ export function QrisCard({ qrPayload, amountLabel }: QrisCardProps) {
     try {
       const blob = await svgToPngBlob(svg);
       const outcome = await platform.saveBlob(blob, "qris-topup.png");
-      if (outcome === "saved") toast.success("QR tersimpan di perangkat");
-      else if (outcome === "failed") toast.error("Gagal menyimpan QR");
+      if (outcome === "saved") toast.success(t("common.savedToDevice"));
+      else if (outcome === "failed") toast.error(t("topup.qr.saveFailed"));
     } catch {
-      toast.error("Gagal menyimpan QR");
+      toast.error(t("topup.qr.saveFailed"));
     }
-  }, []);
+  }, [t]);
 
   return (
     <div className="flex flex-col items-center gap-2">
@@ -160,7 +162,7 @@ export function QrisCard({ qrPayload, amountLabel }: QrisCardProps) {
       </div>
       <Button variant="outline" size="sm" onClick={() => void handleDownload()} className="w-[264px]">
         <Icon name="download" className="size-3.5" />
-        Download QR
+        {t("topup.qr.download")}
       </Button>
     </div>
   );

@@ -147,13 +147,16 @@ export function ProfileControls({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-60">
           <DropdownMenuLabel className="font-mono text-xs break-all">{userId ?? "demo"}</DropdownMenuLabel>
-          {/* Balance row, <lg only: the inline Saldo chip leaves the mode bar
-              on phones, so this row is the balance's home there — it routes to
-              the same Top Up page the chip opened. lg+ reads the inline chip. */}
+          {/* Balance row, <lg only: the inline balance chip leaves the mode
+              bar on phones, so this row is the balance's home there — it
+              routes to the same Top Up page the chip opened. lg+ reads the
+              inline chip. */}
           <DropdownMenuItem className="gap-2 cursor-pointer lg:hidden" onClick={() => onSelectAsset("topup")}>
             <Icon name="qr-code" className="text-muted-foreground size-4" />
             <span className="flex flex-1 flex-col leading-tight">
-              <span className="text-muted-foreground font-mono text-[0.625rem] tracking-wider uppercase">Saldo</span>
+              <span className="text-muted-foreground font-mono text-[0.625rem] tracking-wider uppercase">
+                {t("topup.chip.label")}
+              </span>
               <span className={`text-sm font-semibold tabular-nums${low ? " text-warning" : ""}`}>{balance}</span>
             </span>
           </DropdownMenuItem>

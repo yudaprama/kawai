@@ -23,7 +23,9 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { refreshTokenBalance } from "@/features/topup/use-token-balance";
 import { logError, logWarn } from "@/lib/logger";
+import { useI18n } from "@/hooks/use-i18n";
 import { call, errText, type TopupIapProduct, type TopupIapProducts, type TopupIapRedeem } from "@/lib/api";
+import type { TranslationKey } from "@/lib/i18n";
 
 /** Jeda polling pembelian pending (bayar di minimarket/GoPay bisa berjam-jam). */
 const PENDING_POLL_MS = 30_000;
@@ -31,25 +33,24 @@ const PENDING_POLL_MS = 30_000;
  *  aplikasi (recovery mount mengkredit pembelian yang sudah dibayar). */
 const PENDING_POLL_MAX_TICKS = 60;
 
-/** Kode error worker → kalimat untuk pembeli. Pesan internal (perintah
- *  wrangler, teks upstream Google, error D1) tidak pernah tampil mentah —
- *  aslinya tetap masuk konsol untuk diagnosa. */
-const ERROR_TEXT: Record<string, string> = {
-  iap_not_configured: "Top-up lewat Google Play belum diaktifkan untuk aplikasi ini.",
-  purchase_account_mismatch: "Pembelian ini dibuat oleh akun kawai lain di perangkat ini.",
-  purchase_account_unbound: "Pembelian ini tidak terhubung ke akun kawai — hubungi dukungan dengan kode pembelian.",
-  purchase_not_purchased_pending: "Pembayaran belum selesai — selesaikan dulu di Google Play.",
-  purchase_not_purchased_canceled: "Pembelian dibatalkan.",
-  purchase_not_purchased_unknown: "Google Play menolak status pembelian ini.",
-  purchase_token_taken: "Token pembelian ini sudah dipakai untuk transaksi lain.",
-  purchase_package_mismatch: "Pembelian ini bukan untuk aplikasi kawai.",
-  purchase_verify_failed: "Google Play belum bisa memverifikasi pembelian — coba lagi sebentar.",
-  purchase_hold_refunds:
-    "Pembelian ini ditahan karena akun ini punya 2 refund dalam 30 hari terakhir — hubungi dukungan agar pembayaran ini dikreditkan.",
-  order_id_taken: "Nomor pesanan ini sudah terpakai di akun lain.",
-  unknown_product: "Produk ini tidak ada di katalog.",
-  claim_failed: "Pembelian gagal dicatat — coba lagi.",
-  credit_failed: "Kredit token gagal dicatat — coba lagi.",
+/** Kode error worker → kunci kamus untuk kalimat pembeli. Pesan internal
+ *  (perintah wrangler, teks upstream Google, error D1) tidak pernah tampil
+ *  mentah — aslinya tetap masuk konsol untuk diagnosa. */
+const ERROR_KEY: Record<string, TranslationKey> = {
+  iap_not_configured: "topup.iap.errIapNotConfigured",
+  purchase_account_mismatch: "topup.iap.errAccountMismatch",
+  purchase_account_unbound: "topup.iap.errAccountUnbound",
+  purchase_not_purchased_pending: "topup.iap.errPendingPayment",
+  purchase_not_purchased_canceled: "topup.iap.errPurchaseCanceled",
+  purchase_not_purchased_unknown: "topup.iap.errUnknownPurchaseState",
+  purchase_token_taken: "topup.iap.errTokenTaken",
+  purchase_package_mismatch: "topup.iap.errPackageMismatch",
+  purchase_verify_failed: "topup.iap.errVerifyFailed",
+  purchase_hold_refunds: "topup.iap.errRefundHold",
+  order_id_taken: "topup.iap.errOrderIdTaken",
+  unknown_product: "topup.iap.errUnknownProduct",
+  claim_failed: "topup.iap.errClaimFailed",
+  credit_failed: "topup.iap.errCreditFailed",
 };
 
 /** Error yang TIDAK sembuh dengan retry (milik akun lain, produk salah, token
@@ -65,9 +66,9 @@ const TERMINAL_ERRORS = [
   "unknown_product",
 ];
 
-function friendlyTopupError(raw: string): string {
-  const code = Object.keys(ERROR_TEXT).find((key) => raw.includes(key));
-  return code ? ERROR_TEXT[code] : raw;
+function friendlyTopupError(raw: string, t: (key: TranslationKey) => string): string {
+  const code = Object.keys(ERROR_KEY).find((key) => raw.includes(key));
+  return code ? t(ERROR_KEY[code]) : raw;
 }
 
 function isTerminalTopupError(raw: string): boolean {
@@ -75,6 +76,8 @@ function isTerminalTopupError(raw: string): boolean {
 }
 
 export function IapPanel({ accountHash }: { accountHash: string }) {
+  const { t, fmtNumber } = useI18n();
+
   // ── Katalog worker (productId → tokens) + produk Play (harga terlokalisasi)
   const [catalog, setCatalog] = useState<TopupIapProduct[] | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
@@ -102,9 +105,9 @@ export function IapPanel({ accountHash }: { accountHash: string }) {
         setCatalog(null);
         // Detail mentah ke log (app.log + Sentry), kalimat manusia ke UI.
         logError("topup_iap_products", err);
-        setCatalogError(friendlyTopupError(errText(err)));
+        setCatalogError(friendlyTopupError(errText(err), t));
       });
-  }, []);
+  }, [t]);
   useEffect(() => {
     loadCatalog();
   }, [loadCatalog]);
@@ -136,48 +139,51 @@ export function IapPanel({ accountHash }: { accountHash: string }) {
   // ── Verify + credit + consume ────────────────────────────────────────────
   // Idempoten di worker (per orderId) — retry aman. consume HANYA setelah 2xx;
   // pembelian belum di-consume tetap terlihat di restore (recovery).
-  const redeemAndConsume = useCallback(async (p: Purchase): Promise<boolean> => {
-    if (!p.orderId) {
-      setErrorTerminal(false);
-      setError('Google Play tidak mengirim orderId — tekan "Periksa pembelian" untuk mengulang.');
-      return false;
-    }
-    setBusy({ productId: p.productId, phase: "verify" });
-    busyRef.current = true;
-    try {
-      const data = await call<TopupIapRedeem>("topup_iap_redeem", {
-        productId: p.productId,
-        purchaseToken: p.purchaseToken,
-        orderId: p.orderId,
-      });
-      setCredited({ tokens: data.tokens, balance: data.balance });
-      setError(null);
-      setErrorTerminal(false);
-      void refreshTokenBalance();
-      try {
-        await consumePurchase(p.purchaseToken);
-      } catch (consumeErr) {
-        // Kredit sudah masuk; consume gagal bersih = recovery mount berikutnya
-        // menutupnya (already_credited → consume). Jangan gagalkan UI.
-        // Konsol + app.log + Sentry: pembelian sudah terkredit, hanya consume
-        // yang tertinggal (recovery mount berikutnya menutupnya).
-        logWarn("topup_iap_consume", consumeErr, { productId: p.productId, orderId: p.orderId });
+  const redeemAndConsume = useCallback(
+    async (p: Purchase): Promise<boolean> => {
+      if (!p.orderId) {
+        setErrorTerminal(false);
+        setError(t("topup.iap.noOrderId"));
+        return false;
       }
-      return true;
-    } catch (err) {
-      const raw = errText(err);
-      // Ditolak permanen (akun lain / produk salah / token terpakai): catat
-      // supaya recovery tidak memutar ulang banner yang sama tiap mount.
-      if (isTerminalTopupError(raw)) stuckRef.current.add(p.purchaseToken);
-      logError("topup_iap_redeem", err, { productId: p.productId, orderId: p.orderId });
-      setErrorTerminal(isTerminalTopupError(raw));
-      setError(friendlyTopupError(raw));
-      return false;
-    } finally {
-      busyRef.current = false;
-      setBusy(null);
-    }
-  }, []);
+      setBusy({ productId: p.productId, phase: "verify" });
+      busyRef.current = true;
+      try {
+        const data = await call<TopupIapRedeem>("topup_iap_redeem", {
+          productId: p.productId,
+          purchaseToken: p.purchaseToken,
+          orderId: p.orderId,
+        });
+        setCredited({ tokens: data.tokens, balance: data.balance });
+        setError(null);
+        setErrorTerminal(false);
+        void refreshTokenBalance();
+        try {
+          await consumePurchase(p.purchaseToken);
+        } catch (consumeErr) {
+          // Kredit sudah masuk; consume gagal bersih = recovery mount berikutnya
+          // menutupnya (already_credited → consume). Jangan gagalkan UI.
+          // Konsol + app.log + Sentry: pembelian sudah terkredit, hanya consume
+          // yang tertinggal (recovery mount berikutnya menutupnya).
+          logWarn("topup_iap_consume", consumeErr, { productId: p.productId, orderId: p.orderId });
+        }
+        return true;
+      } catch (err) {
+        const raw = errText(err);
+        // Ditolak permanen (akun lain / produk salah / token terpakai): catat
+        // supaya recovery tidak memutar ulang banner yang sama tiap mount.
+        if (isTerminalTopupError(raw)) stuckRef.current.add(p.purchaseToken);
+        logError("topup_iap_redeem", err, { productId: p.productId, orderId: p.orderId });
+        setErrorTerminal(isTerminalTopupError(raw));
+        setError(friendlyTopupError(raw, t));
+        return false;
+      } finally {
+        busyRef.current = false;
+        setBusy(null);
+      }
+    },
+    [t],
+  );
 
   // ── Recovery — pembelian paid-but-unconsumed dari sesi/crash sebelumnya ──
   // Jalur yang sama menyelesaikan pembelian pending yang baru saja dibayar.
@@ -247,7 +253,7 @@ export function IapPanel({ accountHash }: { accountHash: string }) {
         } else if (result.purchaseState === PurchaseState.PENDING) {
           setPending({ productId: result.productId, purchaseToken: result.purchaseToken });
         } else {
-          setError("Pembelian dibatalkan.");
+          setError(t("topup.iap.canceled"));
         }
       } catch (err) {
         const message = errText(err);
@@ -258,7 +264,7 @@ export function IapPanel({ accountHash }: { accountHash: string }) {
         setBusy(null);
       }
     },
-    [accountHash, redeemAndConsume],
+    [accountHash, redeemAndConsume, t],
   );
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -268,11 +274,13 @@ export function IapPanel({ accountHash }: { accountHash: string }) {
         <div className="rounded-md border border-success/20 bg-success/5 p-3 text-xs">
           <p className="flex items-center gap-1.5 font-medium text-success">
             <Icon name="check-circle-2" className="size-4" />
-            Pembelian berhasil — token masuk
+            {t("topup.iap.creditedTitle")}
           </p>
           <p className="text-muted-foreground">
-            +{credited.tokens.toLocaleString("id-ID")} token · Saldo sekarang:{" "}
-            {credited.balance.toLocaleString("id-ID")} token
+            {t("topup.iap.creditedDetail", {
+              tokens: fmtNumber(credited.tokens),
+              balance: fmtNumber(credited.balance),
+            })}
           </p>
         </div>
       )}
@@ -281,33 +289,26 @@ export function IapPanel({ accountHash }: { accountHash: string }) {
         <div className="border-warning/30 space-y-1 rounded-md border p-3 text-xs">
           <p className="flex items-center gap-1.5 font-medium text-warning">
             <Icon name="alert-circle" className="size-4" />
-            Menunggu pembayaran
+            {t("topup.iap.waitingTitle")}
           </p>
           <p className="text-muted-foreground">
-            {pollExpired
-              ? "Pemeriksaan otomatis berhenti setelah 30 menit. Buka ulang aplikasi atau tekan “Periksa pembelian” di bawah setelah pembayaran selesai."
-              : "Selesaikan pembayaran (mis. kode bayar di minimarket/dompet digital). Token masuk otomatis begitu Google Play mengonfirmasi — diperiksa tiap 30 detik, atau buka ulang aplikasi nanti."}
+            {pollExpired ? t("topup.iap.waitingExpiredBody") : t("topup.iap.waitingBody")}
           </p>
         </div>
       )}
 
       {error && (
         <div className="border-warning/30 space-y-1 rounded-md border p-3 text-xs">
-          <p className="text-warning font-medium">Pembelian belum terkredit</p>
+          <p className="text-warning font-medium">{t("topup.iap.errorTitle")}</p>
           <p className="text-muted-foreground break-words">{error}</p>
           {errorTerminal ? (
-            <p className="text-muted-foreground">
-              Pembelian ini tidak bisa dikreditkan ke akun ini — tidak akan dicoba ulang otomatis. Hubungi dukungan bila
-              menurut Anda ini keliru.
-            </p>
+            <p className="text-muted-foreground">{t("topup.iap.terminalNote")}</p>
           ) : (
             <>
-              <p className="text-muted-foreground">
-                Dana tidak hilang — pembelian yang sudah dibayar diambil otomatis saat halaman dibuka ulang.
-              </p>
+              <p className="text-muted-foreground">{t("topup.iap.recoverNote")}</p>
               <Button onClick={() => void recoverPurchases()} size="sm" variant="outline">
                 <Icon name="rotate-ccw" className="size-3.5" />
-                Periksa pembelian
+                {t("topup.iap.checkPurchase")}
               </Button>
             </>
           )}
@@ -316,8 +317,8 @@ export function IapPanel({ accountHash }: { accountHash: string }) {
 
       <div className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-medium">Nominal top-up</h3>
-          <span className="text-muted-foreground text-xs">via Google Play</span>
+          <h3 className="text-sm font-medium">{t("topup.iap.catalogTitle")}</h3>
+          <span className="text-muted-foreground text-xs">{t("topup.iap.viaPlay")}</span>
         </div>
 
         {catalog == null && catalogError == null && (
@@ -327,22 +328,21 @@ export function IapPanel({ accountHash }: { accountHash: string }) {
         )}
         {catalogError != null && (
           <div className="space-y-2 text-sm">
-            <p className="text-warning font-medium">Gagal memuat katalog</p>
+            <p className="text-warning font-medium">{t("topup.iap.catalogFailed")}</p>
             <p className="text-muted-foreground text-xs break-words">{catalogError}</p>
             <Button onClick={loadCatalog} size="sm" variant="outline">
-              Coba lagi
+              {t("common.retry")}
             </Button>
           </div>
         )}
         {catalog != null && catalog.length === 0 && (
-          <p className="text-muted-foreground text-sm">Katalog top-up belum tersedia.</p>
+          <p className="text-muted-foreground text-sm">{t("topup.iap.catalogEmpty")}</p>
         )}
         {catalog != null && catalog.length > 0 && storeMissing && (
           <div className="space-y-2 text-xs">
-            <p className="text-warning font-medium">Produk belum tersedia di Google Play</p>
+            <p className="text-warning font-medium">{t("topup.iap.productsMissingTitle")}</p>
             <p className="text-muted-foreground">
-              Produk IAP ({catalog.map((p) => p.productId).join(", ")}) belum aktif di Play Console untuk akun ini —
-              daftar di internal testing terlebih dulu, lalu periksa ulang.
+              {t("topup.iap.productsMissingBody", { ids: catalog.map((p) => p.productId).join(", ") })}
             </p>
             <Button
               onClick={() => {
@@ -352,7 +352,7 @@ export function IapPanel({ accountHash }: { accountHash: string }) {
               variant="outline"
             >
               <Icon name="rotate-ccw" className="size-3.5" />
-              Cek ulang
+              {t("topup.iap.recheck")}
             </Button>
           </div>
         )}
@@ -366,9 +366,7 @@ export function IapPanel({ accountHash }: { accountHash: string }) {
                 <li className="flex items-center justify-between gap-3 rounded-md border p-3" key={entry.productId}>
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium">{price ? price : entry.productId}</span>
-                    <span className="text-muted-foreground block text-xs">
-                      +{entry.tokens.toLocaleString("id-ID")} token
-                    </span>
+                    <span className="text-muted-foreground block text-xs">+{fmtNumber(entry.tokens)} token</span>
                   </span>
                   <Button
                     className="shrink-0"
@@ -379,10 +377,10 @@ export function IapPanel({ accountHash }: { accountHash: string }) {
                     {phase != null && (
                       <>
                         <Spinner className="mr-1.5 size-3.5 animate-spin" />
-                        {phase === "purchase" ? "Membuka Play…" : "Memverifikasi…"}
+                        {phase === "purchase" ? t("topup.iap.openingPlay") : t("topup.iap.verifying")}
                       </>
                     )}
-                    {phase == null && "Beli"}
+                    {phase == null && t("topup.iap.buy")}
                   </Button>
                 </li>
               );
@@ -390,10 +388,7 @@ export function IapPanel({ accountHash }: { accountHash: string }) {
           </ul>
         )}
 
-        <p className="text-muted-foreground mt-3 text-xs">
-          Pembayaran diproses oleh Google Play Billing. Token ditambahkan setelah pembelian terverifikasi; pembelian
-          belum selesai diambil ulang otomatis saat aplikasi dibuka.
-        </p>
+        <p className="text-muted-foreground mt-3 text-xs">{t("topup.iap.footer")}</p>
       </div>
     </section>
   );

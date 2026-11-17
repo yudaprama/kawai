@@ -21,6 +21,8 @@ import {
 import { QrisCard } from "@/features/topup/qris-card";
 import { IapPanel } from "@/features/topup/iap-panel";
 import { isLowTokenBalance, refreshTokenBalance, useTokenBalance } from "@/features/topup/use-token-balance";
+import { useI18n } from "@/hooks/use-i18n";
+import { formatNumber, type Locale, type TranslationKey } from "@/lib/i18n";
 
 // ── Constants (source-hardcoded — repo rule: no new env) ────────────────────
 
@@ -36,8 +38,8 @@ export type TopupStatus = "pending" | "crediting" | "credited" | "rejected" | "e
 /** Second-ticking countdown only in the final 10 minutes; absolute deadline before that. */
 const EXPIRY_COUNTDOWN_FROM_MS = 10 * 60_000;
 
-function formatIdr(n: number): string {
-  return `Rp${n.toLocaleString("id-ID")}`;
+function formatIdr(locale: Locale, n: number): string {
+  return `Rp${formatNumber(locale, n)}`;
 }
 
 function formatCountdown(ms: number): string {
@@ -48,58 +50,47 @@ function formatCountdown(ms: number): string {
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-/** Ledger reason → Indonesian label; unknown reasons fall back verbatim. */
-const REASON_LABEL: Record<string, string> = {
-  qris: "Top up QRIS",
-  usage: "Pemakaian run",
-  media: "Generasi media",
-  admin_adjustment: "Penyesuaian admin",
-  voucher: "Voucher",
-  iap: "Google Play",
+/** Ledger reason → dictionary key; unknown reasons fall back verbatim. */
+const REASON_KEY: Record<string, TranslationKey> = {
+  qris: "topup.history.reasonQris",
+  usage: "topup.history.reasonUsage",
+  media: "topup.history.reasonMedia",
+  admin_adjustment: "topup.history.reasonAdminAdjustment",
+  voucher: "topup.history.reasonVoucher",
+  iap: "topup.history.reasonIap",
 };
-
-function formatWhen(unix: number): string {
-  return new Date(unix * 1000).toLocaleString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 /** QR validity line — absolute deadline while far out, countdown only in the
  *  final 10 minutes. Owns its own 1s ticker so the page (and the QR) don't
  *  re-render every second. */
 function Expiry({ expiresAt }: { expiresAt: number }) {
+  const { t, fmtDate } = useI18n();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
   }, []);
   const remaining = Math.max(0, expiresAt * 1000 - now);
   if (remaining > EXPIRY_COUNTDOWN_FROM_MS) {
     return (
       <span className="text-muted-foreground">
-        QR berlaku hingga{" "}
+        {t("topup.qr.validUntil")}{" "}
         <span className="font-mono tabular-nums">
-          {new Date(expiresAt * 1000).toLocaleString("id-ID", {
-            day: "2-digit",
-            month: "short",
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
+          {fmtDate(expiresAt * 1000, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
         </span>
       </span>
     );
   }
   return (
     <span className="text-warning">
-      QR berakhir dalam <span className="font-mono tabular-nums">{formatCountdown(remaining)}</span>
+      {t("topup.qr.expiresIn")} <span className="font-mono tabular-nums">{formatCountdown(remaining)}</span>
     </span>
   );
 }
 
 export function TopupPage() {
+  const { locale, t, fmtNumber, fmtDate } = useI18n();
+
   // ── Top-up channel (QRIS vs Google Play IAP) ──────────────────────────────
   // Build Play (`release-android-play`) menjawab available=true dan halaman
   // ini menukar jalur QRIS + voucher dengan panel IAP (kebijakan Play:
@@ -299,7 +290,7 @@ export function TopupPage() {
       if (claimTxIdRef.current !== mine.txId) return;
       if (info == null) {
         resetClaim();
-        setClaimError("Transaksi tidak ditemukan — silakan klaim baru");
+        setClaimError(t("topup.claim.notFound"));
         return;
       }
       setTxStatus(info);
@@ -310,7 +301,7 @@ export function TopupPage() {
       setChecking(false);
       setLastCheckedAt(Date.now());
     }
-  }, [claim, resetClaim]);
+  }, [claim, resetClaim, t]);
 
   /** Cancel the pending claim (frees the unique nominal) and return to the
    *  picker. If the claim already moved on (crediting/credited — worker 409),
@@ -393,14 +384,12 @@ export function TopupPage() {
         <Card className="py-4">
           <CardContent className="px-4 text-sm">
             <p>
-              <span className="text-muted-foreground">Saldo token: </span>
+              <span className="text-muted-foreground">{t("topup.balanceLabel")}: </span>
               <span className="text-base font-semibold">
-                {balance === null ? (balancePending ? "…" : "—") : balance.toLocaleString("id-ID")}
+                {balance === null ? (balancePending ? "…" : "—") : fmtNumber(balance)}
               </span>
             </p>
-            {isLowTokenBalance(balance) && (
-              <p className="text-warning mt-1 text-xs">Saldo menipis — isi ulang sebelum menjalankan run berikutnya.</p>
-            )}
+            {isLowTokenBalance(balance) && <p className="text-warning mt-1 text-xs">{t("topup.balanceLowHint")}</p>}
           </CardContent>
         </Card>
 
@@ -411,11 +400,11 @@ export function TopupPage() {
           <section className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-medium">Voucher</h3>
-              <span className="text-muted-foreground text-xs">Kode sekali-pakai</span>
+              <span className="text-muted-foreground text-xs">{t("topup.voucher.oneTimeCode")}</span>
             </div>
             <div className="space-y-3">
               <Input
-                placeholder="Masukkan kode voucher"
+                placeholder={t("topup.voucher.placeholder")}
                 value={voucherInput}
                 onChange={(e) => setVoucherInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -430,26 +419,26 @@ export function TopupPage() {
                 {redeeming ? (
                   <>
                     <Spinner className="mr-2 size-4 animate-spin" />
-                    Menebus...
+                    {t("topup.voucher.redeeming")}
                   </>
                 ) : (
-                  "Tebus voucher"
+                  t("topup.voucher.redeem")
                 )}
               </Button>
               {voucherResult && (
                 <div className="rounded-md border border-success/20 bg-success/5 p-3 text-xs">
-                  <p className="font-medium text-success">Berhasil!</p>
+                  <p className="font-medium text-success">{t("topup.voucher.successTitle")}</p>
                   <p className="text-muted-foreground">
-                    +{voucherResult.tokens.toLocaleString("id-ID")} token dimasukkan
+                    {t("topup.voucher.credited", { tokens: fmtNumber(voucherResult.tokens) })}
                   </p>
                   <p className="text-muted-foreground">
-                    Saldo sekarang: {voucherResult.balance.toLocaleString("id-ID")} token
+                    {t("topup.voucher.balanceNow", { balance: fmtNumber(voucherResult.balance) })}
                   </p>
                 </div>
               )}
               {voucherError && (
                 <div className="border-warning/30 space-y-1 rounded-md border p-3 text-xs">
-                  <p className="text-warning font-medium">Gagal</p>
+                  <p className="text-warning font-medium">{t("topup.voucher.failedTitle")}</p>
                   <p className="text-muted-foreground font-mono break-words">{voucherError}</p>
                 </div>
               )}
@@ -468,11 +457,9 @@ export function TopupPage() {
           </section>
         ) : channel.kind === "failed" ? (
           <section className="border-warning/30 space-y-2 rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-4 text-sm">
-            <p className="text-warning font-medium">Kanal top-up tidak terbaca</p>
+            <p className="text-warning font-medium">{t("topup.channel.unreadableTitle")}</p>
             <p className="text-muted-foreground font-mono text-xs break-words">{channel.message}</p>
-            <p className="text-muted-foreground text-xs">
-              Saldo dan riwayat tetap aman. Coba lagi — jangan menebak kanal pembayaran.
-            </p>
+            <p className="text-muted-foreground text-xs">{t("topup.channel.safeNote")}</p>
             <Button
               onClick={() => {
                 probeChannel();
@@ -481,7 +468,7 @@ export function TopupPage() {
               variant="outline"
             >
               <Icon name="rotate-ccw" className="size-3.5" />
-              Coba lagi
+              {t("common.retry")}
             </Button>
           </section>
         ) : claim ? (
@@ -489,42 +476,40 @@ export function TopupPage() {
             // ── Terminal states ─────────────────────────────────────────────
             <section className="space-y-3 rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-4">
               <p className="text-muted-foreground font-mono text-xs break-all">tx: {claim.txId}</p>
-              <p className="text-lg font-semibold">{formatIdr(claim.idrAmount)}</p>
+              <p className="text-lg font-semibold">{formatIdr(locale, claim.idrAmount)}</p>
               {effectiveStatus === "credited" && txStatus ? (
                 <>
                   <p className="flex items-center gap-2 text-sm">
                     <Icon name="check-circle-2" className="size-4 text-success" />
-                    <span className="font-medium text-success">Masuk ✓</span>
-                    <span className="text-muted-foreground">+{txStatus.tokens.toLocaleString("id-ID")} token</span>
+                    <span className="font-medium text-success">{t("topup.claim.creditedTitle")}</span>
+                    <span className="text-muted-foreground">+{fmtNumber(txStatus.tokens)} token</span>
                   </p>
                   <p className="text-muted-foreground text-xs">
-                    Saldo token:{" "}
-                    <span className="font-medium">{balance === null ? "—" : balance.toLocaleString("id-ID")}</span>
+                    {t("topup.claim.balanceLine")}{" "}
+                    <span className="font-medium">{balance === null ? "—" : fmtNumber(balance)}</span>
                   </p>
                   <Button onClick={resetClaim} size="sm" variant="outline">
-                    Top up lagi
+                    {t("topup.claim.topUpAgain")}
                   </Button>
                 </>
               ) : effectiveStatus === "rejected" ? (
                 <>
                   <p className="flex items-center gap-2 text-sm">
                     <Icon name="circle-x" className="size-4 text-destructive" />
-                    <span className="font-medium text-destructive">Ditolak admin</span>
+                    <span className="font-medium text-destructive">{t("topup.claim.rejectedTitle")}</span>
                   </p>
-                  <p className="text-muted-foreground text-xs">Transfer tidak cocok dengan mutasi bank.</p>
+                  <p className="text-muted-foreground text-xs">{t("topup.claim.rejectedNote")}</p>
                   <Button onClick={resetClaim} size="sm" variant="outline">
-                    Top up lagi
+                    {t("topup.claim.topUpAgain")}
                   </Button>
                 </>
               ) : (
                 <>
                   <p className="flex items-center gap-2 text-sm">
                     <Icon name="alert-circle" className="size-4 text-warning" />
-                    <span className="font-medium text-warning">Klaim kedaluwarsa</span>
+                    <span className="font-medium text-warning">{t("topup.claim.expiredTitle")}</span>
                   </p>
-                  <p className="text-muted-foreground text-xs">
-                    Nominal telah dibebaskan — transfer ke QR lama tidak dikreditkan.
-                  </p>
+                  <p className="text-muted-foreground text-xs">{t("topup.claim.expiredNote")}</p>
                   <Button
                     disabled={claiming}
                     onClick={() => {
@@ -535,7 +520,7 @@ export function TopupPage() {
                     variant="outline"
                   >
                     {claiming ? <Spinner className="size-4" /> : <Icon name="rotate-ccw" className="size-3.5" />}
-                    Klaim baru
+                    {t("topup.claim.newClaim")}
                   </Button>
                 </>
               )}
@@ -544,36 +529,31 @@ export function TopupPage() {
             // ── Pending / crediting: QR + instructions ──────────────────────
             <section className="space-y-4 rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-4">
               <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
-                <QrisCard qrPayload={claim.qrPayload} amountLabel={formatIdr(claim.idrAmount)} />
+                <QrisCard qrPayload={claim.qrPayload} amountLabel={formatIdr(locale, claim.idrAmount)} />
                 <div className="min-w-0 flex-1 space-y-1.5">
-                  <p className="text-muted-foreground text-xs">Total pembayaran</p>
-                  <p className="text-xl font-semibold">{formatIdr(claim.idrAmount)}</p>
-                  <p className="text-xs">
-                    Anda akan menerima <span className="font-medium">{claim.tokens.toLocaleString("id-ID")} token</span>
-                  </p>
+                  <p className="text-muted-foreground text-xs">{t("topup.claim.totalLabel")}</p>
+                  <p className="text-xl font-semibold">{formatIdr(locale, claim.idrAmount)}</p>
+                  <p className="text-xs">{t("topup.claim.youReceive", { tokens: fmtNumber(claim.tokens) })}</p>
                   {uniqueCode > 0 && (
                     <details className="group text-xs">
                       <summary className="text-muted-foreground [&::-webkit-details-marker]:hidden hit-44 flex cursor-pointer list-none items-center gap-1.5 py-1 select-none hover:text-foreground">
                         <Icon name="info" className="size-3.5" />
-                        Mengapa nominalnya berbeda?
+                        {t("topup.claim.whyDifferent")}
                       </summary>
                       <div className="border-border/60 mt-2 space-y-0.5 border-l pl-3">
                         <p className="flex justify-between gap-3">
-                          <span className="text-muted-foreground">Nominal top-up</span>
-                          <span className="font-medium">{formatIdr(claim.idrAmount - uniqueCode)}</span>
+                          <span className="text-muted-foreground">{t("topup.claim.amountLabel")}</span>
+                          <span className="font-medium">{formatIdr(locale, claim.idrAmount - uniqueCode)}</span>
                         </p>
                         <p className="flex justify-between gap-3">
-                          <span className="text-muted-foreground">Penyesuaian verifikasi</span>
-                          <span className="font-medium">{formatIdr(uniqueCode)}</span>
+                          <span className="text-muted-foreground">{t("topup.claim.adjustmentLabel")}</span>
+                          <span className="font-medium">{formatIdr(locale, uniqueCode)}</span>
                         </p>
                         <p className="flex justify-between gap-3">
-                          <span className="text-muted-foreground">Total pembayaran</span>
-                          <span className="font-medium">{formatIdr(claim.idrAmount)}</span>
+                          <span className="text-muted-foreground">{t("topup.claim.totalLabel")}</span>
+                          <span className="font-medium">{formatIdr(locale, claim.idrAmount)}</span>
                         </p>
-                        <p className="text-muted-foreground pt-1">
-                          Penyesuaian nominal membantu sistem mencocokkan pembayaran secara otomatis dan tidak menambah
-                          jumlah token.
-                        </p>
+                        <p className="text-muted-foreground pt-1">{t("topup.claim.adjustmentNote")}</p>
                       </div>
                     </details>
                   )}
@@ -584,18 +564,25 @@ export function TopupPage() {
                 </div>
               </div>
               <div className="border-warning/30 space-y-1 rounded-md border p-3 text-xs">
-                <p>Bayar tepat {formatIdr(claim.idrAmount)} agar pembayaran terverifikasi otomatis.</p>
-                <p className="text-muted-foreground">Nominal berbeda mungkin memerlukan pemeriksaan manual.</p>
+                <p>{t("topup.claim.payExact", { amount: formatIdr(locale, claim.idrAmount) })}</p>
+                <p className="text-muted-foreground">{t("topup.claim.differentNote")}</p>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-muted-foreground flex items-center gap-2 text-xs">
                   <Spinner className="size-3.5" />
                   {effectiveStatus === "crediting" ? (
-                    "Pembayaran diterima — sedang menambahkan token…"
+                    t("topup.claim.crediting")
                   ) : (
                     <>
-                      Menunggu pembayaran — diperiksa otomatis
-                      {lastCheckedAt != null && <> · terakhir {new Date(lastCheckedAt).toLocaleTimeString("id-ID")}</>}
+                      {t("topup.claim.waiting")}
+                      {lastCheckedAt != null && (
+                        <>
+                          {" · "}
+                          {t("topup.claim.lastCheck", {
+                            time: fmtDate(lastCheckedAt, { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+                          })}
+                        </>
+                      )}
                     </>
                   )}
                 </p>
@@ -606,11 +593,11 @@ export function TopupPage() {
                     size="sm"
                     variant="ghost"
                   >
-                    Ganti nominal
+                    {t("topup.claim.changeAmount")}
                   </Button>
                   <Button disabled={checking} onClick={() => void checkStatus()} size="sm" variant="outline">
                     <Icon name="rotate-ccw" className="size-3.5" />
-                    Periksa pembayaran
+                    {t("topup.claim.checkPayment")}
                   </Button>
                 </div>
               </div>
@@ -624,28 +611,30 @@ export function TopupPage() {
           // ── Not configured (503 QRIS_PAYLOAD) or preview failure — a notice, never a crash ──
           <div className="border-warning/30 space-y-2 rounded-md border p-4 text-sm">
             <p className="font-medium text-warning">
-              {previewError.includes("QRIS_PAYLOAD") ? "QRIS belum dikonfigurasi" : "Gagal memuat pengaturan"}
+              {previewError.includes("QRIS_PAYLOAD")
+                ? t("topup.preview.qrisNotConfigured")
+                : t("topup.preview.loadFailed")}
             </p>
             <p className="text-muted-foreground font-mono text-xs break-words">{previewError}</p>
             <Button onClick={loadPreview} size="sm" variant="outline">
-              Coba lagi
+              {t("common.retry")}
             </Button>
           </div>
         ) : preview == null ? (
-          <p className="text-muted-foreground text-sm">Pengaturan top-up belum dimuat.</p>
+          <p className="text-muted-foreground text-sm">{t("topup.preview.notLoaded")}</p>
         ) : (
           // ── Amount picker (pay-as-you-go) ─────────────────────────────────
           <>
-            <h3 className="text-sm font-medium">Nominal top-up</h3>
+            <h3 className="text-sm font-medium">{t("topup.picker.title")}</h3>
             <div className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-4">
               <div className="flex items-center gap-2">
                 <Input
                   className="w-40 font-semibold"
                   inputMode="numeric"
                   onChange={(e) => setAmountInput(e.target.value.replace(/\D/g, "").slice(0, 9))}
-                  placeholder={preview.minBase.toLocaleString("id-ID")}
+                  placeholder={fmtNumber(preview.minBase)}
                   type="text"
-                  value={amountInput === "" ? "" : Number(amountInput).toLocaleString("id-ID")}
+                  value={amountInput === "" ? "" : fmtNumber(Number(amountInput))}
                 />
                 <span className="text-muted-foreground text-sm">IDR</span>
               </div>
@@ -666,7 +655,7 @@ export function TopupPage() {
                       onClick={() => setAmountInput(String(preset))}
                       type="button"
                     >
-                      {formatIdr(preset)}
+                      {formatIdr(locale, preset)}
                     </button>
                   );
                 })}
@@ -674,27 +663,33 @@ export function TopupPage() {
               {baseValid ? (
                 <div className="mt-3 space-y-1 text-xs">
                   <p className="flex justify-between gap-3">
-                    <span className="text-muted-foreground">Nominal top-up</span>
-                    <span className="font-medium">{formatIdr(base)}</span>
+                    <span className="text-muted-foreground">{t("topup.claim.amountLabel")}</span>
+                    <span className="font-medium">{formatIdr(locale, base)}</span>
                   </p>
                   <p className="flex justify-between gap-3">
-                    <span className="text-muted-foreground">Token diterima</span>
+                    <span className="text-muted-foreground">{t("topup.picker.tokensReceivedLabel")}</span>
                     <span className="font-medium">
-                      {(base * preview.tokensPerIdr).toLocaleString("id-ID")} token · Rp1 = {preview.tokensPerIdr} token
+                      {t("topup.picker.tokensReceived", {
+                        tokens: fmtNumber(base * preview.tokensPerIdr),
+                        perIdr: preview.tokensPerIdr,
+                      })}
                     </span>
                   </p>
-                  <p className="text-muted-foreground">Total pembayaran akan ditampilkan setelah QR dibuat.</p>
+                  <p className="text-muted-foreground">{t("topup.picker.totalAfterQr")}</p>
                 </div>
               ) : (
                 <p className="text-muted-foreground mt-3 text-xs">
-                  Masukkan {preview.minBase.toLocaleString("id-ID")}–{preview.maxBase.toLocaleString("id-ID")},
-                  kelipatan {preview.baseStep}
+                  {t("topup.picker.rangeHint", {
+                    min: fmtNumber(preview.minBase),
+                    max: fmtNumber(preview.maxBase),
+                    step: preview.baseStep,
+                  })}
                 </p>
               )}
             </div>
             <Button className="w-full" disabled={!baseValid || claiming} onClick={() => void claimNow(base)}>
               {claiming ? <Spinner className="size-4" /> : <Icon name="qr-code" className="size-4" />}
-              Buat QR Pembayaran
+              {t("topup.picker.createQr")}
             </Button>
             {claimError && <p className="text-destructive text-xs">{claimError}</p>}
           </>
@@ -705,19 +700,19 @@ export function TopupPage() {
             previously loaded list stays (same policy as the balance card). */}
         <section className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-4">
           <div className="mb-2 flex items-center justify-between gap-3">
-            <h3 className="text-sm font-medium">Riwayat</h3>
+            <h3 className="text-sm font-medium">{t("topup.history.title")}</h3>
             <Button onClick={loadHistory} size="sm" variant="ghost">
               <Icon name="rotate-ccw" className="size-3.5" />
-              Muat ulang
+              {t("topup.history.refresh")}
             </Button>
           </div>
           {history == null ? (
             historyError ? (
               <div className="border-warning/30 space-y-1 rounded-md border p-3 text-xs">
-                <p className="text-warning font-medium">Riwayat tidak tersedia</p>
+                <p className="text-warning font-medium">{t("topup.history.unavailable")}</p>
                 <p className="text-muted-foreground font-mono break-words">{historyError}</p>
                 <Button onClick={loadHistory} size="sm" variant="outline">
-                  Coba lagi
+                  {t("common.retry")}
                 </Button>
               </div>
             ) : (
@@ -726,47 +721,57 @@ export function TopupPage() {
               </div>
             )
           ) : history.length === 0 && activeClaim == null ? (
-            <p className="text-muted-foreground text-sm">Belum ada transaksi.</p>
+            <p className="text-muted-foreground text-sm">{t("topup.history.empty")}</p>
           ) : (
             <ul>
               {activeClaim && (
                 <li className="flex items-center justify-between gap-3 border-b py-2 text-sm">
                   <span className="flex min-w-0 items-baseline gap-2">
                     <span className="text-warning font-mono font-medium tabular-nums">
-                      {activeClaim.tokens.toLocaleString("id-ID")} token
+                      {fmtNumber(activeClaim.tokens)} token
                     </span>
                     <span className="text-muted-foreground truncate text-xs">
-                      Top up QRIS — {effectiveStatus === "crediting" ? "diproses" : "menunggu pembayaran"}
+                      {effectiveStatus === "crediting"
+                        ? t("topup.history.pendingProcessing")
+                        : t("topup.history.pendingWaiting")}
                     </span>
                   </span>
                   <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                    {formatWhen(Math.floor(claimStartRef.current / 1000))}
+                    {fmtDate(claimStartRef.current, {
+                      day: "2-digit",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
                   </span>
                 </li>
               )}
-              {history.map((entry) => (
-                <li
-                  className="flex items-center justify-between gap-3 border-b py-2 text-sm last:border-b-0"
-                  key={entry.id}
-                >
-                  <span className="flex min-w-0 items-baseline gap-2">
-                    <span
-                      className={`font-mono font-medium tabular-nums ${
-                        entry.amount >= 0 ? "text-success" : "text-destructive"
-                      }`}
-                    >
-                      {entry.amount >= 0 ? "+" : "−"}
-                      {Math.abs(entry.amount).toLocaleString("id-ID")} token
+              {history.map((entry) => {
+                const reasonKey = REASON_KEY[entry.reason];
+                return (
+                  <li
+                    className="flex items-center justify-between gap-3 border-b py-2 text-sm last:border-b-0"
+                    key={entry.id}
+                  >
+                    <span className="flex min-w-0 items-baseline gap-2">
+                      <span
+                        className={`font-mono font-medium tabular-nums ${
+                          entry.amount >= 0 ? "text-success" : "text-destructive"
+                        }`}
+                      >
+                        {entry.amount >= 0 ? "+" : "−"}
+                        {fmtNumber(Math.abs(entry.amount))} token
+                      </span>
+                      <span className="text-muted-foreground truncate text-xs">
+                        {reasonKey ? t(reasonKey) : entry.reason}
+                      </span>
                     </span>
-                    <span className="text-muted-foreground truncate text-xs">
-                      {REASON_LABEL[entry.reason] ?? entry.reason}
+                    <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                      {fmtDate(entry.createdAt, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                     </span>
-                  </span>
-                  <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                    {formatWhen(entry.createdAt)}
-                  </span>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

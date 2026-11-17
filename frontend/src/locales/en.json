@@ -1187,5 +1187,129 @@
       "guide": "Paste your MEXC API key and secret to let the agent read your futures fills into the books. MEXC is READ-ONLY here — kawai imports fills, PnL and fees, and never places an order on MEXC. No MEXC account? Skip this.",
       "guideDetail": "Create one in MEXC → Account → API, and restrict it to your IP. A read-only key is all this needs: the agent imports your futures deal history over the last few days so the review can compute PnL and fees. There is no trading permission to enable — no MEXC execution exists yet, so leave trade permissions off."
     }
+  },
+  "topup": {
+    "balanceLabel": "Token balance",
+    "balanceLowHint": "Balance is running low — top up before your next run.",
+    "chip": {
+      "label": "Balance",
+      "openAria": "Token balance: {{value}} — open Top Up",
+      "lowSuffix": "balance low",
+      "lowToast": "Token balance is low — top up via Top Up"
+    },
+    "voucher": {
+      "oneTimeCode": "One-time code",
+      "placeholder": "Enter voucher code",
+      "redeem": "Redeem voucher",
+      "redeeming": "Redeeming…",
+      "successTitle": "Success!",
+      "credited": "+{{tokens}} tokens added",
+      "balanceNow": "Balance now: {{balance}} tokens",
+      "failedTitle": "Failed"
+    },
+    "channel": {
+      "unreadableTitle": "Couldn't read the top-up channel",
+      "safeNote": "Balance and history are safe. Try again — the payment channel is never guessed."
+    },
+    "claim": {
+      "creditedTitle": "Credited ✓",
+      "balanceLine": "Token balance:",
+      "topUpAgain": "Top up again",
+      "rejectedTitle": "Rejected by admin",
+      "rejectedNote": "The transfer didn't match any bank mutation.",
+      "expiredTitle": "Claim expired",
+      "expiredNote": "The amount was released — a transfer to the old QR won't be credited.",
+      "newClaim": "New claim",
+      "totalLabel": "Total payment",
+      "youReceive": "You'll receive {{tokens}} tokens",
+      "whyDifferent": "Why is the amount different?",
+      "amountLabel": "Top-up amount",
+      "adjustmentLabel": "Verification adjustment",
+      "adjustmentNote": "The adjusted amount helps the system match your payment automatically and doesn't change the tokens you receive.",
+      "payExact": "Pay exactly {{amount}} so the payment verifies automatically.",
+      "differentNote": "A different amount may need manual review.",
+      "crediting": "Payment received — adding tokens…",
+      "waiting": "Waiting for payment — checked automatically",
+      "lastCheck": "last {{time}}",
+      "changeAmount": "Change amount",
+      "checkPayment": "Check payment",
+      "notFound": "Transaction not found — please claim again"
+    },
+    "qr": {
+      "validUntil": "QR valid until",
+      "expiresIn": "QR expires in",
+      "download": "Download QR",
+      "saveFailed": "Couldn't save the QR"
+    },
+    "picker": {
+      "title": "Top-up amount",
+      "tokensReceivedLabel": "Tokens received",
+      "tokensReceived": "{{tokens}} tokens · Rp1 = {{perIdr}} token",
+      "totalAfterQr": "Total payment will be shown once the QR is generated.",
+      "rangeHint": "Enter {{min}}–{{max}}, multiples of {{step}}",
+      "createQr": "Create payment QR"
+    },
+    "preview": {
+      "qrisNotConfigured": "QRIS not configured",
+      "loadFailed": "Couldn't load settings",
+      "notLoaded": "Top-up settings haven't loaded."
+    },
+    "history": {
+      "title": "History",
+      "refresh": "Refresh",
+      "unavailable": "History unavailable",
+      "empty": "No transactions yet.",
+      "pendingProcessing": "Top up QRIS — processing",
+      "pendingWaiting": "Top up QRIS — waiting for payment",
+      "reasonQris": "QRIS top-up",
+      "reasonUsage": "Run usage",
+      "reasonMedia": "Media generation",
+      "reasonAdminAdjustment": "Admin adjustment",
+      "reasonVoucher": "Voucher",
+      "reasonIap": "Google Play"
+    },
+    "iap": {
+      "catalogTitle": "Top-up amount",
+      "viaPlay": "via Google Play",
+      "creditedTitle": "Purchase successful — tokens added",
+      "creditedDetail": "+{{tokens}} tokens · Balance now: {{balance}} tokens",
+      "waitingTitle": "Waiting for payment",
+      "waitingBody": "Finish the payment (e.g. a payment code at a convenience store or e-wallet). Tokens arrive automatically once Google Play confirms — checked every 30 seconds, or reopen the app later.",
+      "waitingExpiredBody": "Automatic checking stopped after 30 minutes. Reopen the app or press “Check purchase” below once the payment completes.",
+      "errorTitle": "Purchase not credited",
+      "terminalNote": "This purchase can't be credited to this account — it won't be retried automatically. Contact support if you think this is wrong.",
+      "recoverNote": "Your money isn't lost — a paid purchase is picked up automatically when the page reopens.",
+      "checkPurchase": "Check purchase",
+      "catalogFailed": "Couldn't load the catalog",
+      "catalogEmpty": "The top-up catalog isn't available yet.",
+      "productsMissingTitle": "Products not available on Google Play",
+      "productsMissingBody": "The IAP products ({{ids}}) aren't active in Play Console for this account — join internal testing first, then check again.",
+      "recheck": "Re-check",
+      "openingPlay": "Opening Play…",
+      "verifying": "Verifying…",
+      "buy": "Buy",
+      "footer": "Payments are processed by Google Play Billing. Tokens are added once the purchase is verified; unfinished purchases are picked up automatically when the app reopens.",
+      "canceled": "Purchase canceled.",
+      "noOrderId": "Google Play didn't send an orderId — press “Check purchase” to retry.",
+      "errIapNotConfigured": "Google Play top-up isn't enabled for this app yet.",
+      "errAccountMismatch": "This purchase was made by a different kawai account on this device.",
+      "errAccountUnbound": "This purchase isn't linked to a kawai account — contact support with the purchase code.",
+      "errPendingPayment": "Payment isn't complete yet — finish it in Google Play first.",
+      "errPurchaseCanceled": "The purchase was canceled.",
+      "errUnknownPurchaseState": "Google Play rejected the status of this purchase.",
+      "errTokenTaken": "This purchase token was already used for another transaction.",
+      "errPackageMismatch": "This purchase isn't for the kawai app.",
+      "errVerifyFailed": "Google Play couldn't verify the purchase yet — try again shortly.",
+      "errRefundHold": "This purchase is on hold because this account has 2 refunds in the last 30 days — contact support to have this payment credited.",
+      "errOrderIdTaken": "This order number is already used on another account.",
+      "errUnknownProduct": "This product doesn't exist in the catalog.",
+      "errClaimFailed": "The purchase couldn't be recorded — try again.",
+      "errCreditFailed": "The token credit couldn't be recorded — try again."
+    },
+    "toasts": {
+      "offlineCached": "Offline — showing the cached balance; it's verified once online",
+      "unreadable": "Balance couldn't be read — try again ({{error}})",
+      "exhausted": "Out of tokens — top up via Top Up"
+    }
   }
 }

@@ -690,9 +690,9 @@ export function useWorkbench() {
             // reset on every offline submit.
             tokens = offline.tokens;
             readFromWorker = false;
-            toast("Offline — memakai saldo cache; diverifikasi saat online");
+            toast(translate(getLocale(), "topup.toasts.offlineCached"));
           } else {
-            const msg = `Saldo tidak terbaca — coba lagi (${errText(err)})`;
+            const msg = translate(getLocale(), "topup.toasts.unreadable", { error: errText(err) });
             toast(msg);
             throw new Error(msg);
           }
@@ -703,7 +703,7 @@ export function useWorkbench() {
       // re-reads once it resolves.
       publishTokenBalance(tokens, readFromWorker);
       if (tokens <= 0) {
-        const msg = "Token habis — isi ulang lewat Top Up";
+        const msg = translate(getLocale(), "topup.toasts.exhausted");
         toast(msg);
         emitOpenTopup();
         throw new Error(msg);
