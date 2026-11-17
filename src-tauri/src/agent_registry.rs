@@ -798,6 +798,7 @@ mod tests {
                 MONAD_AGENT_ID,
                 ACCOUNTING_AGENT_ID,
                 SECURITY_AGENT_ID,
+                GENERATOR_AGENT_ID,
             ]
         );
     }
