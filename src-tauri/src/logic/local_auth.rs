@@ -473,7 +473,11 @@ pub async fn auth_sign_up(email_addr: &str, password: &str) -> std::result::Resu
         return Err("password must not be empty".into());
     }
     let email = email_addr.trim().to_lowercase();
-    if !email::take_verified_sign_up_email(&email) {
+    // Peek, do not consume: the proof is spent only after the directory
+    // accepts the account. Consuming here burned it on a network blip or a
+    // 409 duplicate — and since `auth_verify_code` already dropped the pending
+    // code, the user then had to request a whole new one just to retry.
+    if !email::has_verified_sign_up_email(&email) {
         return Err("verify your email before creating an account".into());
     }
     let salt = random_salt()?;
@@ -486,6 +490,8 @@ pub async fn auth_sign_up(email_addr: &str, password: &str) -> std::result::Resu
     )
     .await
     .map_err(String::from)?;
+    // Registered — spend the proof so it cannot authorize a second account.
+    let _ = email::take_verified_sign_up_email(&email);
 
     // Fire-and-forget welcome email — never blocks or fails signup.
     if let Err(e) = email::send_welcome_email(&email).await {

@@ -5,7 +5,7 @@ import { getLocale, translate } from "@/lib/i18n";
 import { groupSessions, historyToMessages, sessionToMarkdown } from "@/features/chat/lib/chat-helpers";
 import { logError, logWarn } from "@/lib/logger";
 import { showErrorToast, slugify } from "@/lib/utils";
-import type { SupervisorChatState } from "./use-supervisor-chat";
+import type { StatePatch, SupervisorChatState } from "./use-supervisor-chat";
 
 /** Undo window for a delete: the row disappears now, the real
  *  `delete_chat_session` call fires only after this expires unopposed. */
@@ -21,12 +21,16 @@ export function useChatSessions({
   resetModelContext,
   clearMessages,
 }: {
-  patch: (p: Partial<SupervisorChatState>) => void;
+  patch: StatePatch;
   state: SupervisorChatState;
   resetModelContext: () => Promise<void>;
   clearMessages: () => void;
 }) {
   const sessionIdRef = useRef<number | null>(null);
+
+  /** The in-flight `create_chat_session`, shared by every concurrent
+   *  `ensureSessionId` caller (see the single-flight note there). */
+  const pendingCreate = useRef<Promise<number | null> | null>(null);
 
   // keep ref in sync with state.sessionId for ensure* short-circuit
   useEffect(() => {
@@ -86,19 +90,30 @@ export function useChatSessions({
 
   const ensureSessionId = useCallback(async (): Promise<number | null> => {
     if (sessionIdRef.current != null) return sessionIdRef.current;
-    try {
-      // Created untitled; `append_chat_message` seeds the title from the
-      // first user message.
-      const s = await call<ChatSession>("create_chat_session", {});
-      sessionIdRef.current = s.id;
-      patch({ sessionId: s.id });
-      void loadSessions();
-      return s.id;
-    } catch (err) {
-      logError("create_chat_session", err);
-      showErrorToast(`Couldn't start a new chat — ${errText(err)}`);
-      return null;
-    }
+    // Single-flight: the composer's image import and its submit both need a
+    // session before the first message lands, and two concurrent
+    // `create_chat_session` POSTs create TWO rows (one orphaned) plus two list
+    // reloads. Every caller awaits the same in-flight create instead.
+    if (pendingCreate.current) return pendingCreate.current;
+    const create = (async () => {
+      try {
+        // Created untitled; `append_chat_message` seeds the title from the
+        // first user message.
+        const s = await call<ChatSession>("create_chat_session", {});
+        sessionIdRef.current = s.id;
+        patch({ sessionId: s.id });
+        void loadSessions();
+        return s.id;
+      } catch (err) {
+        logError("create_chat_session", err);
+        showErrorToast(`Couldn't start a new chat — ${errText(err)}`);
+        return null;
+      }
+    })().finally(() => {
+      pendingCreate.current = null;
+    });
+    pendingCreate.current = create;
+    return create;
   }, [patch, loadSessions]);
 
   const newChat = useCallback(async () => {
@@ -199,27 +214,32 @@ export function useChatSessions({
     async (sessionId: number, title: string) => {
       const trimmed = title.trim();
       if (!trimmed) return;
-      const prior = state.sessions.find((s) => s.id === sessionId)?.title;
-      patch({
-        sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, title: trimmed } : s)),
+      // Both the optimistic rename and the rollback map over the CURRENT list
+      // (functional update): the `rename_chat_session` round-trip can span a
+      // `loadSessions` or another rename, and mapping the `state.sessions`
+      // captured here would silently drop whatever landed meanwhile.
+      let prior: string | undefined;
+      patch((prev) => {
+        prior = prev.sessions.find((s) => s.id === sessionId)?.title;
+        return { sessions: prev.sessions.map((s) => (s.id === sessionId ? { ...s, title: trimmed } : s)) };
       });
       try {
         const updated = await call<ChatSession>("rename_chat_session", {
           sessionId,
           title: trimmed,
         });
-        patch({
-          sessions: state.sessions.map((s) => (s.id === sessionId ? updated : s)),
-        });
+        patch((prev) => ({
+          sessions: prev.sessions.map((s) => (s.id === sessionId ? updated : s)),
+        }));
       } catch (err) {
         logError("rename_chat_session", err);
         showErrorToast(`Couldn't rename the session — ${errText(err)}`);
-        patch({
-          sessions: state.sessions.map((s) => (s.id === sessionId && prior !== undefined ? { ...s, title: prior } : s)),
-        });
+        patch((prev) => ({
+          sessions: prev.sessions.map((s) => (s.id === sessionId && prior !== undefined ? { ...s, title: prior } : s)),
+        }));
       }
     },
-    [state.sessions, patch],
+    [patch],
   );
 
   /** Archive/restore a batch — optimistic move for every id living in either

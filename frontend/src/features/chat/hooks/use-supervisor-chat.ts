@@ -36,6 +36,15 @@ export interface SupervisorChatState {
   sessionId: number | null;
 }
 
+/**
+ * Merge a partial state update — or a FUNCTION of the previous state. The
+ * function form exists so an async continuation (a rename round-trip, a list
+ * reload) never maps over the `state` snapshot it captured before the await.
+ */
+export type StatePatch = (
+  partial: Partial<SupervisorChatState> | ((prev: SupervisorChatState) => Partial<SupervisorChatState>),
+) => void;
+
 export function useSupervisorChat(userId?: string | null) {
   const [state, setState] = useState<SupervisorChatState>({
     userId: null,
@@ -57,8 +66,14 @@ export function useSupervisorChat(userId?: string | null) {
     sessionId: null,
   });
 
-  const patch = useCallback((partial: Partial<SupervisorChatState>) => {
-    setState((prev) => ({ ...prev, ...partial }));
+  /**
+   * Merge a partial state update. Accepts a FUNCTION of the previous state so
+   * an async continuation (a rename round-trip, a list reload) never maps over
+   * the `state` it captured at call time — that stale snapshot silently drops
+   * whatever landed meanwhile.
+   */
+  const patch: StatePatch = useCallback((partial) => {
+    setState((prev) => ({ ...prev, ...(typeof partial === "function" ? partial(prev) : partial) }));
   }, []);
 
   const { userId: authUserId, authError, logout } = useAuth();

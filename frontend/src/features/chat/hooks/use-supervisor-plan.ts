@@ -335,7 +335,14 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   // Resume: re-execute the LAST plan verbatim. Same plan JSON → same plan key
   // → the supervisor serves already-completed steps from its persisted
   // ExecutionMemo seed and only re-runs what failed or never ran.
-  const lastPlanRef = useRef<{ plan: unknown; sessionId: number; agentId: string } | null>(null);
+  const lastPlanRef = useRef<{
+    plan: unknown;
+    sessionId: number;
+    agentId: string;
+    /** The user's verbatim goal — a resume must answer the SAME words the
+     *  original submit did, not the planner-rewritten `plan.goal`. */
+    userGoal?: string;
+  } | null>(null);
 
   // Unmount is a teardown, not a pause: cancel the in-flight stream so the
   // backend stops executing (and billing) steps whose events have nowhere to
@@ -580,6 +587,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         plan: options.plan,
         sessionId: options.sessionId,
         agentId: options.agentId ?? "",
+        userGoal: options.userGoal,
       };
       startStream(
         {
@@ -835,7 +843,10 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       }
       const review = parseReview(plan, sessionId, agentId);
       if (review == null) {
-        runPlan({ plan, sessionId, agentId, userGoal: goal });
+        // `goal` is the quoted envelope (user text + the prior deliverable);
+        // synthesis must answer the user's own words, exactly like the review
+        // path does — the quote is planner/context input only.
+        runPlan({ plan, sessionId, agentId, userGoal: cleanGoal });
         return;
       }
       patch({ status: "reviewing", review, error: null, planning: null });
@@ -908,7 +919,14 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   const resume = useCallback(() => {
     const last = lastPlanRef.current;
     if (!last || streamCtrl.current) return;
-    runPlan({ plan: last.plan, sessionId: last.sessionId, agentId: last.agentId });
+    runPlan({
+      plan: last.plan,
+      sessionId: last.sessionId,
+      agentId: last.agentId,
+      // The deliverable must still answer the user's words: `startStream`
+      // clears `userGoalRef`, and `plan.goal` is the planner's rewrite.
+      userGoal: last.userGoal,
+    });
   }, [runPlan]);
 
   /** Rehydrate terminal state from a persisted supervisor-plan record

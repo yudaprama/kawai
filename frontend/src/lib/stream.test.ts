@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * `streamOperation` is the Tauri streaming seam. Two things can end a stream:
- * an event, or the command future resolving. Regression: a user Stop cancels
- * the token and the backend returns WITHOUT a terminal event, so before the
- * resolution path existed the supervisor run stayed pinned on "stopping" and
- * its workbench journal row spun forever.
+ * `streamOperation` is the streaming seam. Two things can end a stream: an
+ * event, or the transport ending. Regression: a user Stop cancels the token
+ * and the backend returns WITHOUT a terminal event, so before the resolution
+ * path existed the supervisor run stayed pinned on "stopping" and its
+ * workbench journal row spun forever.
+ *
+ * This file pins the DESKTOP (Tauri Channel) branch; `stream-web.test.ts`
+ * pins the SSE branch the browser takes.
  */
+vi.mock("@/platform", () => ({ runningInTauri: true }));
+
 vi.mock("@tauri-apps/api/core", () => {
   type Handler = ((msg: unknown) => void) | null;
   const channels: Array<{ onmessage: Handler }> = [];

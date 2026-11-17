@@ -22,7 +22,12 @@ use serde::{Deserialize, Serialize};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
-use civitai::{Blob, ImageGenParams};
+pub use civitai::{Blob, ImageGenParams, LoraSpec};
+
+// The client crate's ecosystem/workflow catalog, re-exported so callers that
+// already hold this module under the name `civitai` (`logic::civitai_tools`)
+// reach the same vocabulary without a second import path to the crate.
+pub use civitai::registry;
 
 // ── Token pricing (Buzz → KAWAI token) ─────────────────────────────────────
 //
@@ -50,7 +55,7 @@ pub fn buzz_to_tokens(buzz: f64) -> u64 {
 /// (4× the base unit); `txt2img:hires-fix` bills generation + passes,
 /// `img2img:upscale` bills passes only. Calibrate against live Buzz spend
 /// if civitai reprices.
-fn image_buzz_estimate(params: &ImageGenParams) -> f64 {
+pub fn image_buzz_estimate(params: &ImageGenParams) -> f64 {
     let w = params.width as f64;
     let h = params.height as f64;
     let steps = params.steps.unwrap_or(30) as f64;

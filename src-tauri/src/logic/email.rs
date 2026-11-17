@@ -269,6 +269,19 @@ pub fn verify_sign_up_code(to: &str, code: &str) -> bool {
     }
 }
 
+/// Whether a recent verification proof exists for `email`, WITHOUT consuming
+/// it. The sign-up flow checks this before the worker round-trip and consumes
+/// only after the account is registered, so a network failure or a
+/// duplicate-email rejection does not force the user to request a fresh code.
+pub fn has_verified_sign_up_email(email: &str) -> bool {
+    let email = email.trim().to_lowercase();
+    let Ok(mut verified) = verified_emails().lock() else {
+        return false;
+    };
+    verified.retain(|_, verified_at| verified_at.elapsed() < CODE_TTL);
+    verified.contains_key(&email)
+}
+
 /// Consume a recent verification proof for `email`. The proof is scoped to
 /// the normalized email and cannot authorize a second registration.
 pub fn take_verified_sign_up_email(email: &str) -> bool {
@@ -320,6 +333,35 @@ mod tests {
 
         assert!(verify_sign_up_code(email, "123456"));
         assert!(take_verified_sign_up_email(email));
+        assert!(!take_verified_sign_up_email(email));
+    }
+
+    /// The proof can be PEEKED without being spent: sign-up checks it before
+    /// the worker round-trip and consumes only after the account is created,
+    /// so a failed request must leave the proof usable for the retry.
+    #[test]
+    fn verified_email_proof_survives_a_peek() {
+        let email = "peek@example.com";
+        verified_emails()
+            .lock()
+            .unwrap()
+            .insert(email.into(), Instant::now());
+
+        assert!(has_verified_sign_up_email(" Peek@Example.com "));
+        assert!(has_verified_sign_up_email(email), "a peek must not consume");
+        assert!(take_verified_sign_up_email(email));
+        assert!(!has_verified_sign_up_email(email), "consumed for good");
+    }
+
+    #[test]
+    fn expired_proof_is_neither_peekable_nor_takeable() {
+        let email = "expired-peek@example.com";
+        verified_emails()
+            .lock()
+            .unwrap()
+            .insert(email.into(), Instant::now() - (CODE_TTL + Duration::from_secs(1)));
+
+        assert!(!has_verified_sign_up_email(email));
         assert!(!take_verified_sign_up_email(email));
     }
 

@@ -33,6 +33,11 @@ pub const MONAD_AGENT_ID: &str = "builtin.monad";
 pub const ACCOUNTING_AGENT_ID: &str = "builtin.accounting";
 pub const SECURITY_AGENT_ID: &str = "builtin.security";
 
+/// Media generation (image / video / music / 3D) on Civitai. No cargo feature:
+/// the tools are present only when a session bearer and the baked API key are
+/// both configured. Single source: the tools module owns the id.
+pub const GENERATOR_AGENT_ID: &str = crate::logic::civitai_tools::ID;
+
 /// Build the agent catalog list from the built-in registry.
 pub fn list_agents() -> Vec<AgentInfo> {
     builtin().list()
@@ -368,6 +373,24 @@ pub fn security_tools_for_supervisor(
     }
 }
 
+/// Generator: the Civitai generation tools (image / video / music / 3D), plus
+/// the runtime cross-cutting set — `session_step_results` is what lets the
+/// agent read back a `workflowId` a previous step produced when the two-phase
+/// lanes span turns.
+///
+/// `None` when generation cannot run at all: no baked Civitai API key, or no
+/// session bearer to gate the spend with (`kawai-web` has no per-user token
+/// file). The agent then serves without generation tools instead of offering
+/// calls that can only fail.
+#[cfg(feature = "litert")]
+pub fn generator_tools_for_supervisor(
+    context: &AgentContext<'_>,
+    remote_configured: bool,
+) -> Option<kawai_tools::ToolSet> {
+    let set = crate::logic::civitai_tools::toolset(context.user_id)?;
+    Some(add_runtime_tools(set, context, remote_configured, false))
+}
+
 /// Catalog-seed/drift variant: builds the same toolset with NO device wallet
 /// bound. The Turso catalog is global curation — one dev machine's keychain
 /// state must never leak into it (the `PER_DEVICE_TOOLS` principle), and
@@ -648,7 +671,26 @@ pub fn builtin() -> AgentRegistry {
         )
     };
 
-    AgentRegistry::new(vec![office, presentation, binance, analytics, entertainment, monad, accounting, security])
+    // Generator: Civitai needs no cargo feature (the client and its ops are
+    // unconditional) — the tools appear only when a session bearer and the
+    // baked API key are both present.
+    let generator = {
+        let mut d = crate::logic::civitai_tools::definition();
+        d.build_tools = generator_tools_for_supervisor;
+        d
+    };
+
+    AgentRegistry::new(vec![
+        office,
+        presentation,
+        binance,
+        analytics,
+        entertainment,
+        monad,
+        accounting,
+        security,
+        generator,
+    ])
 }
 
 /// Non-litert build: all agents are disabled placeholders.
@@ -701,6 +743,12 @@ pub fn builtin() -> AgentRegistry {
             SECURITY_AGENT_ID,
             "Security",
             "Web security testing: recon, targeted vulnerability scans, and pentest reporting.",
+            false,
+        ),
+        unavailable_definition(
+            GENERATOR_AGENT_ID,
+            "Generator",
+            "Generate images, video, music and 3D models from a description.",
             false,
         ),
     ])

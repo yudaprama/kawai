@@ -5,6 +5,11 @@ import { renderStepReport } from "@/features/workbench/components/tool-views";
 import { renderMexcFuturesFillSync, renderVenueFillsImport } from "@/components/ai-elements/tool-renderers/accounting";
 import { renderDataFetch } from "@/components/ai-elements/tool-renderers/data";
 import { renderSecurityScan } from "@/components/ai-elements/tool-renderers/security";
+import {
+  renderCivitaiImage,
+  renderCivitaiWorkflow,
+  renderCivitaiSubmit,
+} from "@/components/ai-elements/tool-renderers/civitai";
 import { renderMarketStructure, renderMexcFuturesPositions } from "@/components/ai-elements/tool-renderers/finance";
 
 /**
@@ -433,5 +438,115 @@ describe("dispatch gate: data_fetch claims its output", () => {
 
   it("refuses a foreign kind instead of half-rendering it", () => {
     expect(renderDataFetch({ ...DATA_FETCH, kind: "ta" })).toBeNull();
+  });
+});
+
+/** Civitai generation envelopes, verbatim field names from
+ * `src-tauri/src/logic/civitai_tools.rs` (files are api-types `Saved*`,
+ * camelCase serde). The image fixture uses the registry's default txt2img
+ * ecosystem ("anima" — first of ALL_IMAGE_ECOSYSTEMS) and the tool's
+ * `civitai-{ecosystem}-{uuidish}-{i}.{ext}` name. */
+const CIVITAI_IMAGE = {
+  kind: "civitai_image",
+  lane: "image",
+  ecosystem: "anima",
+  workflow: "txt2img",
+  files: [{ fileId: "doc_a1b2c3", name: "civitai-anima-a1b2c3d4-1.png" }],
+  buzz: 12.9,
+  tokens: 30960,
+  note: "Stored in the Library — reference it in a document with kawai-file://<fileId>.",
+};
+
+const CIVITAI_VIDEO_RUNNING = {
+  kind: "civitai_video",
+  lane: "video",
+  workflowId: "wf-123",
+  status: "queued",
+  queuePosition: 2,
+  note: "Still running — call civitai_video_fetch again with the same workflowId once the job finishes.",
+};
+
+const CIVITAI_VIDEO_DONE = {
+  kind: "civitai_video",
+  lane: "video",
+  workflowId: "wf-123",
+  files: [
+    {
+      fileId: "doc_v1",
+      name: "civitai-minimax-7c9d2e-1.mp4",
+      thumbnailFileId: "doc_v1t",
+      additional: [],
+    },
+  ],
+  note: "Stored in the Library — reference it in a document with kawai-file://<fileId>.",
+};
+
+const CIVITAI_MUSIC_DONE = {
+  kind: "civitai_music",
+  lane: "music",
+  workflowId: "wf-9",
+  files: [{ fileId: "doc_m1", name: "civitai-minimax-music3-11aa22-1.mp3" }],
+  note: "Stored in the Library — reference it in a document with kawai-file://<fileId>.",
+};
+
+const CIVITAI_MODEL3D_DONE = {
+  kind: "civitai_model3d",
+  lane: "3D model",
+  workflowId: "wf-42",
+  files: [
+    {
+      fileId: "doc_g1",
+      name: "civitai-hunyuan3d-2f3e4d-1.glb",
+      fbxFileId: "doc_g2",
+      previewFileId: "doc_g3",
+      additional: [],
+    },
+  ],
+  note: "Stored in the Library — the primary fileId is the model, fbxFileId/previewFileId its twins.",
+};
+
+const CIVITAI_MUSIC_SUBMIT = {
+  kind: "civitai_music_submit",
+  lane: "music",
+  workflowId: "wf-9",
+  jobId: "job-77",
+  status: "submitted",
+  note: "Call civitai_music_fetch with this workflowId to poll the job and store the track.",
+};
+
+describe("dispatch gate: civitai generation tools claim their output", () => {
+  it.each([
+    ["civitai_generate_image", CIVITAI_IMAGE],
+    ["civitai_video_fetch", CIVITAI_VIDEO_DONE],
+    ["civitai_video_fetch", CIVITAI_VIDEO_RUNNING],
+    ["civitai_music_fetch", CIVITAI_MUSIC_DONE],
+    ["civitai_model3d_fetch", CIVITAI_MODEL3D_DONE],
+    ["civitai_video_submit", { ...CIVITAI_MUSIC_SUBMIT, kind: "civitai_video_submit", lane: "video" }],
+    ["civitai_music_submit", CIVITAI_MUSIC_SUBMIT],
+    ["civitai_model3d_submit", { ...CIVITAI_MUSIC_SUBMIT, kind: "civitai_model3d_submit", lane: "3D model" }],
+  ])("%s renders a card, never the fallback", (tool, payload) => {
+    const node = renderStepReport(tool, JSON.stringify(payload));
+    expect(node, `${tool} fell through to the generic fallback`).not.toBeNull();
+  });
+
+  it("the still-running envelope shows the workflow handle", () => {
+    const node = renderStepReport("civitai_video_fetch", JSON.stringify(CIVITAI_VIDEO_RUNNING));
+    expect(JSON.stringify(node)).toContain("wf-123");
+    expect(JSON.stringify(node)).toContain("queue position 2");
+  });
+
+  it("renders through the chat registry too", () => {
+    expect(renderCivitaiImage(CIVITAI_IMAGE)).not.toBeNull();
+    expect(renderCivitaiWorkflow(CIVITAI_VIDEO_DONE)).not.toBeNull();
+    expect(renderCivitaiWorkflow(CIVITAI_VIDEO_RUNNING)).not.toBeNull();
+    expect(renderCivitaiWorkflow(CIVITAI_MUSIC_DONE)).not.toBeNull();
+    expect(renderCivitaiWorkflow(CIVITAI_MODEL3D_DONE)).not.toBeNull();
+    expect(renderCivitaiSubmit(CIVITAI_MUSIC_SUBMIT)).not.toBeNull();
+  });
+
+  it("refuses a foreign payload instead of half-rendering it", () => {
+    expect(renderCivitaiImage({ kind: "security_scan", files: [] })).toBeNull();
+    expect(renderCivitaiWorkflow({ kind: "civitai_image", files: [] })).toBeNull();
+    expect(renderCivitaiSubmit({ kind: "civitai_video", workflowId: "wf" })).toBeNull();
   });
 });

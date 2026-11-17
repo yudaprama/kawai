@@ -314,6 +314,15 @@ async fn build_supervisor_toolset(
             None
         }
     };
+    let generator = || -> Option<kawai_tools::ToolSet> {
+        #[cfg(feature = "litert")]
+        { agent_registry::generator_tools_for_supervisor(&context, remote_configured) }
+        #[cfg(not(feature = "litert"))]
+        {
+            let _ = (&context, remote_configured);
+            None
+        }
+    };
     let generated = || -> Option<kawai_tools::ToolSet> {
         #[cfg(feature = "litert")]
         {
@@ -358,6 +367,7 @@ async fn build_supervisor_toolset(
             monad(),
             accounting(),
             security(),
+            generator(),
             generated(),
         ]
             .into_iter()
@@ -390,6 +400,7 @@ async fn build_supervisor_toolset(
         agent_registry::MONAD_AGENT_ID => monad(),
         agent_registry::ACCOUNTING_AGENT_ID => accounting(),
         agent_registry::SECURITY_AGENT_ID => security(),
+        agent_registry::GENERATOR_AGENT_ID => generator(),
         _ => None,
     }
 }
@@ -1378,7 +1389,7 @@ via the always-available `session_step_results` tool. If the goal depends on det
             if v.get("steps").is_some() && v.get("goal").is_some() {
                 match parse_supervisor_plan_scoped(&parse_raw, registry, PLANNER_FORBIDDEN_TOOLS)
                 {
-                    Ok(plan) => {
+                    Ok(mut plan) => {
                         // Lazy prefetch: the planner can write composio steps
                         // WITHOUT a search round — tool names leak in via the
                         // <experiences> block (observed live: a run planned
@@ -1447,6 +1458,17 @@ via the always-available `session_step_results` tool. If the goal depends on det
                         // cron reads token counters from Grafana telemetry
                         // (`user.id` attribution) and posts deltas to the
                         // worker — the client never debits.
+                        //
+                        // Per-run nonce: `plan_key` is the SHA-256 of the plan
+                        // JSON and keys the persisted `supervisor_step_results`
+                        // memo, which EVERY execution seeds to resume before a
+                        // crash. A planner that returns the same plan twice (the
+                        // same goal, a re-submit) would then serve the previous
+                        // run's tool output — stale prices, stale searches —
+                        // instead of re-reading the source. A fresh nonce per
+                        // plan makes the key distinct, exactly like the fixed
+                        // builders (AGENTS.md "Adding a tool or workflow" #5).
+                        kawai_router::stamp_run_nonce(&mut plan.steps);
                         return Ok((plan, usage));
                     }
                     Err(plan_err) => {

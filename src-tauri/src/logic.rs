@@ -611,6 +611,10 @@ pub mod tool_pricing;
 // the API key is product-baked via `kawai-vault/constants`
 // (`civitai::get_civitai()`).
 pub mod civitai;
+// The Generator agent's tools (`builtin.generator`) — the same four civitai
+// lanes as agent-callable `AgentTool`s. Composition root, so it lives beside
+// the other agent registries rather than in a domain crate.
+pub mod civitai_tools;
 // Monad EVM chain client (`monad` feature): public RPC reads — native
 // balance, chain status, ERC-20 balance/info, gas price. Pure alloy HTTP
 // provider; RPC URL via `KAWAI_MONAD_RPC_URL` (default: Monad mainnet). The

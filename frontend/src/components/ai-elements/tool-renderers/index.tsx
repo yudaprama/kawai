@@ -33,6 +33,7 @@ import {
   renderVenueFillsImport,
 } from "./accounting";
 import { renderSecurityModules, renderSecurityScan } from "./security";
+import { renderCivitaiImage, renderCivitaiWorkflow, renderCivitaiSubmit } from "./civitai";
 
 // ---------------------------------------------------------------------------
 // registry
@@ -132,6 +133,13 @@ const registry: Record<string, ToolRenderer> = {
   security_recon: renderSecurityScan,
   security_subdomains: renderSecurityScan,
   security_modules: renderSecurityModules,
+  civitai_generate_image: renderCivitaiImage,
+  civitai_video_fetch: renderCivitaiWorkflow,
+  civitai_music_fetch: renderCivitaiWorkflow,
+  civitai_model3d_fetch: renderCivitaiWorkflow,
+  civitai_video_submit: renderCivitaiSubmit,
+  civitai_music_submit: renderCivitaiSubmit,
+  civitai_model3d_submit: renderCivitaiSubmit,
   geocode: renderGeocode,
   get_ip_location: renderIpLocation,
   get_iss_position: renderIss,
@@ -170,6 +178,7 @@ type IconName = string;
 /** Ordered [predicate, icon] — first match wins. Keeps new tools covered. */
 const iconRules: Array<[(name: string) => boolean, IconName]> = [
   [(n) => n.startsWith("security_"), "shield"],
+  [(n) => n.startsWith("civitai_"), "sparkles"],
   [(n) => /^data_/.test(n), "bar-chart-3"],
   [(n) => /web_search|^search$/.test(n), "search"],
   [(n) => n.startsWith("browser_"), "globe"],

@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { httpErrorText } from "@/lib/http";
 import { runningInTauri } from "@/platform";
 
 /**
@@ -20,24 +21,7 @@ async function httpCall<T>(command: string, args?: Record<string, unknown>): Pro
     headers: { "content-type": "application/json" },
     body: JSON.stringify(args ?? {}),
   });
-  if (!res.ok) {
-    // Read the body ONCE as text. Most Axum handlers answer `(StatusCode,
-    // String)`, which serializes as `text/plain` — `res.json()` throws on it
-    // and the old fallback threw away the only copy of the real message
-    // ("incorrect email or password" → "Unauthorized"). The `{ error }` shape
-    // (`error_response`, the auth middleware) still wins when present.
-    const raw = (await res.text().catch(() => "")).slice(0, 500);
-    let message = res.statusText || `HTTP ${res.status}`;
-    if (raw.trim() !== "") {
-      try {
-        const body = JSON.parse(raw) as { error?: string };
-        message = typeof body?.error === "string" ? body.error : raw;
-      } catch {
-        message = raw;
-      }
-    }
-    throw new Error(message);
-  }
+  if (!res.ok) throw new Error(await httpErrorText(res));
   // 204 No Content is the success answer for every op that has nothing to
   // return (`auth_reset_request`, `delete_chat_session`, `office_delete_file`,
   // the `local_llm_*` toggles, …). `res.json()` on an empty body throws
@@ -55,6 +39,11 @@ export function callWithEvents<T, E extends { type: string }>(
   args: Record<string, unknown> | undefined,
   onEvent: (event: E) => void,
 ): Promise<T> {
+  // The web build has no Channel: `/api/<command>` is a plain JSON handler and
+  // the backend logs its progress rounds instead of streaming them
+  // (`web.rs::plan_task_handler`). The resolved value is the same plan, so the
+  // caller's event handler simply never fires there.
+  if (!runningInTauri) return httpCall<T>(command, args);
   const channel = new Channel<E>();
   channel.onmessage = onEvent;
   return invoke<T>(command, { ...(args ?? {}), onEvent: channel });

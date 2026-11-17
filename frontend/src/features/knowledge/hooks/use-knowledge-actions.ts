@@ -179,6 +179,11 @@ export function useKnowledgeActions(chat: { sessionId: number | null; ensureSess
       const mime = dataUrl.slice(5, dataUrl.indexOf(";"));
       const ext = mime.split("/")[1] ?? "png";
       try {
+        // `ensureSessionId` already surfaced its own failure toast. Importing
+        // anyway would store the image with NO session binding, so the run's
+        // knowledge_search could never reach it — a "saved!" toast for a file
+        // the agent cannot see. Fail instead: the composer keeps the draft.
+        if (sid == null) throw new Error("no chat session to attach the image to");
         const { importedIds, failed } = await importKnowledgeFiles(
           [
             {
