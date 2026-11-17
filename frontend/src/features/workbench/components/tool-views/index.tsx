@@ -77,7 +77,7 @@ import {
   renderCivitaiImage,
   renderCivitaiWorkflow,
   renderCivitaiSubmit,
-} from "@/components/ai-elements/tool-renderers/civitai";
+} from "@/components/ai-elements/tool-renderers/media-generation";
 import {
   renderDataChart,
   renderDataImport,
@@ -325,14 +325,14 @@ const registry: Record<string, StepView> = {
   security_subdomains: (p) => renderSecurityScan(p),
   security_modules: (p) => renderSecurityModules(p),
 
-  // civitai generation (builtin.generator) — image one-shot + submit/fetch lanes
-  civitai_generate_image: (p) => renderCivitaiImage(p),
-  civitai_video_fetch: (p) => renderCivitaiWorkflow(p),
-  civitai_music_fetch: (p) => renderCivitaiWorkflow(p),
-  civitai_model3d_fetch: (p) => renderCivitaiWorkflow(p),
-  civitai_video_submit: (p) => renderCivitaiSubmit(p),
-  civitai_music_submit: (p) => renderCivitaiSubmit(p),
-  civitai_model3d_submit: (p) => renderCivitaiSubmit(p),
+  // media generation (builtin.generator, Civitai-backed) — image one-shot + submit/fetch lanes
+  media_generate_image: (p) => renderCivitaiImage(p),
+  media_video_fetch: (p) => renderCivitaiWorkflow(p),
+  media_music_fetch: (p) => renderCivitaiWorkflow(p),
+  media_model3d_fetch: (p) => renderCivitaiWorkflow(p),
+  media_video_submit: (p) => renderCivitaiSubmit(p),
+  media_music_submit: (p) => renderCivitaiSubmit(p),
+  media_model3d_submit: (p) => renderCivitaiSubmit(p),
 
   // accounting — trading-books wedge (ledger view of exchange fills)
   venue_fills_import: (p) => renderVenueFillsImport(p),

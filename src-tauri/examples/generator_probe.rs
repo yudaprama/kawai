@@ -41,14 +41,14 @@ fn main() {
             "height": 512,
             "steps": 20,
         });
-        if let Some(c) = (def.confirmation_for_tool)("civitai_generate_image", &image_args) {
+        if let Some(c) = (def.confirmation_for_tool)("media_generate_image", &image_args) {
             println!("confirmation: {}\n  accept={} decline={}", c.prompt, c.accept_text, c.decline_text);
         } else {
             panic!("image tool lost its confirmation prompt");
         }
 
         // ── lane 1: one-shot image ──────────────────────────────────────
-        let image = set.execute("civitai_generate_image", image_args.to_string()).await;
+        let image = set.execute("media_generate_image", image_args.to_string()).await;
         println!("image ok={} body={}", image.is_success(), image.text().unwrap_or_else(|| image.error_message().unwrap_or("")));
 
         // ── lane 2: video submit → fetch ────────────────────────────────
@@ -68,7 +68,7 @@ fn main() {
             return;
         }
 
-        let submitted = set.execute("civitai_video_submit", video_req.to_string()).await;
+        let submitted = set.execute("media_video_submit", video_req.to_string()).await;
         let submit_body = submitted.text().expect("video submit ok").to_string();
         println!("video submit: {submit_body}");
         let workflow_id = serde_json::from_str::<serde_json::Value>(&submit_body)
@@ -79,7 +79,7 @@ fn main() {
 
         // Second "turn": the fetch takes ONLY the workflowId.
         let fetched = set
-            .execute("civitai_video_fetch", serde_json::json!({ "workflowId": workflow_id }).to_string())
+            .execute("media_video_fetch", serde_json::json!({ "workflowId": workflow_id }).to_string())
             .await;
         println!(
             "video fetch ok={} body={}",

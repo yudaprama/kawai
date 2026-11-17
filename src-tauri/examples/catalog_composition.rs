@@ -120,6 +120,21 @@ pub async fn merged_definitions() -> Result<Vec<ToolDefinition>, String> {
             "accounting",
             kawai_lib::agent_registry::accounting_tools_for_supervisor(&context, remote_configured),
         ),
+        (
+            "security",
+            kawai_lib::agent_registry::security_tools_for_supervisor(&context, remote_configured),
+        ),
+        // The generator set carries no per-user gate here on purpose: the
+        // catalog variant builds with stub identity (see
+        // `civitai_tools::catalog_toolset`) — the bearer gate is a per-device
+        // runtime fact, the catalog only curates discoverability. The web
+        // transport (no bearer file) still excludes the tools from ITS
+        // registry, so a web-side plan naming them fails validation; desktop
+        // — the shipping surface — is signed-in and dispatchable.
+        (
+            "generator",
+            Some(kawai_lib::logic::civitai_tools::catalog_toolset()),
+        ),
         ("weather-geo", kawai_lib::agent_registry::weather_geo_tools_for_supervisor(&context, remote_configured)),
         ("news-media", kawai_lib::agent_registry::news_media_tools_for_supervisor(&context, remote_configured)),
         ("sports", kawai_lib::agent_registry::sports_tools_for_supervisor(&context, remote_configured)),

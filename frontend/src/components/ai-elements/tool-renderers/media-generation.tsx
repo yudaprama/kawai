@@ -1,7 +1,7 @@
 //! Civitai generation renderers: the Generator agent's flat, kind-tagged
 //! envelopes.
 //!
-//! `civitai_image` is the one-shot image lane (files + the charged price).
+//! `media_image` is the one-shot image lane (files + the charged price).
 //! The three workflow lanes (video / music / 3D) share ONE card: the poll
 //! envelope reuses the success kind, so the branch is `files` — present
 //! means stored, absent means still running. The `*_submit` receipts get
@@ -15,19 +15,19 @@ import { emitOpenPreview } from "@/lib/preview-bridge";
 
 import { parse, isRecord, str, num, fmtNum, Footnote, MetricGrid, TextCard, type Metric } from "./shared";
 
-/** Result kinds → the lane label the card shows. `civitai_image` routes to
+/** Result kinds → the lane label the card shows. `media_image` routes to
  *  its own renderer; the other three share the workflow card. */
 const WORKFLOW_KINDS: Record<string, string> = {
-  civitai_video: "Video",
-  civitai_music: "Music",
-  civitai_model3d: "3D model",
+  media_video: "Video",
+  media_music: "Music",
+  media_model3d: "3D model",
 };
 
 /** The submit receipts, keyed by their own kinds. */
 const SUBMIT_KINDS: Record<string, string> = {
-  civitai_video_submit: "Video",
-  civitai_music_submit: "Music",
-  civitai_model3d_submit: "3D model",
+  media_video_submit: "Video",
+  media_music_submit: "Music",
+  media_model3d_submit: "3D model",
 };
 
 /** One stored artifact — `SavedImage` / `SavedAudio` / `SavedVideo` /
@@ -76,11 +76,11 @@ function FileRows({ files }: { files: StoredFile[] }) {
   );
 }
 
-/** `civitai_generate_image` → {kind:"civitai_image", lane:"image", ecosystem,
+/** `media_generate_image` → {kind:"media_image", lane:"image", ecosystem,
  *  workflow, files, buzz, tokens, note}. */
 export function renderCivitaiImage(output: unknown): ReactNode {
   const d = parse(output);
-  if (!isRecord(d) || d.kind !== "civitai_image") return null;
+  if (!isRecord(d) || d.kind !== "media_image") return null;
   const files = readFiles(d.files);
   const metrics: Metric[] = [
     {
@@ -103,7 +103,7 @@ export function renderCivitaiImage(output: unknown): ReactNode {
   );
 }
 
-/** `civitai_video_fetch` / `civitai_music_fetch` / `civitai_model3d_fetch` —
+/** `media_video_fetch` / `media_music_fetch` / `media_model3d_fetch` —
  *  the stored result AND the still-running poll envelope (same kind, branch
  *  on `files`). */
 export function renderCivitaiWorkflow(output: unknown): ReactNode {
@@ -149,8 +149,8 @@ export function renderCivitaiWorkflow(output: unknown): ReactNode {
   );
 }
 
-/** `civitai_video_submit` / `civitai_music_submit` / `civitai_model3d_submit`
- *  → {kind:"civitai_*_submit", lane, workflowId, jobId, status:"submitted",
+/** `media_video_submit` / `media_music_submit` / `media_model3d_submit`
+ *  → {kind:"media_*_submit", lane, workflowId, jobId, status:"submitted",
  *  note}. */
 export function renderCivitaiSubmit(output: unknown): ReactNode {
   const d = parse(output);

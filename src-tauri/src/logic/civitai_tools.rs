@@ -5,6 +5,13 @@
 //! models/images (`search_models`, `search_images`, the feeds) stays a panel
 //! concern, so the agent's whole tool surface is "make me a thing".
 //!
+//! Tool NAMES are vendor-free (`media_*`): the capability is what the model
+//! and the catalog describe, and a future second provider should be able to
+//! take the names over without a catalog rename. The vendor stays in the
+//! descriptions and the spend-confirmation prompts, where naming the actual
+//! provider of a paid call is honest attribution. The `kind` discriminators
+//! in the result envelopes follow the same rule.
+//!
 //! ## Two-phase lanes
 //!
 //! Image generation is ONE call: the op submits, long-polls to completion,
@@ -51,13 +58,13 @@ use crate::logic::{civitai, local_auth};
 /// Agent id — the catalog entry served by `list_agents`.
 pub const ID: &str = "builtin.generator";
 
-const IMAGE_TOOL: &str = "civitai_generate_image";
-const VIDEO_SUBMIT: &str = "civitai_video_submit";
-const VIDEO_FETCH: &str = "civitai_video_fetch";
-const MUSIC_SUBMIT: &str = "civitai_music_submit";
-const MUSIC_FETCH: &str = "civitai_music_fetch";
-const MODEL3D_SUBMIT: &str = "civitai_model3d_submit";
-const MODEL3D_FETCH: &str = "civitai_model3d_fetch";
+const IMAGE_TOOL: &str = "media_generate_image";
+const VIDEO_SUBMIT: &str = "media_video_submit";
+const VIDEO_FETCH: &str = "media_video_fetch";
+const MUSIC_SUBMIT: &str = "media_music_submit";
+const MUSIC_FETCH: &str = "media_music_fetch";
+const MODEL3D_SUBMIT: &str = "media_model3d_submit";
+const MODEL3D_FETCH: &str = "media_model3d_fetch";
 
 /// Poll budget for one `*_fetch` call. The chat path has no deadline
 /// (`deadline::effective_budget` answers `None`) and uses this as its cap; the
@@ -77,7 +84,7 @@ const PERSONA: &str = "You are kawai's media generation agent: you turn a descri
 Rules:\n\
 - Call at most ONE tool per reply, as a single call:<name>{...} line, then stop and wait for the response: message.\n\
 - Every generation spends the user's Buzz balance. The runtime asks the user to confirm each spend before it runs — never ask for permission yourself, just call the tool.\n\
-- Image: civitai_generate_image is ONE call — it generates, downloads and stores the image, and answers with the fileId. Write a rich prompt (subject, style, lighting, composition); negativePrompt is optional.\n\
+- Image: media_generate_image is ONE call — it generates, downloads and stores the image, and answers with the fileId. Write a rich prompt (subject, style, lighting, composition); negativePrompt is optional.\n\
 - Video, music and 3D are TWO calls: *_submit returns a workflowId (the Buzz is charged there), then *_fetch with that workflowId polls until the job finishes and stores the result. Never re-submit to \"check\" — re-submitting charges again. If *_fetch answers that the job is still running, call it again with the same workflowId.\n\
 - Keep the workflowId in the conversation: upstream result URLs are signed and expire, so the fetch has to happen in this session.\n\
 - After a result arrives, report in one short sentence what was made and give the file name(s). Never paste the raw JSON.\n\
@@ -148,9 +155,9 @@ enum Lane {
 impl Lane {
     fn kind(self) -> &'static str {
         match self {
-            Lane::Video => "civitai_video",
-            Lane::Music => "civitai_music",
-            Lane::Model3d => "civitai_model3d",
+            Lane::Video => "media_video",
+            Lane::Music => "media_music",
+            Lane::Model3d => "media_model3d",
         }
     }
 
@@ -353,7 +360,7 @@ async fn fetch_lane(
     }
 }
 
-// ── civitai_generate_image ─────────────────────────────────────────────────
+// ── media_generate_image ───────────────────────────────────────────────────
 
 /// Tool args for the image lane. `civitai::ImageGenParams` is the panel's wire
 /// shape — every field but `width`/`height`/`prompt` is optional there — so
@@ -551,7 +558,7 @@ sampler/clipSkip apply to the SD-family ecosystems only.",
         )
         .await?;
         encode(&json!({
-            "kind": "civitai_image",
+            "kind": "media_image",
             "lane": "image",
             "ecosystem": ecosystem,
             "workflow": workflow,
@@ -563,7 +570,7 @@ sampler/clipSkip apply to the SD-family ecosystems only.",
     }
 }
 
-// ── civitai_video_submit / civitai_video_fetch ─────────────────────────────
+// ── media_video_submit / media_video_fetch ────────────────────────────────
 
 /// Reuses the panel's `VideoGenRequest` verbatim: it is already the wire shape
 /// (camelCase, every field but `ecosystem` optional), so there is no second
@@ -653,7 +660,7 @@ Optional knobs vary per ecosystem: duration (seconds), resolution, aspectRatio, 
         )
         .await?;
         encode(&json!({
-            "kind": "civitai_video_submit",
+            "kind": "media_video_submit",
             "lane": "video",
             "workflowId": submitted.workflow_id,
             "jobId": submitted.job_id,
@@ -709,7 +716,7 @@ Answers with status \"queued\"/\"processing\" while the job runs (call again wit
     }
 }
 
-// ── civitai_music_submit / civitai_music_fetch ─────────────────────────────
+// ── media_music_submit / media_music_fetch ────────────────────────────────
 
 pub struct SubmitMusicTool {
     user_id: String,
@@ -786,7 +793,7 @@ mode \"simple\" (default) takes one prompt and the backend drafts the rest; mode
         )
         .await?;
         encode(&json!({
-            "kind": "civitai_music_submit",
+            "kind": "media_music_submit",
             "lane": "music",
             "workflowId": submitted.workflow_id,
             "jobId": submitted.job_id,
@@ -835,7 +842,7 @@ Free — the Buzz was charged at submit. Answers with status \"queued\"/\"proces
     }
 }
 
-// ── civitai_model3d_submit / civitai_model3d_fetch ─────────────────────────
+// ── media_model3d_submit / media_model3d_fetch ────────────────────────────
 
 pub struct SubmitModel3dTool {
     user_id: String,
@@ -912,7 +919,7 @@ shouldTexture, shouldRemesh, enablePbr, texturePrompt, enableRigging, enableAnim
         )
         .await?;
         encode(&json!({
-            "kind": "civitai_model3d_submit",
+            "kind": "media_model3d_submit",
             "lane": "3D model",
             "workflowId": submitted.workflow_id,
             "jobId": submitted.job_id,
@@ -1010,6 +1017,19 @@ fn build(user_id: &str, bearer: &str) -> ToolSet {
     });
     set.add_tool(FetchModel3dTool { user_id });
     set
+}
+
+/// The definitions for the SHARED planner tool catalog, with stub identity.
+///
+/// The catalog is global curation (one row per tool, every device syncs it),
+/// so per-user state must not gate the BUILD the way [`toolset`] does: the
+/// seeder runs under a stub user that has no bearer file, and `None` there
+/// would abort the whole seed. The definitions themselves are static — name,
+/// description, schema say nothing about who is calling — so the stub bearer
+/// is never used. The runtime per-user gate (`toolset`) stays the only
+/// dispatch surface; the catalog only makes the tools DISCOVERABLE.
+pub fn catalog_toolset() -> ToolSet {
+    build("catalog-check", "catalog-stub-bearer")
 }
 
 /// Return the built-in Generator definition.
@@ -1178,7 +1198,7 @@ mod tests {
     fn still_running_envelope_is_flat_and_kind_tagged() {
         let body = still_running(Lane::Video, "wf-1", "processing", Some(3));
         let value: Value = serde_json::from_str(&body).expect("valid json");
-        assert_eq!(value["kind"], "civitai_video");
+        assert_eq!(value["kind"], "media_video");
         assert_eq!(value["lane"], "video");
         assert_eq!(value["workflowId"], "wf-1");
         assert_eq!(value["status"], "processing");

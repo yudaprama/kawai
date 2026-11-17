@@ -9,7 +9,7 @@ import {
   renderCivitaiImage,
   renderCivitaiWorkflow,
   renderCivitaiSubmit,
-} from "@/components/ai-elements/tool-renderers/civitai";
+} from "@/components/ai-elements/tool-renderers/media-generation";
 import { renderMarketStructure, renderMexcFuturesPositions } from "@/components/ai-elements/tool-renderers/finance";
 
 /**
@@ -441,13 +441,13 @@ describe("dispatch gate: data_fetch claims its output", () => {
   });
 });
 
-/** Civitai generation envelopes, verbatim field names from
+/** Media-generation envelopes, verbatim field names from
  * `src-tauri/src/logic/civitai_tools.rs` (files are api-types `Saved*`,
  * camelCase serde). The image fixture uses the registry's default txt2img
  * ecosystem ("anima" — first of ALL_IMAGE_ECOSYSTEMS) and the tool's
  * `civitai-{ecosystem}-{uuidish}-{i}.{ext}` name. */
 const CIVITAI_IMAGE = {
-  kind: "civitai_image",
+  kind: "media_image",
   lane: "image",
   ecosystem: "anima",
   workflow: "txt2img",
@@ -458,16 +458,16 @@ const CIVITAI_IMAGE = {
 };
 
 const CIVITAI_VIDEO_RUNNING = {
-  kind: "civitai_video",
+  kind: "media_video",
   lane: "video",
   workflowId: "wf-123",
   status: "queued",
   queuePosition: 2,
-  note: "Still running — call civitai_video_fetch again with the same workflowId once the job finishes.",
+  note: "Still running — call media_video_fetch again with the same workflowId once the job finishes.",
 };
 
 const CIVITAI_VIDEO_DONE = {
-  kind: "civitai_video",
+  kind: "media_video",
   lane: "video",
   workflowId: "wf-123",
   files: [
@@ -482,7 +482,7 @@ const CIVITAI_VIDEO_DONE = {
 };
 
 const CIVITAI_MUSIC_DONE = {
-  kind: "civitai_music",
+  kind: "media_music",
   lane: "music",
   workflowId: "wf-9",
   files: [{ fileId: "doc_m1", name: "civitai-minimax-music3-11aa22-1.mp3" }],
@@ -490,7 +490,7 @@ const CIVITAI_MUSIC_DONE = {
 };
 
 const CIVITAI_MODEL3D_DONE = {
-  kind: "civitai_model3d",
+  kind: "media_model3d",
   lane: "3D model",
   workflowId: "wf-42",
   files: [
@@ -506,31 +506,31 @@ const CIVITAI_MODEL3D_DONE = {
 };
 
 const CIVITAI_MUSIC_SUBMIT = {
-  kind: "civitai_music_submit",
+  kind: "media_music_submit",
   lane: "music",
   workflowId: "wf-9",
   jobId: "job-77",
   status: "submitted",
-  note: "Call civitai_music_fetch with this workflowId to poll the job and store the track.",
+  note: "Call media_music_fetch with this workflowId to poll the job and store the track.",
 };
 
 describe("dispatch gate: civitai generation tools claim their output", () => {
   it.each([
-    ["civitai_generate_image", CIVITAI_IMAGE],
-    ["civitai_video_fetch", CIVITAI_VIDEO_DONE],
-    ["civitai_video_fetch", CIVITAI_VIDEO_RUNNING],
-    ["civitai_music_fetch", CIVITAI_MUSIC_DONE],
-    ["civitai_model3d_fetch", CIVITAI_MODEL3D_DONE],
-    ["civitai_video_submit", { ...CIVITAI_MUSIC_SUBMIT, kind: "civitai_video_submit", lane: "video" }],
-    ["civitai_music_submit", CIVITAI_MUSIC_SUBMIT],
-    ["civitai_model3d_submit", { ...CIVITAI_MUSIC_SUBMIT, kind: "civitai_model3d_submit", lane: "3D model" }],
+    ["media_generate_image", CIVITAI_IMAGE],
+    ["media_video_fetch", CIVITAI_VIDEO_DONE],
+    ["media_video_fetch", CIVITAI_VIDEO_RUNNING],
+    ["media_music_fetch", CIVITAI_MUSIC_DONE],
+    ["media_model3d_fetch", CIVITAI_MODEL3D_DONE],
+    ["media_video_submit", { ...CIVITAI_MUSIC_SUBMIT, kind: "media_video_submit", lane: "video" }],
+    ["media_music_submit", CIVITAI_MUSIC_SUBMIT],
+    ["media_model3d_submit", { ...CIVITAI_MUSIC_SUBMIT, kind: "media_model3d_submit", lane: "3D model" }],
   ])("%s renders a card, never the fallback", (tool, payload) => {
     const node = renderStepReport(tool, JSON.stringify(payload));
     expect(node, `${tool} fell through to the generic fallback`).not.toBeNull();
   });
 
   it("the still-running envelope shows the workflow handle", () => {
-    const node = renderStepReport("civitai_video_fetch", JSON.stringify(CIVITAI_VIDEO_RUNNING));
+    const node = renderStepReport("media_video_fetch", JSON.stringify(CIVITAI_VIDEO_RUNNING));
     expect(JSON.stringify(node)).toContain("wf-123");
     expect(JSON.stringify(node)).toContain("queue position 2");
   });
@@ -546,7 +546,7 @@ describe("dispatch gate: civitai generation tools claim their output", () => {
 
   it("refuses a foreign payload instead of half-rendering it", () => {
     expect(renderCivitaiImage({ kind: "security_scan", files: [] })).toBeNull();
-    expect(renderCivitaiWorkflow({ kind: "civitai_image", files: [] })).toBeNull();
-    expect(renderCivitaiSubmit({ kind: "civitai_video", workflowId: "wf" })).toBeNull();
+    expect(renderCivitaiWorkflow({ kind: "media_image", files: [] })).toBeNull();
+    expect(renderCivitaiSubmit({ kind: "media_video", workflowId: "wf" })).toBeNull();
   });
 });
