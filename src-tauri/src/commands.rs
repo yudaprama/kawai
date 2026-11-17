@@ -1092,13 +1092,12 @@ pub async fn local_load_model(
 }
 
 /// Whether an omitted `gpu` flag means GPU. Desktop Metal covers the Gemma
-/// opset, so the desktop default stays GPU. The Android OpenCL runtime does
-/// NOT cover every op of the plain Gemma `.litertlm`, and the GPU branch of
-/// LiteRT-LM's executor settings builds a GPU-only accelerator set (no CPU
-/// fallback — unlike the NPU branch) — a phone load then dies at compiled-
-/// model creation with "Some ops are not accelerated". Default phones to CPU
-/// until the vendored GPU branch grows a CPU fallback (Roadmap 17: GPU is
-/// upstream-blocked).
+/// opset, so the desktop default stays GPU. On Android the flag still
+/// defaults to CPU — but `load_model` treats a CPU-default load as
+/// GPU-FIRST with CPU fallback (`load_attempts`): phones with a working
+/// OpenCL stack (Adreno/Mali) load on the GPU either way, and the flag only
+/// selects between the GPU-only halving ladder and the GPU→CPU fallback
+/// ladder.
 #[cfg(feature = "litert")]
 pub(crate) fn default_gpu() -> bool {
     !cfg!(target_os = "android")
