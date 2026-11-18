@@ -292,16 +292,18 @@ export function WorkbenchPage({
    *  behind the panel at max scroll. Measured via ResizeObserver, so chip
    *  wrapping, the focus collapse and rotation all track. */
   const [composerH, setComposerH] = useState(0);
-  const composerOverlayRef = useRef<HTMLDivElement | null>(null);
+  // State-backed (not a plain ref): the overlay renders only on the run view
+  // — the page mounts on the landing composer — so the measurement effect
+  // must re-run when the overlay element appears, not once at page mount.
+  const [composerOverlay, setComposerOverlay] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
-    const el = composerOverlayRef.current;
-    if (el == null) return;
-    const update = () => setComposerH(el.offsetHeight);
+    if (composerOverlay == null) return;
+    const update = () => setComposerH(composerOverlay.offsetHeight);
     update();
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
-    ro?.observe(el);
+    ro?.observe(composerOverlay);
     return () => ro?.disconnect();
-  }, []);
+  }, [composerOverlay]);
 
   /** Wrap the App-level import handler: when the import returns the office
    *  files, auto-attach them as workbench chips (optimistic status = indexing
@@ -1022,7 +1024,7 @@ export function WorkbenchPage({
           className={`group/composer pointer-events-none absolute inset-x-0 bottom-0 z-30 transition-[translate,opacity,visibility] duration-200 ease-out lg:hidden ${
             composerHidden ? "invisible translate-y-full opacity-0" : "translate-y-0 opacity-100"
           }`}
-          ref={composerOverlayRef}
+          ref={setComposerOverlay}
         >
           <div className="border-border/60 safe-b bg-background pointer-events-auto border-t p-3">{composerPanel}</div>
         </div>
