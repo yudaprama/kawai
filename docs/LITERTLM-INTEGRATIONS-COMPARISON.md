@@ -1,10 +1,11 @@
 # Perbandingan Integrasi LiteRT-LM — kawai vs flutter_edge_ai vs flutter_litert
 
 **Tanggal:** 2026-11-19
-**Status:** Studi perbandingan tiga checkout yang ada di workspace. Empat
+**Status:** Studi perbandingan tiga checkout yang ada di workspace. Lima
 temuan sudah diadopsi dan ter-ship di kawai: cancel mid-generation (§7.1),
 aturan fall-through ladder GPU→CPU (§4, §5.3), load plan dari header bundle
-(§7.2), dan turn-end reason dari usage (§7.3).
+(§7.2), turn-end reason dari usage (§7.3), dan hint rung terakhir yang menang
+(§7.4).
 **Objek:** `kawai/` (Rust), `flutter_edge_ai/` (monorepo Dart, paket inti
 `packages/flutter_edge_ai_litertlm` v1.20.1), `flutter_litert/`
 (`google-ai-edge/flutter_litert` v4.2.0).
@@ -69,7 +70,7 @@ flowchart TB
 
 | Dimensi | kawai | flutter_edge_ai_litertlm | flutter_litert |
 |---|---|---|---|
-| Engine load | Dua tahap: **header bundle dibaca lebih dulu** (`litertlm::ModelBundle::read` → `plan_text_backends` → `load_attempts`), lalu ladder build. Plan menyaring ladder dengan `backend_constraint` model teks + aturan Artisan (GPU-saja); bundle NPU-only atau tanpa model teks ditolak dengan alasan dari file. `gpu=false` (Android): satu rung GPU @budget → ladder CPU halving; `gpu=true`: ladder GPU halving → ladder CPU. Rung GPU yang gagal **selalu** jatuh ke rung berikutnya — alokasi maupun tidak ada adapter; hanya rung CPU yang bisa menerminasi load, dan hanya pada error non-alokasi (`attempt_is_terminal`). Header tak terbaca = non-fatal (ladder tanpa filter) | Load plan **dibaca dari file** sebelum engine ada (`litertlm_load_plan.dart`): NPU → GPU → CPU dari bundle stamp; 4 stack NPU (QNN, Tensor G5/G6, MediaTek, OpenVINO) | Policy ladder `CompiledModel`: strict `{gpu}` → retry CPU; NPU CoreML/QNN; desktop WebGPU |
+| Engine load | Dua tahap: **header bundle dibaca lebih dulu** (`litertlm::ModelBundle::read` → `plan_text_backends` → `load_attempts`), lalu ladder build. Plan menyaring ladder dengan `backend_constraint` model teks + aturan Artisan (GPU-saja); bundle NPU-only atau tanpa model teks ditolak dengan alasan dari file. `gpu=false` (Android): satu rung GPU @budget → ladder CPU halving; `gpu=true`: ladder GPU halving → ladder CPU. Rung GPU yang gagal **selalu** jatuh ke rung berikutnya — alokasi maupun tidak ada adapter; hanya rung CPU yang bisa menerminasi load, dan hanya pada error non-alokasi (`attempt_is_terminal`). Rung yang menang dicatat per-user (`llm_load_plan.json`) dan dipromosikan ke depan pada launch berikutnya — hint, bukan kebenaran: sisa ladder tetap utuh. Header tak terbaca = non-fatal (ladder tanpa filter) | Load plan **dibaca dari file** sebelum engine ada (`litertlm_load_plan.dart`): NPU → GPU → CPU dari bundle stamp; 4 stack NPU (QNN, Tensor G5/G6, MediaTek, OpenVINO) | Policy ladder `CompiledModel`: strict `{gpu}` → retry CPU; NPU CoreML/QNN; desktop WebGPU |
 | GPU backend | Metal desktop; Android GPU-first lewat patch fork `kGpu\|kCpu` — op yang tak ter-cover jatuh ke CPU | Metal Apple, OpenCL Android (re-add via patch §19), WebGPU/Dawn desktop, DXC Windows | Metal/CoreML/WebGPU — jalur vision |
 | KV budget | Default **16384 desktop / 4096 Android**, ceiling 32003 (Gemma 4), floor 2048 | Clamp min 1024; NPU bundle bawa `cache_length` sendiri; registry `fixed_max_tokens` per model (mis. 1280) | — |
 | Preflight | `engine.count_tokens` + `conv.token_count` **sebelum** generate → reject + clamp output cap; auto-reset sekali saat overflow | Cek `liteRtLmPrefillFits` (panjang prefill-signature) | — |
@@ -202,6 +203,24 @@ sudah dikumpulkan, bukan menambal engine:
 turn, turn yang stream-nya di-drop di tengah `turn_end=Some(Cancelled)`, turn
 setelahnya kembali `Some(Stop)`.
 
+### 7.4 Rung yang menang diingat (2026-11-19)
+
+Ladder deterministik berarti device yang butuh rung ketiga membayar dua rung
+pertama **setiap** launch — ponsel membaca ulang bobot ke arena GPU yang tidak
+muat, desktop GPU yang hanya muat di budget separuh membangun full-size dulu.
+Sekarang load yang berhasil menulis `LoadedPlan { model, modelBytes, gpu,
+budget }` ke `<user_data_dir>/llm_load_plan.json`, dan `load_attempts`
+memindahkan rung itu ke depan bila masih ada di ladder:
+
+- Hint divalidasi: path model harus sama dan panjang file harus sama (model
+  yang di-download ulang membatalkan hint), cache rusak = miss, bukan gagal
+  load.
+- `gpu=true` eksplisit tidak dipindahkan ke rung CPU — permintaan GPU menang,
+  rung CPU-cache hanya berarti "GPU sudah pernah gagal di sini".
+- Hint yang tidak cocok dengan plan bundle (mis. GPU di-cache padahal model
+  teks CPU-bound) atau dengan budget launch ini (env berubah) diabaikan.
+- Tidak ada rung yang dihapus: hint basi hanya memakan satu percobaan.
+
 ## 8. Yang masih terbuka
 
 1. **Structured output via `ConstraintType`** — binding kawai sudah expose
@@ -220,8 +239,8 @@ setelahnya kembali `Some(Stop)`.
 
 - kawai: `local-llm/src/litertlm.rs` (`ModelBundle`, `plan_text_backends`,
   `TextPlan`), `local-llm/src/lib.rs` (`load_attempts`, `attempt_is_terminal`,
-  `GenerationGate`, `CancelOnDrop`, `classify_turn_end`, `local_chat`),
-  `local-llm/tests/fixtures/gemma4-e4b-header.bin`, `cognee-litert-lm/src/{engine,conversation,session}.rs`,
+  `LoadedPlan`, `GenerationGate`, `CancelOnDrop`, `classify_turn_end`,
+  `local_chat`), `local-llm/tests/fixtures/gemma4-e4b-header.bin`, `cognee-litert-lm/src/{engine,conversation,session}.rs`,
   `cognee-litert-lm/vendor/LiteRT-LM/c/` (C API),
   `vendor/LiteRT-LM/schema/core/litertlm_header_schema.fbs` (skema header),
   `vendor/LiteRT-LM/runtime/engine/engine_settings.cc`

@@ -7208,6 +7208,7 @@ dependencies = [
  "finance",
  "futures-core",
  "kawai-events",
+ "kawai-paths",
  "kawai-tools",
  "serde",
  "serde_json",
