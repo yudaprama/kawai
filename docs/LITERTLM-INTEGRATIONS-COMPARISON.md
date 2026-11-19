@@ -1,9 +1,10 @@
 # Perbandingan Integrasi LiteRT-LM — kawai vs flutter_edge_ai vs flutter_litert
 
-**Tanggal:** 2026-11-17
-**Status:** Studi perbandingan tiga checkout yang ada di workspace. Dua temuan
-sudah diadopsi dan ter-ship di kawai: cancel mid-generation (§7) dan aturan
-fall-through ladder GPU→CPU (§4, §5.3).
+**Tanggal:** 2026-11-19
+**Status:** Studi perbandingan tiga checkout yang ada di workspace. Empat
+temuan sudah diadopsi dan ter-ship di kawai: cancel mid-generation (§7.1),
+aturan fall-through ladder GPU→CPU (§4, §5.3), load plan dari header bundle
+(§7.2), dan turn-end reason dari usage (§7.3).
 **Objek:** `kawai/` (Rust), `flutter_edge_ai/` (monorepo Dart, paket inti
 `packages/flutter_edge_ai_litertlm` v1.20.1), `flutter_litert/`
 (`google-ai-edge/flutter_litert` v4.2.0).
@@ -68,10 +69,11 @@ flowchart TB
 
 | Dimensi | kawai | flutter_edge_ai_litertlm | flutter_litert |
 |---|---|---|---|
-| Engine load | Ladder saat build (`load_attempts()`): desktop GPU + halving K/V; Android GPU@budget → CPU@budget → CPU halving → floor 2048. Rung GPU yang gagal **selalu** jatuh ke rung berikutnya — alokasi maupun tidak ada adapter; hanya rung CPU yang bisa menerminasi load, dan hanya pada error non-alokasi (`attempt_is_terminal`) | Load plan **dibaca dari file** sebelum engine ada (`litertlm_load_plan.dart`): NPU → GPU → CPU dari bundle stamp; 4 stack NPU (QNN, Tensor G5/G6, MediaTek, OpenVINO) | Policy ladder `CompiledModel`: strict `{gpu}` → retry CPU; NPU CoreML/QNN; desktop WebGPU |
+| Engine load | Dua tahap: **header bundle dibaca lebih dulu** (`litertlm::ModelBundle::read` → `plan_text_backends` → `load_attempts`), lalu ladder build. Plan menyaring ladder dengan `backend_constraint` model teks + aturan Artisan (GPU-saja); bundle NPU-only atau tanpa model teks ditolak dengan alasan dari file. `gpu=false` (Android): satu rung GPU @budget → ladder CPU halving; `gpu=true`: ladder GPU halving → ladder CPU. Rung GPU yang gagal **selalu** jatuh ke rung berikutnya — alokasi maupun tidak ada adapter; hanya rung CPU yang bisa menerminasi load, dan hanya pada error non-alokasi (`attempt_is_terminal`). Header tak terbaca = non-fatal (ladder tanpa filter) | Load plan **dibaca dari file** sebelum engine ada (`litertlm_load_plan.dart`): NPU → GPU → CPU dari bundle stamp; 4 stack NPU (QNN, Tensor G5/G6, MediaTek, OpenVINO) | Policy ladder `CompiledModel`: strict `{gpu}` → retry CPU; NPU CoreML/QNN; desktop WebGPU |
 | GPU backend | Metal desktop; Android GPU-first lewat patch fork `kGpu\|kCpu` — op yang tak ter-cover jatuh ke CPU | Metal Apple, OpenCL Android (re-add via patch §19), WebGPU/Dawn desktop, DXC Windows | Metal/CoreML/WebGPU — jalur vision |
 | KV budget | Default **16384 desktop / 4096 Android**, ceiling 32003 (Gemma 4), floor 2048 | Clamp min 1024; NPU bundle bawa `cache_length` sendiri; registry `fixed_max_tokens` per model (mis. 1280) | — |
 | Preflight | `engine.count_tokens` + `conv.token_count` **sebelum** generate → reject + clamp output cap; auto-reset sekali saat overflow | Cek `liteRtLmPrefillFits` (panjang prefill-signature) | — |
+| Turn end | `TurnEnd` diturunkan dari accounting yang sudah ada (`classify_turn_end`): cancelled → `Cancelled`, error → `Error`, `context_tokens_after ≥` budget → `ContextFull`, output habis cap → `MaxOutputTokens`, selain itu `Stop`. Masuk `LocalGenerationUsage.turn_end` + log/tracing per generasi | Belum ada laporan turn-end terstruktur (status native dipakai internal untuk rewind §16) | — |
 | Streaming | Callback C fire-and-forget → done-channel ber-poll (tick 100ms) → tokio mpsc → `async_stream` → `LocalChatEvent` | `NativeCallable` stream proxy; prefill di isolate terpisah; native mutex per turn (`heldUntilNativeEnd`) | — (async inference via isolate + `AsyncLock`) |
 | Cancel mid-generation | **Ter-wire** (§7): consumer hilang → `cancel_process` + conversation diganti fresh | Penuh: cancel native + retry 20ms saat prefill + patch §16 `rewind_cancelled_turn` | — |
 | Multi-session | 1 engine + 1 conversation global; FIFO `GenerationGate` (cancel per-request); epoch guard cegah stale restore; manifest per `agent_id:session_id` untuk delta-prefill | Upstream max 1 conversation → **virtual-session multiplexer**: teardown/rebuild + replay `messages_json`, tombstone, deferred teardown | — |
@@ -102,19 +104,27 @@ flowchart TB
    `kGpu|kCpu`; edge_ai: OpenCL re-add §19), sampler Windows.
 5. `send_message_stream` fire-and-forget wajib di-jembatani eksplisit —
    edge_ai: handshake native end; kawai: done-channel + watchdog.
+6. **Baca file sebelum minta engine** — keduanya sekarang membaca header
+   `.litertlm` (preamble 32 byte + flatbuffer `SectionObject`) untuk memutuskan
+   backend, bukan menebak lalu menerjemahkan `Failed to create engine:
+   UNKNOWN`. edge_ai memakai stamp bundle penuh (termasuk target NPU); kawai
+   memakai `backend_constraint` model teks + aturan Artisan, karena dispatch
+   NPU belum ada di build ini.
 
 ## 6. Yang hanya dimiliki satu pihak
 
 | kawai saja | flutter_edge_ai saja |
 |---|---|
-| Preflight token accounting + usage per generasi (`LocalGenerationUsage`) | Cancel native + patch rewind KV turn batal (§16) |
+| Preflight token accounting + usage per generasi (`LocalGenerationUsage`), termasuk `turn_end` hasil klasifikasi | Cancel native + patch rewind KV turn batal (§16) |
 | Auto-reset-on-overflow transparan | Virtual multi-session dengan replay history |
 | Epoch guard + manifest delta-prefill (agen multi-session berbagi 1 engine) | Structured output via LLGuidance constraint |
-| Embeddings satu stack dengan LM (`EmbeddingGemma` on-device, dipakai RAG) | NPU 4 vendor + load plan dari file bundle |
+| Embeddings satu stack dengan LM (`EmbeddingGemma` on-device, dipakai RAG) | NPU 4 vendor (QNN, Tensor G5/G6, MediaTek, OpenVINO) |
 | Watchdog callback + poll cancel (lapisan anti-hang generasi) | Web (`@litert-lm/core`), Native Assets, model registry ber-evidence |
 | Transport ganda (Tauri Channel + Axum SSE) dari stream yang sama | Workaround sampler Windows/Linux, gpu_registry dlopen App-Store |
 
-## 7. Yang sudah diadopsi kawai: cancel mid-generation (2026-11-17)
+## 7. Yang sudah diadopsi kawai
+
+### 7.1 Cancel mid-generation (2026-11-17)
 
 Sebelum adopsi, cancel di kawai hanya memutus consumer — native generation
 jalan sampai selesai (dibatasi watchdog 600s), conversation hilang dari slot
@@ -142,6 +152,56 @@ cancelled. Sekarang (parent @ `767f98a` + `709fbd30`):
 turn streaming normal. Gate: `cargo check` (default/web/litert) hijau,
 30 unit test `local-llm` lolos.
 
+### 7.2 Load plan dari header bundle (2026-11-19)
+
+`local-llm/src/litertlm.rs` membaca preamble + header flatbuffer `.litertlm`
+— 1,8 KB dari file 3,4 GB — lalu menurunkan backend yang boleh dicoba:
+
+- `ModelBundle::read(path)` / `parse(bytes)` → versi kontainer, system
+  metadata, dan tabel section (offset, `data_type`, `model_type`,
+  `backend_constraint`, `prefer_activation_type`). Setiap pembacaan
+  bounds-checked; header rusak/terpotong = `BundleError`, bukan panic.
+- `plan_text_backends(&bundle)` → `TextPlan { backends, dropped }`. Aturannya
+  sama dengan milik engine: `backend_constraint` model teks (daftar dipisah
+  koma, case-insensitive) menyaring backend, dan `tf_lite_artisan_text_decoder`
+  hanya GPU. `dropped` menyimpan alasan **dalam kata file itu sendiri**, untuk
+  log dan pesan error.
+- Bundle yang model teksnya terkunci NPU, atau tidak punya section model teks,
+  ditolak **sebelum** ada engine — bukan `Failed to create engine: UNKNOWN`.
+- Header tak terbaca → `None` → ladder tanpa filter, persis perilaku
+  sebelumnya (kontainer lama/asing tetap bisa dimuat).
+- `load_attempts(gpu, budget, plan)` menyaring ladder dengan plan; rung GPU
+  yang tidak diizinkan file tidak pernah dicoba.
+
+**Bukti e2e (Gemma 4 E4B, 2026-11-19):** log load mencetak
+`bundle: container 1.5.0, 12 sections [tf_lite_embedder, …, tf_lite_mtp_drafter],
+text backend constraint: none` → `text backends: gpu,cpu` → `loaded … [gpu] in
+0.9s` → streaming normal. Fixture header asli 1.872 byte
+(`local-llm/tests/fixtures/gemma4-e4b-header.bin`) dipakai 14 unit test modul
+itu.
+
+### 7.3 Turn-end reason dari usage (2026-11-19)
+
+Engine melaporkan stop model, stop karena cap output, dan jendela penuh dengan
+callback terminal yang sama, dan revisi upstream yang di-pin tidak
+mengekspos record turn-end — jadi kawai menurunkannya dari accounting yang
+sudah dikumpulkan, bukan menambal engine:
+
+- `TurnEnd { Stop, MaxOutputTokens, ContextFull, Cancelled, Error }` masuk
+  `LocalGenerationUsage.turn_end` (`#[serde(default)]`, camelCase di JSON).
+- `classify_turn_end(&usage, capacity, cancelled, failed)` dengan presedensi:
+  cancelled → `Cancelled`; gagal → `Error`; `context_tokens_after ≥ capacity`
+  → `ContextFull`; `output_tokens ≥ max_output_tokens` → `MaxOutputTokens`;
+  selain itu `Stop`. Angka yang tidak tersedia (tokenizer/KV API gagal)
+  dianggap **tidak diketahui**, bukan nol dan bukan "menabrak cap".
+- Setiap generasi kini mencatat `turn_end` di app log dan `tracing::debug!`
+  (terkirim ke Loki pada build release), jadi "kenapa jawabannya terpotong"
+  terjawab dari telemetri tanpa mereproduksi di device.
+
+**Bukti e2e (smoke yang sama):** turn normal `turn_end=Some(Stop)` pada dua
+turn, turn yang stream-nya di-drop di tengah `turn_end=Some(Cancelled)`, turn
+setelahnya kembali `Some(Stop)`.
+
 ## 8. Yang masih terbuka
 
 1. **Structured output via `ConstraintType`** — binding kawai sudah expose
@@ -158,10 +218,14 @@ turn streaming normal. Gate: `cargo check` (default/web/litert) hijau,
 
 ## 9. Referensi file utama
 
-- kawai: `local-llm/src/lib.rs` (`load_attempts`, `attempt_is_terminal`,
-  `GenerationGate`, `CancelOnDrop`, `local_chat`), `cognee-litert-lm/src/{engine,conversation,session}.rs`,
-  `cognee-litert-lm/vendor/LiteRT-LM/c/` (C API), fork patch
-  `842b293b` (kGpu|kCpu).
+- kawai: `local-llm/src/litertlm.rs` (`ModelBundle`, `plan_text_backends`,
+  `TextPlan`), `local-llm/src/lib.rs` (`load_attempts`, `attempt_is_terminal`,
+  `GenerationGate`, `CancelOnDrop`, `classify_turn_end`, `local_chat`),
+  `local-llm/tests/fixtures/gemma4-e4b-header.bin`, `cognee-litert-lm/src/{engine,conversation,session}.rs`,
+  `cognee-litert-lm/vendor/LiteRT-LM/c/` (C API),
+  `vendor/LiteRT-LM/schema/core/litertlm_header_schema.fbs` (skema header),
+  `vendor/LiteRT-LM/runtime/engine/engine_settings.cc`
+  (`ValidateBackendConstraint`), fork patch `842b293b` (kGpu|kCpu).
 - flutter_edge_ai: `packages/flutter_edge_ai_litertlm/lib/src/ffi/litert_lm_client.dart`,
   `lib/src/litert_lm_engine.dart`, `bundle/litertlm_load_plan.dart`,
   `native/litert_lm/patch_c_api.sh`, `hook/build.dart`,
