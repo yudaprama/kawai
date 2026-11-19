@@ -1,8 +1,9 @@
 # Perbandingan Integrasi LiteRT-LM — kawai vs flutter_edge_ai vs flutter_litert
 
 **Tanggal:** 2026-11-17
-**Status:** Studi perbandingan tiga checkout yang ada di workspace; satu temuan
-utamanya (cancel mid-generation) sudah diadopsi dan ter-ship di kawai (lihat §7).
+**Status:** Studi perbandingan tiga checkout yang ada di workspace. Dua temuan
+sudah diadopsi dan ter-ship di kawai: cancel mid-generation (§7) dan aturan
+fall-through ladder GPU→CPU (§4, §5.3).
 **Objek:** `kawai/` (Rust), `flutter_edge_ai/` (monorepo Dart, paket inti
 `packages/flutter_edge_ai_litertlm` v1.20.1), `flutter_litert/`
 (`google-ai-edge/flutter_litert` v4.2.0).
@@ -67,7 +68,7 @@ flowchart TB
 
 | Dimensi | kawai | flutter_edge_ai_litertlm | flutter_litert |
 |---|---|---|---|
-| Engine load | Ladder saat build (`load_attempts()`): desktop GPU + halving K/V; Android GPU@budget → CPU@budget → CPU halving → floor 2048; klasifikasi `is_allocation_failure` | Load plan **dibaca dari file** sebelum engine ada (`litertlm_load_plan.dart`): NPU → GPU → CPU dari bundle stamp; 4 stack NPU (QNN, Tensor G5/G6, MediaTek, OpenVINO) | Policy ladder `CompiledModel`: strict `{gpu}` → retry CPU; NPU CoreML/QNN; desktop WebGPU |
+| Engine load | Ladder saat build (`load_attempts()`): desktop GPU + halving K/V; Android GPU@budget → CPU@budget → CPU halving → floor 2048. Rung GPU yang gagal **selalu** jatuh ke rung berikutnya — alokasi maupun tidak ada adapter; hanya rung CPU yang bisa menerminasi load, dan hanya pada error non-alokasi (`attempt_is_terminal`) | Load plan **dibaca dari file** sebelum engine ada (`litertlm_load_plan.dart`): NPU → GPU → CPU dari bundle stamp; 4 stack NPU (QNN, Tensor G5/G6, MediaTek, OpenVINO) | Policy ladder `CompiledModel`: strict `{gpu}` → retry CPU; NPU CoreML/QNN; desktop WebGPU |
 | GPU backend | Metal desktop; Android GPU-first lewat patch fork `kGpu\|kCpu` — op yang tak ter-cover jatuh ke CPU | Metal Apple, OpenCL Android (re-add via patch §19), WebGPU/Dawn desktop, DXC Windows | Metal/CoreML/WebGPU — jalur vision |
 | KV budget | Default **16384 desktop / 4096 Android**, ceiling 32003 (Gemma 4), floor 2048 | Clamp min 1024; NPU bundle bawa `cache_length` sendiri; registry `fixed_max_tokens` per model (mis. 1280) | — |
 | Preflight | `engine.count_tokens` + `conv.token_count` **sebelum** generate → reject + clamp output cap; auto-reset sekali saat overflow | Cek `liteRtLmPrefillFits` (panjang prefill-signature) | — |
@@ -92,6 +93,10 @@ flowchart TB
 3. **GPU-first + CPU fallback di Android**, E4B @4096 KV terbukti di kedua
    sisi (registry `flutter_edge_ai/model_registry/derived/*` device-tested
    `max_num_tokens: 4096`; kawai mengadopsinya sebagai default Android).
+   Rung GPU yang gagal karena tidak ada adapter (host headless: Dawn
+   `vkCreateInstance` → WebGPU `No adapters found`) adalah error engine-create
+   biasa, bukan allocation failure — kawai jatuh ke rung CPU untuk kedua
+   kelas kegagalan itu.
 4. **Patch engine diperlukan di titik yang sama**: sentencepiece (kawai:
    hdrs-check macOS; edge_ai: NUL-byte BPE §17), GPU accelerator set (kawai:
    `kGpu|kCpu`; edge_ai: OpenCL re-add §19), sampler Windows.
@@ -114,7 +119,7 @@ flowchart TB
 Sebelum adopsi, cancel di kawai hanya memutus consumer — native generation
 jalan sampai selesai (dibatasi watchdog 600s), conversation hilang dari slot
 sampai reload, dan engine terus burn CPU setelah UI menampilkan turn sebagai
-cancelled. Sekarang (`local-llm` @ `ec64278`, parent @ `767f98a` + `709fbd30`):
+cancelled. Sekarang (parent @ `767f98a` + `709fbd30`):
 
 - `CancelOnDrop` guard per iterasi `local_chat`: consumer hilang (Tauri
   `cancel_stream`, SSE web putus, consumer dibatalkan) → flag → blocking task
@@ -135,7 +140,7 @@ cancelled. Sekarang (`local-llm` @ `ec64278`, parent @ `767f98a` + `709fbd30`):
 `cancel_process sent (generation_id=2)` → decode berhenti (outcome ok) →
 `conversation replaced in 0.1s` → preflight turn berikutnya `current=0` →
 turn streaming normal. Gate: `cargo check` (default/web/litert) hijau,
-28 unit test `local-llm` lolos.
+30 unit test `local-llm` lolos.
 
 ## 8. Yang masih terbuka
 
@@ -153,8 +158,8 @@ turn streaming normal. Gate: `cargo check` (default/web/litert) hijau,
 
 ## 9. Referensi file utama
 
-- kawai: `local-llm/src/lib.rs` (`load_attempts`, `GenerationGate`,
-  `CancelOnDrop`, `local_chat`), `cognee-litert-lm/src/{engine,conversation,session}.rs`,
+- kawai: `local-llm/src/lib.rs` (`load_attempts`, `attempt_is_terminal`,
+  `GenerationGate`, `CancelOnDrop`, `local_chat`), `cognee-litert-lm/src/{engine,conversation,session}.rs`,
   `cognee-litert-lm/vendor/LiteRT-LM/c/` (C API), fork patch
   `842b293b` (kGpu|kCpu).
 - flutter_edge_ai: `packages/flutter_edge_ai_litertlm/lib/src/ffi/litert_lm_client.dart`,
