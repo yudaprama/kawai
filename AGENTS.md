@@ -186,6 +186,23 @@ bun run bundle:litert
 # Both variants share the applicationId + upload keystore (install-over moves
 # a device between channels) and run the SAME verification battery (native
 # strip/exports, dependency graph, R8 JNI classes) on their APK.
+# App self-update (two channels, one manifest shape): the QRIS build carries
+# REQUEST_INSTALL_PACKAGES and its job publishes `latest-android.json`
+# (Tauri-updater shape, `android-aarch64` entry) beside the versioned APK
+# asset. `logic/update.rs` polls it (`update_check` op), downloads the APK
+# sha256-verified to `<app_data>/updates/` (`update_download_and_install`
+# streaming op, RunGuard-protected, `cancel_stream`-able), and
+# `update_installer.rs` hands the file to the system installer over pure JNI
+# (FileProvider content:// URI + ACTION_INSTALL_PACKAGE; a missing
+# "install unknown apps" grant opens the settings page and answers
+# `install_permission_required`). NEVER desktop's `latest.json` — tauri-action
+# owns it and would clobber an android entry. The play build strips the
+# permission at build time (Play forbids self-updating APKs) and its `iap`
+# feature flips `update_check`'s `channel` to `"play"`: the UI opens the Play
+# listing (`update_open_store`, market:// intent) instead of downloading.
+# The frontend flow lives in `frontend/src/features/updater/use-updater.ts`
+# (desktop = official tauri-plugin-updater; android = these ops), strings
+# under `updater.*` in both locales.
 # Size: the release .so files are stripped by `stripReleaseNativeLibs` in
 # src-tauri/gen/android/app/build.gradle.kts (`llvm-strip --strip-unneeded`,
 # .symtab only — .dynsym/JNI/litert exports stay), which exports the
@@ -402,6 +419,8 @@ src-tauri/src/auth.rs            # compat shim → kawai-auth crate (Session typ
 src-tauri/src/logic/local_auth.rs # remote email+password auth → kawai auth worker (D1 directory, Ed25519 bearer)
 src-tauri/src/commands.rs        # #[tauri::command] wrappers + Channel + cancel registry
 src-tauri/src/android_foreground.rs # Android run guard: refcounted foreground-service hold around every streaming run (no-op off Android)
+src-tauri/src/logic/update.rs    # Android app self-update (pure): latest-android.json check, sha256-verified APK download stream; channel apk|play from the iap feature
+src-tauri/src/update_installer.rs # Android system-installer + Play-store intents over pure JNI (no Kotlin class — nothing for R8 to strip)
 src-tauri/gen/android/            # generated Android project: MainActivity.kt, KawaiHeadless.kt (detached-WebView scrape), KawaiForeground.kt + KawaiForegroundService.kt (run-guard foreground service), proguard-rules.pro (JNI-by-name -keep rules)
 src-tauri/src/web.rs             # Axum routes (feature-gated "web") + auth_middleware
 src-tauri/src/bin/web.rs         # standalone web server entry

@@ -291,6 +291,26 @@ jobs:
           restore-keys: gradle-android-${{ runner.os }}-
 
       # ── Builds (one tauri invocation per artifact format) ───────────────
+      # Play's digital-goods policy forbids self-updating APKs, and the play
+      # build's update flow opens the store listing instead (logic::update
+      # channel = "play"), so the sideload-only install permission must not
+      # ride the AAB — it would draw review scrutiny for functionality the
+      # build can never use. The manifest is a build-time input: drop the
+      # line before Gradle reads it. The QRIS variant keeps the permission
+      # and ships the download+installer flow.
+      - name: Drop REQUEST_INSTALL_PACKAGES from the Play variant
+        if: ${{ inputs.variant == 'play' }}
+        run: |
+          set -euo pipefail
+          MANIFEST=src-tauri/gen/android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.REQUEST_INSTALL_PACKAGES' "$MANIFEST"
+          sed -i '\#android\.permission\.REQUEST_INSTALL_PACKAGES#d' "$MANIFEST"
+          if grep -q 'REQUEST_INSTALL_PACKAGES' "$MANIFEST"; then
+            echo "::error::the install permission survived the play-variant strip"
+            exit 1
+          fi
+          echo "play variant manifest carries no REQUEST_INSTALL_PACKAGES"
+
       - name: Build signed AAB
         if: ${{ inputs.build_aab }}
         env:
@@ -526,7 +546,14 @@ jobs:
       # existing release and would publish it with the desktop assets still
       # missing. The publish job in release.yml flips the draft once every
       # desktop platform is green.
-      - name: Attach APK to the release
+      #
+      # The APK is staged under a versioned name (two APK files on one
+      # release — re-runs, the play variant's run-artifact copy — must never
+      # be ambiguous) and the SAME step publishes `latest-android.json`, the
+      # in-app updater manifest `logic::update` polls. A separate file, never
+      # desktop's `latest.json`: tauri-action owns that one and would clobber
+      # an android entry depending on which parallel job uploads last.
+      - name: Attach APK + updater manifest to the release
         if: ${{ inputs.attach_release }}
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -534,12 +561,36 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ inputs.tag }}"
+          VERSION="${TAG#v}"
           APK="$(ls src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk | head -n1)"
+          STAGED="$RUNNER_TEMP/kawai-$VERSION-android-aarch64.apk"
+          cp "$APK" "$STAGED"
           # A desktop job may create the draft concurrently — losing that race
           # is harmless (the upload needs it to exist, not to be ours).
           gh release view "$TAG" > /dev/null 2>&1 ||
             gh release create "$TAG" --draft --title "kawai $TAG" || true
-          gh release upload "$TAG" "$APK" --clobber
+          gh release upload "$TAG" "$STAGED" --clobber
+
+          # In-app updater manifest (Tauri-updater shape, android-aarch64
+          # entry). `releases/latest/download/latest-android.json` on the
+          # client resolves only against PUBLISHED releases — exactly when
+          # the APK behind these links is installable.
+          SHA="$(sha256sum "$STAGED" | cut -d' ' -f1)"
+          SIZE="$(( $(wc -c < "$STAGED") ))"
+          URL="https://github.com/${GH_REPO}/releases/download/${TAG}/$(basename "$STAGED")"
+          PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          jq -n \
+            --arg version "$VERSION" \
+            --arg pubDate "$PUB_DATE" \
+            --arg notes "kawai $TAG" \
+            --arg url "$URL" \
+            --arg sha256 "$SHA" \
+            --argjson size "$SIZE" \
+            '{version: $version, pub_date: $pubDate, notes: $notes,
+              platforms: {"android-aarch64": {url: $url, sha256: $sha256, size: $size}}}' \
+            > "$RUNNER_TEMP/latest-android.json"
+          gh release upload "$TAG" "$RUNNER_TEMP/latest-android.json" --clobber
+          echo "published latest-android.json → $VERSION ($SIZE bytes, sha256 $SHA)"
 
       # ── Play variant: APK artifact (manual IAP testing) ─────────────────
       # NOT attached to the public release — the public APK stays the QRIS

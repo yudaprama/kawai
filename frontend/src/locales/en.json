@@ -2,7 +2,10 @@
   "updater": {
     "available": "kawai {{version}} is available",
     "install": "Update & restart",
-    "downloading": "Downloading update… {{percent}}%"
+    "downloading": "Downloading update… {{percent}}%",
+    "openStore": "Update via Play Store",
+    "installing": "Opening the installer…",
+    "installPermission": "Allow “Install unknown apps” for kawai in the screen just opened, then tap Update again."
   },
   "markdown": {
     "renderFailed": "Couldn't load the markdown renderer — check your connection and retry."

@@ -1323,6 +1323,76 @@ pub async fn topup_iap_redeem(
     logic::topup::topup_iap_redeem(&token, &product_id, &purchase_token, &order_id).await
 }
 
+/// ── App self-update (Android builds; sideload + Play channels) ─────────────
+/// Public ops — the check runs at launch, possibly before sign-in (same as
+/// the desktop updater plugin). `logic::update` owns manifest + download;
+/// this edge owns the version source (`tauri.conf.json`, the one the release
+/// bump writes — NOT the stale Cargo version) and, on Android, the installer
+/// intents.
+
+/// Public RPC: the latest published Android release, `Some` only when newer
+/// than this build. `channel` picks the UI flow (`apk` download+install /
+/// `play` open the store listing).
+#[tauri::command]
+pub async fn update_check(app: tauri::AppHandle) -> Result<Option<logic::update::UpdateInfo>, String> {
+    let current = app.package_info().version.to_string();
+    logic::update::check_update(&current).await
+}
+
+/// Public streaming op: re-check, download the APK (progress events,
+/// sha256-verified) and — Android only — hand it to the system installer as
+/// the final step. `cancel_stream` aborts the HTTP body. On the play build
+/// the frontend never calls this (channel = `play` ⇒ store listing); if it
+/// ever does, the download still verifies before any installer runs.
+#[tauri::command]
+pub async fn update_download_and_install(
+    stream_id: String,
+    on_event: Channel<logic::update::UpdateEvent>,
+    registry: State<'_, StreamRegistry>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let current = app.package_info().version.to_string();
+    let info = logic::update::check_update(&current)
+        .await?
+        .ok_or_else(|| "already up to date".to_string())?;
+    // The play build has no install permission (stripped at build time) and
+    // Play policy forbids self-updating APKs — the store listing is its only
+    // update path, so a stray call can never reach the download.
+    if info.channel == "play" {
+        return Err("this build updates through the Play Store".to_string());
+    }
+    let dest = logic::update::apk_path(&info.version);
+    let installed_path = Arc::new(parking_lot::Mutex::new(None::<String>));
+    let path_ref = Arc::clone(&installed_path);
+    let stream = logic::update::download_stream(info, dest).map(move |event| {
+        if let logic::update::UpdateEvent::Finished { path } = &event {
+            *path_ref.lock() = Some(path.clone());
+        }
+        event
+    });
+    let token = tokio_util::sync::CancellationToken::new();
+    run_streaming(stream_id, on_event, &registry, stream, Some(token.clone())).await?;
+    if token.is_cancelled() {
+        return Ok(());
+    }
+    if let Some(path) = installed_path.lock().take() {
+        // Android: launch the system installer — the last step of the sideload
+        // flow. Elsewhere (desktop/web route parity) the download alone is the
+        // contract; there is nothing to install.
+        crate::update_installer::install_apk(std::path::Path::new(&path))?;
+    }
+    Ok(())
+}
+
+/// Public RPC: open the Play store listing (play channel). Fires the
+/// `market://` intent on Android and returns the URL everywhere (the web
+/// wrapper's caller can window.open it).
+#[tauri::command]
+pub fn update_open_store() -> Result<String, String> {
+    crate::update_installer::open_play_store()?;
+    Ok(logic::update::STORE_URL.to_string())
+}
+
 /// ── Civitai image generation (Generator panel) ─────────────────────────────
 /// The API key is product-baked (`kawai-vault/constants::civitai::get_civitai`)
 /// — no user-facing key management. `civitai_generate` spends Buzz and lands

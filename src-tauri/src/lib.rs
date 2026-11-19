@@ -2,6 +2,11 @@
 #[cfg(feature = "desktop")]
 pub mod android_foreground;
 
+// Android app self-update: system package installer + Play store intents
+// (transport edge for logic::update — the download side is pure).
+#[cfg(feature = "desktop")]
+pub mod update_installer;
+
 pub mod agent_registry;
 pub mod auth;
 #[cfg(feature = "desktop")]
@@ -191,6 +196,9 @@ pub fn run() {
         commands::auth_reset_request,
         commands::auth_reset_confirm,
         commands::cancel_stream,
+        commands::update_check,
+        commands::update_download_and_install,
+        commands::update_open_store,
         commands::logout,
         commands::whoami,
         commands::create_chat_session,

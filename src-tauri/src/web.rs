@@ -2036,6 +2036,57 @@ async fn topup_iap_redeem_handler(
         .map_err(err500)
 }
 
+// ── App self-update (Android builds; sideload + Play channels) ─────────────
+// One-op-both-wrappers parity with commands.rs. The web build never drives
+// the Android updater, so the Cargo manifest version is the honest
+// `current_version` here (tauri.conf.json only rides the app bundles); the
+// download route serves the same sha256-verified events minus the installer
+// hand-off, which is a JNI concern that cannot exist in a server process.
+
+async fn update_check_handler(
+) -> Result<Json<Option<logic::update::UpdateInfo>>, (StatusCode, String)> {
+    logic::update::check_update(env!("CARGO_PKG_VERSION"))
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+async fn update_download_and_install_handler(
+) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
+    let stream = match logic::update::check_update(env!("CARGO_PKG_VERSION")).await {
+        Ok(Some(info)) => {
+            let dest = logic::update::apk_path(&info.version);
+            logic::update::download_stream(info, dest).left_stream()
+        }
+        no_update => futures_util::stream::once(async move {
+            logic::update::UpdateEvent::Error {
+                message: match no_update {
+                    Ok(None) => "already up to date".to_string(),
+                    Err(message) => message,
+                    Ok(Some(_)) => unreachable!(),
+                },
+            }
+        })
+        .right_stream(),
+    };
+    Sse::new(stream.map(|event| Ok::<_, Infallible>(update_event_to_sse(event))))
+}
+
+fn update_event_to_sse(event: logic::update::UpdateEvent) -> SseFrame {
+    use logic::update::UpdateEvent;
+    let name = match &event {
+        UpdateEvent::Progress { .. } => "progress",
+        UpdateEvent::Finished { .. } => "finished",
+        UpdateEvent::Error { .. } => "error",
+    };
+    let data = serde_json::to_string(&event).unwrap_or_default();
+    SseFrame::default().event(name).data(data)
+}
+
+async fn update_open_store_handler() -> Json<String> {
+    Json(logic::update::STORE_URL.to_string())
+}
+
 // ── Civitai image generation (Generator panel) ─────────────────────────────
 // Auth-required thin proxies sharing `logic::civitai` with the Tauri
 // commands. The API key is vault-baked; generate binds the middleware's
@@ -2594,6 +2645,11 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/topup_iap_available", post(topup_iap_available_handler))
         .route("/api/topup_iap_products", post(topup_iap_products_handler))
         .route("/api/topup_iap_redeem", post(topup_iap_redeem_handler))
+        // App self-update (Android builds): one-op-both-wrappers parity with
+        // commands.rs. Protected like everything non-auth-UI.
+        .route("/api/update_check", post(update_check_handler))
+        .route("/api/update_download_and_install", post(update_download_and_install_handler))
+        .route("/api/update_open_store", post(update_open_store_handler))
         // Civitai image generation (Generator panel) — same 2 ops as the
         // Tauri commands (POST on both transports); the API key is
         // vault-baked, no key management surface.

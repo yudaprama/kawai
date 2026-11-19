@@ -2,7 +2,10 @@
   "updater": {
     "available": "kawai {{version}} tersedia",
     "install": "Perbarui & mulai ulang",
-    "downloading": "Mengunduh pembaruan… {{percent}}%"
+    "downloading": "Mengunduh pembaruan… {{percent}}%",
+    "openStore": "Perbarui lewat Play Store",
+    "installing": "Membuka penginstal…",
+    "installPermission": "Izinkan “Install aplikasi tidak dikenal” untuk kawai di layar yang baru dibuka, lalu ketuk Perbarui lagi."
   },
   "markdown": {
     "renderFailed": "Gagal memuat perender markdown — periksa koneksi lalu coba lagi."

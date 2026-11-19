@@ -603,6 +603,11 @@ pub mod dyntoken;
 // QRIS top-up + token-balance worker proxies.
 // Pure reqwest — shared by the Tauri commands and the web routes.
 pub mod topup;
+// App self-update for the Android builds (sideload + Play channels): GitHub
+// releases manifest check + sha256-verified APK download. Pure reqwest/futures
+// — the Android package-installer intents live at the transport edge
+// (update_installer.rs), never here.
+pub mod update;
 // Per-tool-call app-token surcharge table — consumed by the
 // supervisor's dispatch choke point.
 pub mod tool_pricing;
