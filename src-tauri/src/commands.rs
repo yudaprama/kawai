@@ -1091,13 +1091,16 @@ pub async fn local_load_model(
     result
 }
 
-/// Whether an omitted `gpu` flag means GPU. Desktop Metal covers the Gemma
-/// opset, so the desktop default stays GPU. On Android the flag still
-/// defaults to CPU — but `load_model` treats a CPU-default load as
-/// GPU-FIRST with CPU fallback (`load_attempts`): phones with a working
-/// OpenCL stack (Adreno/Mali) load on the GPU either way, and the flag only
-/// selects between the GPU-only halving ladder and the GPU→CPU fallback
-/// ladder.
+/// Whether an omitted `gpu` flag means GPU. Desktop keeps the GPU default so
+/// a file that DECLARES GPU support uses its GPU halving ladder; for a
+/// constraint-less bundle (the plain E4B) `load_attempts` gates the GPU rungs
+/// off anyway — its desktop mixed-GPU path generates corrupted tokens (see
+/// the Landmines GPU-rung entry) — so the default costs nothing today. On
+/// Android the flag still defaults to CPU — but `load_model` treats a
+/// CPU-default load as GPU-FIRST with CPU fallback (`load_attempts`): phones
+/// with a working OpenCL stack (Adreno/Mali) load on the GPU either way, and
+/// the flag only selects between the GPU-only halving ladder and the
+/// GPU→CPU fallback ladder.
 #[cfg(feature = "litert")]
 pub(crate) fn default_gpu() -> bool {
     !cfg!(target_os = "android")

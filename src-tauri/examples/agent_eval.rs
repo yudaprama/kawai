@@ -58,6 +58,7 @@ const TOOLS: &str = r#"[
 ///   "==[a,b,c]"    — list equality
 ///   "re:pattern"   — regex over the JSON-encoded value (for arrays/objects)
 ///   "in:a|b|None"  — membership; "None" accepts a missing field
+#[derive(Clone, Copy)]
 struct Scenario(
     &'static str,
     &'static str,
@@ -779,9 +780,15 @@ async fn main() {
     let debug_raw = std::env::var("EVAL_DEBUG")
         .map(|v| v == "1")
         .unwrap_or(false);
+    // EVAL_GPU=1 → load the GPU rung (default: CPU, the quality-gate
+    // baseline). EVAL_ONLY=prefix → run only the scenarios whose id starts
+    // with prefix (e.g. EVAL_ONLY=A05) for fast probes; the gate then applies
+    // to the filtered set.
+    let eval_gpu = std::env::var("EVAL_GPU").map(|v| v == "1").unwrap_or(false);
+    let eval_only = std::env::var("EVAL_ONLY").unwrap_or_default();
 
     let t_load = std::time::Instant::now();
-    let info = local_llm::load_model("eval", &model, false, false, 1, None)
+    let info = local_llm::load_model("eval", &model, eval_gpu, false, 1, None)
         .await
         .expect("load_model");
     let load_s = t_load.elapsed().as_secs_f64();
@@ -816,6 +823,15 @@ async fn main() {
     let tool_count = serde_json::from_str::<Vec<Value>>(tools_json)
         .unwrap()
         .len();
+    let scenarios: &[Scenario] = if eval_only.is_empty() {
+        scenarios
+    } else {
+        &scenarios
+            .iter()
+            .filter(|s| s.0.starts_with(&eval_only))
+            .copied()
+            .collect::<Vec<_>>()
+    };
     println!(
         "model {} [{}] (load {load_s:.1}s)\n",
         info.model_path, info.backend
