@@ -236,6 +236,7 @@ jobs:
       # — a native-level flake, not an assertion failure, so attempt 2 is the
       # signal.
       - name: analytics_smoke (data_schema/data_query + xlsx bridge)
+        shell: bash
         run: |
           status=1
           for attempt in 1 2; do
