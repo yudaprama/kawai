@@ -8098,8 +8098,12 @@ mod tests {
     /// End-to-end: a pure greeting and a self-identity question claim
     /// through plan_task with ZERO planner tokens, and the pre-authored
     /// localized text rides the direct_reply step under WRITER_RAW. A
-    /// greeting carrying content must NOT claim — it falls to the planner
-    /// stage, which fails closed without a remote pool.
+    /// greeting carrying content must NOT claim — the conjunctive gate
+    /// (`kawai_router::static_reply_intent`) declines it and the goal keeps
+    /// its planner-tier path, pinned hermetically on the pure classifier:
+    /// the planner stage behind that path calls the live remote pool, and
+    /// a unit test must not depend on an external service. Live-planner
+    /// coverage belongs to the headless smokes.
     #[tokio::test(flavor = "multi_thread")]
     async fn plan_task_answers_static_goals_without_the_planner() {
         let (user, session, registry) = plan_env("static-reply").await;
@@ -8146,41 +8150,18 @@ mod tests {
         let text = step.arguments.get("text").and_then(|v| v.as_str()).expect("reply text");
         assert!(text.contains("Kawai"), "english identity reply: {text}");
 
-        // A greeting carrying content is NOT static — the canned reply must
-        // never swallow it. Whatever comes back is planner-authored (a real
-        // pool plans the NVDA analysis) or the offline tier fails on the
-        // unloaded engine (no vault keys → local-only pool → Gemma 4 is not
-        // loaded in tests) — never the direct_greeting stamp.
-        match plan_task(
-            &user,
-            session,
-            "halo, analisis NVDA minggu ini",
+        // A greeting carrying content is NOT static — the gate is
+        // CONJUNCTIVE, so one word outside the greeting/identity vocabulary
+        // ("analisis") must decline the claim. Scenarios above pin the
+        // Some→plan mapping end-to-end (direct_greeting/direct_identity
+        // stamps, direct_reply tool, zero planner tokens), so a declined
+        // intent cannot produce a canned plan — and the test stays offline.
+        assert_eq!(
+            kawai_router::static_reply_intent("halo, analisis NVDA minggu ini"),
             None,
-            None,
-            &registry,
-            |_| {},
-        )
-        .await
-        {
-            Ok((plan, _usage)) => {
-                assert_ne!(
-                    plan.template.as_deref(),
-                    Some("direct_greeting"),
-                    "canned reply swallowed a content goal: {plan:?}"
-                );
-            }
-            Err(err) => {
-                // Two legitimate failure flavors: a no-keys build runs the
-                // local-only pool against the unloaded engine ("local model
-                // error"); a keyed build can exhaust the remote pool (free
-                // tiers rate-limit under parallel CI load) — both mean the
-                // planner tier failed and the canned reply never ran.
-                assert!(
-                    err.contains("local model error") || err.contains("remote error"),
-                    "expected the planner tier to fail on the unloaded engine or an exhausted pool: {err}"
-                );
-            }
-        }
+            "content-carrying greeting must fall through to the planner — \
+             the canned reply must never swallow it"
+        );
     }
 
     /// End-to-end: the Trading Performance goal claims through plan_task
