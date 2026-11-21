@@ -2011,7 +2011,7 @@ async fn sync_shared_catalog(sync_timeout: std::time::Duration, force: bool) {
         Some((l, r)) => (Some(*l), Some(*r)),
         None => (None, None),
     };
-    if !kawai_tool_catalog::Catalog::sync_needed(
+    if !force && !kawai_tool_catalog::Catalog::sync_needed(
         replica_age,
         local_fp,
         remote_fp,
@@ -2032,6 +2032,12 @@ async fn sync_shared_catalog(sync_timeout: std::time::Duration, force: bool) {
     match sync_catalog_bounded(&catalog, sync_timeout).await {
         Some(Ok(frames)) if frames > 0 => {
             tracing::info!(component = "tool-catalog", frames, "catalog synced");
+        }
+        Some(Ok(0)) if local_fp.is_some_and(|fingerprint| fingerprint.rows == 0) => {
+            tracing::warn!(
+                component = "tool-catalog",
+                "catalog sync returned no frames while the local replica is empty"
+            );
         }
         Some(Ok(_)) => {} // already up to date
         Some(Err(e)) => {
