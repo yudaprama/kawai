@@ -556,6 +556,7 @@ async fn main() {
         x_scale: None,
         y_scale: None,
         title: None,
+        ohlc: None,
     };
     let engine_err =
         analytics::chart::render(&pie_path, None, &analytics::QueryArgs::default(), &pie_spec)
