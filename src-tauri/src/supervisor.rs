@@ -2031,7 +2031,18 @@ async fn sync_shared_catalog(sync_timeout: std::time::Duration, force: bool) {
 
     match sync_catalog_bounded(&catalog, sync_timeout).await {
         Some(Ok(frames)) if frames > 0 => {
-            tracing::info!(component = "tool-catalog", frames, "catalog synced");
+            if local_fp.is_some_and(|fingerprint| fingerprint.rows == 0) {
+                // WARN on purpose: routine syncs are INFO, and a release build
+                // ships WARN/ERROR only — this is the one positive signal a
+                // phone can emit that its replica went from empty to usable.
+                tracing::warn!(
+                    component = "tool-catalog",
+                    frames,
+                    "catalog replica bootstrapped (local was empty)"
+                );
+            } else {
+                tracing::info!(component = "tool-catalog", frames, "catalog synced");
+            }
         }
         Some(Ok(0)) if local_fp.is_some_and(|fingerprint| fingerprint.rows == 0) => {
             tracing::warn!(
@@ -4500,7 +4511,20 @@ fn log_scheduler_event(stream_id: &str, event: kawai_router::SchedulerEvent) -> 
         kawai_router::SchedulerEvent::StepCompleted { step_id, output, retries_used } => {
             format!("stepCompleted step={step_id} output_len={} retries={retries_used}", output.len())
         }
-        kawai_router::SchedulerEvent::StepFailed { step_id, error, .. } => {
+        kawai_router::SchedulerEvent::StepFailed { step_id, error, kind, .. } => {
+            // WARN here on purpose: the label below is an `eprintln!`, which
+            // never reaches Loki, and this is the single choke point every
+            // workflow's step failures flow through (security audit, futures
+            // audits, screener, desk) — without it a failing step on a phone
+            // exists only on the screen in front of the user.
+            tracing::warn!(
+                component = "supervisor",
+                stream_id = %stream_id,
+                step_id = %step_id,
+                kind = step_error_kind(kind),
+                error = ?error,
+                "workflow step failed"
+            );
             format!("stepFailed step={step_id} error={:?}", error)
         }
         kawai_router::SchedulerEvent::StepSkipped { step_id, reason } => {
