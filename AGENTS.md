@@ -627,7 +627,9 @@ KAWAI_CF_GLOBAL_DAILY=300     # default 300 (dev-wallet fuse)
 # Level gate for the Loki push layer, read from the runtime env first and from
 # the COMPILE-TIME value second (a phone cannot export env into the app, so a
 # release APK under test bakes it: KAWAI_LOKI_LEVEL=info bun run tauri:...).
-# Unset: release builds ship WARN/ERROR, debug builds ship INFO.
+# Unset at both runtime and compile time: release builds ship WARN/ERROR, debug builds ship INFO.
+# CI release builds bake KAWAI_LOKI_LEVEL=info (release.yml + release-android*.yml) so shipped
+# artifacts are brighter; override via the workflow input or the repo env for other levels.
 KAWAI_LOKI_LEVEL=warn         # off|error|warn|info|debug|trace
 ```
 `.env.local` (gitignored) — reserved for future auth configuration (unused by the React frontend).

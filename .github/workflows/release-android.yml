@@ -56,7 +56,7 @@ on:
         description: 'KAWAI_LOKI_LEVEL baked at compile time (off|error|warn|info|debug|trace). info makes a device session observable from Grafana alone.'
         required: false
         type: string
-        default: 'warn'
+        default: 'info'
 
 permissions:
   contents: write

@@ -372,6 +372,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
+          # Bake a brighter Loki level into release binaries (option_env! at
+          # compile time) so device sessions are observable from Grafana
+          # without attaching a cable. Override via repo var if needed.
+          KAWAI_LOKI_LEVEL: info
           # Minisign key for the updater artifacts (.sig) + latest.json —
           # passwordless key; no TAURI_SIGNING_PRIVATE_KEY_PASSWORD needed.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -553,6 +557,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
+          # Bake a brighter Loki level into release binaries (option_env! at
+          # compile time) so device sessions are observable from Grafana
+          # without attaching a cable. Override via repo var if needed.
+          KAWAI_LOKI_LEVEL: info
           # Minisign key for the updater artifacts (.sig) + latest.json —
           # passwordless key; no TAURI_SIGNING_PRIVATE_KEY_PASSWORD needed.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -758,6 +766,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
+          # Bake a brighter Loki level into release binaries (option_env! at
+          # compile time) so device sessions are observable from Grafana
+          # without attaching a cable. Override via repo var if needed.
+          KAWAI_LOKI_LEVEL: info
           # Minisign key for the updater artifacts (.sig) + latest.json —
           # passwordless key; no TAURI_SIGNING_PRIVATE_KEY_PASSWORD needed.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
