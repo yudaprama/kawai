@@ -185,7 +185,7 @@ fn session_cli_workspace(user_id: &str, session_id: i64) -> Option<std::path::Pa
         .join("cli_workspace")
         .join(format!("session-{session_id}"));
     if let Err(e) = std::fs::create_dir_all(&dir) {
-        eprintln!("[cli_workspace] mkdir {}: {e}", dir.display());
+        tracing::warn!(component = "agent_registry", path = %dir.display(), error = %e, "mkdir failed");
         return None;
     }
     // Materialize off the synchronous toolset-build path. Inside a tokio

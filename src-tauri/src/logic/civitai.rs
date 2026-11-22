@@ -1313,7 +1313,7 @@ pub async fn civitai_generate(
     // them BEFORE the spend: the recipe response carries no model/sampler echo,
     // so a generation that comes out soft is otherwise unexplainable after the
     // fact. `None` here = the ecosystem spec default applied server-side.
-    eprintln!(
+    tracing::info!(
         "civitai: generate eco={} workflow={} size={}x{} cfg={:?} steps={:?} sampler={:?} qty={:?}",
         params.ecosystem,
         params.effective_workflow(),
@@ -1354,7 +1354,7 @@ pub async fn civitai_generate(
         let name = format!("civitai-{short_id}-{}.{}", i + 1, ext);
         // Bytes + the server's own dims are the only cheap way to tell a
         // soft generation from a soft DELIVERY after the fact.
-        eprintln!(
+        tracing::info!(
             "civitai: unduh {name} {} bytes (blob {}, server {:?}x{:?})",
             bytes.len(),
             blob.id,

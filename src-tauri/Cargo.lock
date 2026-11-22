@@ -792,6 +792,7 @@ dependencies = [
  "serde_json",
  "ta",
  "time",
+ "tracing",
 ]
 
 [[package]]
@@ -1718,6 +1719,7 @@ dependencies = [
  "serde_json",
  "ta",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2470,6 +2472,7 @@ dependencies = [
  "serde_json",
  "specta",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -6363,6 +6366,7 @@ dependencies = [
  "serde_json",
  "text-splitter",
  "tokio",
+ "tracing",
  "url",
  "webread",
 ]
@@ -6396,6 +6400,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -6433,6 +6438,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -6457,6 +6463,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -6627,6 +6634,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
  "url",
  "webread",
 ]
@@ -8333,6 +8341,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.20",
+ "tracing",
  "webread",
 ]
 
@@ -10227,6 +10236,7 @@ dependencies = [
  "text-splitter",
  "thiserror 2.0.20",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -14513,6 +14523,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
  "url",
  "whatlang",
  "wikipedia-search",

@@ -20,7 +20,7 @@ pub fn prewarm_tabular(user_id: &str, file: &kawai_office::store::OfficeFile) {
         };
         let n = ::analytics::prewarm_workbook(&path);
         if n > 0 {
-            eprintln!("[analytics] prewarmed {n} sheet(s) of {name:?}");
+            tracing::info!("[analytics] prewarmed {n} sheet(s) of {name:?}");
         }
     });
 }

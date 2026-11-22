@@ -96,7 +96,7 @@ async fn post_json(path: &str, body: serde_json::Value) -> std::result::Result<(
 /// (a mock listener on 127.0.0.1) without touching the process-wide env.
 async fn post_json_at(base: &str, path: &str, body: serde_json::Value) -> std::result::Result<(u16, serde_json::Value), String> {
     let url = format!("{base}{path}");
-    eprintln!("[auth] POST {url}");
+    tracing::info!("[auth] POST {url}");
     let started = std::time::Instant::now();
     let resp = worker_client()
         .post(url)
@@ -114,13 +114,13 @@ async fn post_json_at(base: &str, path: &str, body: serde_json::Value) -> std::r
     // carry the worker's bounded error text, which never contains the token.
     let elapsed = started.elapsed().as_millis();
     if status < 400 {
-        eprintln!(
+        tracing::info!(
             "[auth] {path} → {status} in {elapsed}ms ({} bytes, keys {})",
             text.len(),
             json_shape(&json)
         );
     } else {
-        eprintln!(
+        tracing::info!(
             "[auth] {path} → {status} in {elapsed}ms ({} bytes): {}",
             text.len(),
             short_error(status, &json)

@@ -138,14 +138,14 @@ mod inner {
             let engine = match guard.as_mut() {
                 Some(cached) if cached.voice == voice => &mut cached.engine,
                 _ => {
-                    eprintln!("[tts] loading supertonic {MODEL_VERSION}/{MODEL_PRECISION} voice {voice}");
+                    tracing::info!("[tts] loading supertonic {MODEL_VERSION}/{MODEL_PRECISION} voice {voice}");
                     let engine = SupertonicEngine::load(&dir, MODEL_VERSION, MODEL_PRECISION, &voice)
                         .map_err(|e| TtsError::InferenceFailed(e.to_string()))?;
                     *guard = Some(CachedEngine {
                         voice: voice.to_string(),
                         engine,
                     });
-                    eprintln!("[tts] supertonic engine ready");
+                    tracing::info!("[tts] supertonic engine ready");
                     &mut guard.as_mut().expect("just inserted").engine
                 }
             };

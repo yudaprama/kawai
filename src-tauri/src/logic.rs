@@ -376,7 +376,7 @@ pub async fn ensure_model() -> Result<String, LogicError> {
 
     // Fast path: already on disk.
     if let Ok(path) = resolve_model_path() {
-        eprintln!("[ensure_model] found locally: {path}");
+        tracing::info!("[ensure_model] found locally: {path}");
         return Ok(path);
     }
 
@@ -405,7 +405,7 @@ pub async fn ensure_model() -> Result<String, LogicError> {
         .map_err(|e| LogicError::ModelDownload(format!("reqwest client: {e}")))?;
 
     let response = if existing_size > 0 {
-        eprintln!(
+        tracing::info!(
             "[ensure_model] resuming partial download ({:.1} MB already done)",
             existing_size as f64 / 1e6
         );
@@ -442,7 +442,7 @@ pub async fn ensure_model() -> Result<String, LogicError> {
 
     local_llm::mark_download_complete();
 
-    eprintln!(
+    tracing::info!(
         "[ensure_model] download complete: {}",
         target_path.display()
     );
@@ -466,7 +466,7 @@ async fn download_stream(
     // Publish initial total so the frontend can display "0 / 3.7 GB".
     local_llm::update_download_progress(existing_size, total_size);
 
-    eprintln!(
+    tracing::info!(
         "[ensure_model] downloading {filename} ({:.1} GB) ...",
         total_size as f64 / 1e9
     );
@@ -495,7 +495,7 @@ async fn download_stream(
         let cur_mb = downloaded / 100_000_000;
         if cur_mb > prev_mb && total_size > 0 {
             let pct = downloaded as f64 / total_size as f64 * 100.0;
-            eprintln!(
+            tracing::info!(
                 "[ensure_model] {:.1}/{:.1} GB ({:.0}%)",
                 downloaded as f64 / 1e9,
                 total_size as f64 / 1e9,
@@ -504,7 +504,7 @@ async fn download_stream(
         }
     }
 
-    eprintln!("[ensure_model] finalizing ...");
+    tracing::info!("[ensure_model] finalizing ...");
     Ok(())
 }
 

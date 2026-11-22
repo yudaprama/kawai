@@ -888,7 +888,7 @@ pub async fn plan_task(
                         // A template whose builder cannot run must not fail
                         // the submit — the planner takes over — but the
                         // reason must be searchable, not a local stderr line
-                        // (AGENTS.md: `eprintln!` never reaches Grafana). The
+                        // (AGENTS.md: `tracing::info!` never reaches Grafana). The
                         // paired `route_log` row carries source="fallback";
                         // this warn carries WHY.
                         tracing::warn!(
@@ -897,7 +897,7 @@ pub async fn plan_task(
                             error = %e,
                             "template build failed — falling back to the planner"
                         );
-                        eprintln!(
+                        tracing::info!(
                             "[supervisor] template {} build failed ({e}) — falling back to the planner",
                             template.id
                         );
@@ -1357,7 +1357,7 @@ via the always-available `session_step_results` tool. If the goal depends on det
                     .ok()
                     .and_then(|slice| serde_json::from_str::<serde_json::Value>(slice).ok());
                 if plan_shaped(repaired.as_ref()) {
-                    eprintln!(
+                    tracing::info!(
                         "[plan_task] mechanical repair: closed unbalanced JSON / lifted nested \
                          `steps` ({} → {} chars)",
                         raw.len(),
@@ -1378,7 +1378,7 @@ via the always-available `session_step_results` tool. If the goal depends on det
         if let Some(v) = parsed.as_mut() {
             if repair_cli_run_command_arg(v) {
                 parse_raw = v.to_string();
-                eprintln!(
+                tracing::info!(
                     "[plan_task] mechanical arg repair: cli_run `command` promoted from args[0]"
                 );
             }
@@ -1408,7 +1408,7 @@ via the always-available `session_step_results` tool. If the goal depends on det
                         {
                             match composio_prefetch(goal).await {
                                 Some((prefetch_block, index)) => {
-                                    eprintln!(
+                                    tracing::info!(
                                         "[plan_task] composio prefetch (lazy): {} toolkit(s) [{}] injected",
                                         index.len(),
                                         {
@@ -1440,7 +1440,7 @@ via the always-available `session_step_results` tool. If the goal depends on det
                             );
                         }
                         if let Some(rejection) = gate_rejection {
-                            eprintln!(
+                            tracing::info!(
                                 "[plan_task] plan rejected (composio gate): {rejection}"
                             );
                             if repairs_used < 2 {
@@ -1491,7 +1491,7 @@ via the always-available `session_step_results` tool. If the goal depends on det
                                         .collect()
                                 })
                                 .unwrap_or_default();
-                            eprintln!(
+                            tracing::info!(
                                 "[plan_task] plan rejected (repair {repairs_used}/2): {plan_err} — tools used: {}",
                                 used_tools.join(", ")
                             );
@@ -1562,7 +1562,7 @@ via the always-available `session_step_results` tool. If the goal depends on det
                     {
                         match composio_prefetch(goal).await {
                             Some((prefetch_block, index)) => {
-                                eprintln!(
+                                tracing::info!(
                                     "[plan_task] composio prefetch: {} toolkit(s) [{}] injected",
                                     index.len(),
                                     {
@@ -1602,7 +1602,7 @@ via the always-available `session_step_results` tool. If the goal depends on det
         // the tail too, or the model repeats a slip the head-only excerpt
         // never showed it.
         let tail_shown = planner_response_tail(&raw, 300);
-        eprintln!(
+        tracing::info!(
             "[plan_task] round {calls}: off-protocol ({len} chars), begins: `{shown}`, ends: `{tail_shown}`",
             len = raw.len()
         );
@@ -1788,7 +1788,7 @@ pub fn parse_supervisor_plan_scoped(
                 .iter()
                 .any(|k| goal.contains(k));
             if !slide_intent {
-                eprintln!(
+                tracing::info!(
                     "[supervisor] finalWriter \"deck_writer\" stripped — goal has no slide/deck/presentation intent"
                 );
                 plan.final_writer = None;
@@ -1796,7 +1796,7 @@ pub fn parse_supervisor_plan_scoped(
         },
         Some(WRITER_DELIVERABLE) => {},
         Some(other) => {
-            eprintln!(
+            tracing::info!(
                 "[supervisor] unknown finalWriter \"{other}\" — using the default markdown writer"
             );
             plan.final_writer = None;
@@ -3929,7 +3929,7 @@ pub(crate) async fn build_registry_from_toolset(
                     memo.insert_raw(&row.tool, &row.args_key, row.output, artifacts);
                 }
                 if resumed > 0 {
-                    eprintln!(
+                    tracing::info!(
                         "[supervisor] resume seed: {resumed} persisted step result(s) for plan {plan_key}"
                     );
                 }
@@ -3973,7 +3973,7 @@ pub(crate) async fn build_registry_from_toolset(
             // step actually executed with (invented slugs / wrong args were
             // previously invisible — neither the plan record nor stepStarted
             // persists arguments).
-            eprintln!(
+            tracing::info!(
                 "[supervisor] dispatch step={} tool={name} args={}",
                 call.step.id,
                 preview_chars(&args, 200)
@@ -4512,7 +4512,7 @@ fn log_scheduler_event(stream_id: &str, event: kawai_router::SchedulerEvent) -> 
             format!("stepCompleted step={step_id} output_len={} retries={retries_used}", output.len())
         }
         kawai_router::SchedulerEvent::StepFailed { step_id, error, kind, .. } => {
-            // WARN here on purpose: the label below is an `eprintln!`, which
+            // WARN here on purpose: the label below is an `tracing::info!`, which
             // never reaches Loki, and this is the single choke point every
             // workflow's step failures flow through (security audit, futures
             // audits, screener, desk) — without it a failing step on a phone
@@ -4531,7 +4531,7 @@ fn log_scheduler_event(stream_id: &str, event: kawai_router::SchedulerEvent) -> 
             format!("stepSkipped step={step_id} reason={reason}")
         }
     };
-    eprintln!("[supervisor] {label}");
+    tracing::info!("[supervisor] {label}");
     match event {
         kawai_router::SchedulerEvent::StepStarted { step_id, tool } => {
             SupervisorEvent::StepStarted { step_id, tool }
@@ -4921,7 +4921,7 @@ async fn revise_plan(
     user_id: &str,
     run_span: Option<&Arc<Mutex<kawai_telemetry::TelemetrySpan>>>,
 ) -> Result<kawai_router::TaskPlan, String> {
-    eprintln!("[supervisor] revise_plan: entered (reason={} chars)", reason.len());
+    tracing::info!("[supervisor] revise_plan: entered (reason={} chars)", reason.len());
     // The repair mandate is surgical: only the failed subgraph may change.
     let repairable = repairable_step_ids(original, result);
     let repairable_list: Vec<&str> = original
@@ -4998,7 +4998,7 @@ async fn revise_plan(
 
     for round in 0..2 {
         let mut raw = String::new();
-        eprintln!(
+        tracing::info!(
             "[supervisor] revise round {round}: calling planner (materials={} chars)",
             materials.len()
         );
@@ -5028,7 +5028,7 @@ async fn revise_plan(
                 tracing::warn!(component = "supervisor", "revise round {round}: watchdog fired (300s), raw so far: {} chars", raw.len());
                 return Err(format!("revised-planner call did not finish in 300s: {e}"));
             }
-            eprintln!(
+            tracing::info!(
                 "[supervisor] revise round {round}: planner returned {} chars, parsing",
                 raw.len()
             );
@@ -5049,7 +5049,7 @@ async fn revise_plan(
                 let mut plan = plan;
                 let restored = restore_frozen_steps(&mut plan, original, &repairable);
                 if !restored.is_empty() {
-                    eprintln!(
+                    tracing::info!(
                         "[supervisor] revise round {round}: frozen-step drift auto-restored: {}",
                         restored.join(", ")
                     );
@@ -5068,7 +5068,7 @@ async fn revise_plan(
                 return Err("revised plan had no steps".into());
             }
             Err(plan_err) => {
-                eprintln!(
+                tracing::info!(
                     "[supervisor] revise round {round}: plan rejected: {plan_err}; raw: {raw}"
                 );
                 if round == 0 {
@@ -6002,7 +6002,7 @@ async fn synthesize_deck(
                 } else {
                     step_result.output.clone()
                 };
-                eprintln!(
+                tracing::info!(
                     "[supervisor] deck writer round {round}: tool error — {error}"
                 );
                 task.push_str(&format!(
@@ -6391,7 +6391,7 @@ pub fn execute_plan_stream_with_cancel(
             }
             match result {
                 Ok(result) => {
-                    eprintln!(
+                    tracing::info!(
                         "[supervisor] plan terminal: results={} all_completed={} final_output={:?}",
                         result.results.len(),
                         result.all_completed(),
@@ -6699,7 +6699,7 @@ pub fn execute_plan_stream_with_cancel(
                                 failed_step_ids: failed_ids.clone(),
                                 attempt: replan_attempt,
                             };
-                            eprintln!(
+                            tracing::info!(
                                 "[supervisor] replanning (attempt {replan_attempt}/{MAX_REPLANS}): {reason}"
                             );
                             match revise_plan(
