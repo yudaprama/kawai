@@ -887,19 +887,15 @@ pub async fn plan_task(
                     Err(e) => {
                         // A template whose builder cannot run must not fail
                         // the submit — the planner takes over — but the
-                        // reason must be searchable, not a local stderr line
-                        // (AGENTS.md: `tracing::info!` never reaches Grafana). The
-                        // paired `route_log` row carries source="fallback";
-                        // this warn carries WHY.
+                        // reason must be searchable remotely, not only in the
+                        // local app.log: this warn ships to Grafana (Loki
+                        // layer) and carries WHY with structured fields. The
+                        // paired `route_log` row carries source="fallback".
                         tracing::warn!(
                             component = "supervisor",
                             template = template.id,
                             error = %e,
                             "template build failed — falling back to the planner"
-                        );
-                        tracing::info!(
-                            "[supervisor] template {} build failed ({e}) — falling back to the planner",
-                            template.id
                         );
                         logged = Some(("plan", None, "fallback", None));
                     }

@@ -151,7 +151,7 @@ jobs:
       build_apk: true
       attach_release: true
       upload_play: false
-      loki_level: ${{ inputs.loki_level || 'warn' }}
+      loki_level: ${{ inputs.loki_level || 'info' }}
       native_artifact: litert-android-native
     secrets: inherit
 
@@ -167,6 +167,6 @@ jobs:
       build_apk: true
       attach_release: false
       upload_play: true
-      loki_level: ${{ inputs.loki_level || 'warn' }}
+      loki_level: ${{ inputs.loki_level || 'info' }}
       native_artifact: litert-android-native
     secrets: inherit
