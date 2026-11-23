@@ -5,6 +5,7 @@ import { renderStepReport } from "@/features/workbench/components/tool-views";
 import { renderMexcFuturesFillSync, renderVenueFillsImport } from "@/components/ai-elements/tool-renderers/accounting";
 import { renderDataFetch } from "@/components/ai-elements/tool-renderers/data";
 import { renderSecurityScan } from "@/components/ai-elements/tool-renderers/security";
+import { renderNeurosploitAudit } from "@/components/ai-elements/tool-renderers/neurosploit";
 import {
   renderCivitaiImage,
   renderCivitaiWorkflow,
@@ -411,6 +412,73 @@ describe("dispatch gate: security tools claim their output", () => {
 
   it("refuses a foreign payload instead of half-rendering it", () => {
     expect(renderSecurityScan({ kind: "audit_data", target: "x" })).toBeNull();
+  });
+});
+
+/** neurosploit_audit output, verbatim from the envelope contract in
+ * PLAN-neurosploit.md §6 — the flat kind-tagged JSON the harness agent tool
+ * emits on its terminal `result` event. */
+const NEUROSPLOIT_AUDIT = {
+  kind: "neurosploit_audit",
+  target: "https://example.com",
+  timedOut: false,
+  resumable: false,
+  workdir: "/Users/dev/.kawai/neurosploit/run-1",
+  durationMs: 1540000,
+  summary: { confirmed: 1, needsReview: 1, total: 2 },
+  findings: [
+    {
+      title: "Reflected XSS in search parameter",
+      severity: "high",
+      confidence: "confirmed",
+      cwe: "CWE-79",
+      cvss: "8.1",
+      url: "https://example.com/search?q=<img%20src=x>",
+      evidence: "<img src=x onerror=alert(1)> reflected without encoding.",
+      impact: "Session hijack of a browsing user.",
+      remediation: "Context-encode user input before reflection.",
+      validated: true,
+    },
+    {
+      title: "Missing Content-Security-Policy",
+      severity: "low",
+      confidence: "possible",
+      cwe: "CWE-693",
+      cvss: "3.7",
+      url: "https://example.com/",
+      evidence: "No CSP header on the root document.",
+      impact: "Raises the impact of any injected script.",
+      remediation: "Deploy a restrictive CSP.",
+      validated: false,
+    },
+  ],
+  agentsRan: ["recon-agent"],
+  usage: { calls: 14, inputTokens: 91200, outputTokens: 31200 },
+  truncated: false,
+};
+
+describe("dispatch gate: neurosploit_audit claims its output", () => {
+  it("renders a card, never the fallback", () => {
+    const node = renderStepReport("neurosploit_audit", JSON.stringify(NEUROSPLOIT_AUDIT));
+    expect(node, "neurosploit_audit fell through to the generic fallback").not.toBeNull();
+    expect(JSON.stringify(node)).toContain("Reflected XSS");
+  });
+
+  it("renders through the chat registry too", () => {
+    expect(renderNeurosploitAudit(NEUROSPLOIT_AUDIT)).not.toBeNull();
+  });
+
+  it("shows the timed-out banner with the resumable workdir", () => {
+    const node = renderNeurosploitAudit({ ...NEUROSPLOIT_AUDIT, timedOut: true, resumable: true });
+    expect(node).not.toBeNull();
+    // The banner is a custom component — assert its props, not flattened text.
+    const banner = JSON.stringify(node).match(/"props":\{"workdir":"[^"]*","resumable":true/);
+    expect(banner?.[0], "no resumable banner in the rendered tree").toBeTruthy();
+    expect(banner?.[0]).toContain("run-1");
+  });
+
+  it("refuses a foreign payload instead of half-rendering it", () => {
+    expect(renderNeurosploitAudit({ kind: "security_scan", target: "x", findings: [] })).toBeNull();
   });
 });
 

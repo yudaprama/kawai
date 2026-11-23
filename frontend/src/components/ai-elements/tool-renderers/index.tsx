@@ -34,6 +34,7 @@ import {
 } from "./accounting";
 import { renderSecurityModules, renderSecurityScan } from "./security";
 import { renderCivitaiImage, renderCivitaiWorkflow, renderCivitaiSubmit } from "./media-generation";
+import { renderNeurosploitAudit } from "./neurosploit";
 
 // ---------------------------------------------------------------------------
 // registry
@@ -133,6 +134,7 @@ const registry: Record<string, ToolRenderer> = {
   security_recon: renderSecurityScan,
   security_subdomains: renderSecurityScan,
   security_modules: renderSecurityModules,
+  neurosploit_audit: renderNeurosploitAudit,
   media_generate_image: renderCivitaiImage,
   media_video_fetch: renderCivitaiWorkflow,
   media_music_fetch: renderCivitaiWorkflow,
@@ -178,6 +180,7 @@ type IconName = string;
 /** Ordered [predicate, icon] — first match wins. Keeps new tools covered. */
 const iconRules: Array<[(name: string) => boolean, IconName]> = [
   [(n) => n.startsWith("security_"), "shield"],
+  [(n) => n.startsWith("neurosploit"), "shield"],
   [(n) => n.startsWith("media_"), "sparkles"],
   [(n) => /^data_/.test(n), "bar-chart-3"],
   [(n) => /web_search|^search$/.test(n), "search"],

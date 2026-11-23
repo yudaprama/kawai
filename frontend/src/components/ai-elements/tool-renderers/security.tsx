@@ -74,8 +74,9 @@ function readFinding(v: unknown): Finding | null {
   };
 }
 
-/** Micro slot-label — gives evidence/remediation fixed visual slots, independent of content shape. */
-function SectionTag({ children }: { children: string }) {
+/** Micro slot-label — gives evidence/remediation fixed visual slots, independent of content shape.
+ *  Exported for sibling renderers (neurosploit) that reuse the card contract. */
+export function SectionTag({ children }: { children: string }) {
   return (
     <div className="text-muted-foreground/60 text-[10px] font-medium tracking-wide uppercase">
       {children}
@@ -88,7 +89,7 @@ function SectionTag({ children }: { children: string }) {
  * toggle only renders once the CSS clamp actually truncates (scrollHeight >
  * clientHeight), and reveals the full text in place.
  */
-function ClampedSection({
+export function ClampedSection({
   label,
   text,
   clampClass,

@@ -73,6 +73,7 @@ import {
 } from "@/components/ai-elements/tool-renderers/finance";
 import { renderDeskData } from "@/components/ai-elements/tool-renderers/desk";
 import { renderSecurityModules, renderSecurityScan } from "@/components/ai-elements/tool-renderers/security";
+import { renderNeurosploitAudit } from "@/components/ai-elements/tool-renderers/neurosploit";
 import {
   renderCivitaiImage,
   renderCivitaiWorkflow,
@@ -324,6 +325,7 @@ const registry: Record<string, StepView> = {
   security_recon: (p) => renderSecurityScan(p),
   security_subdomains: (p) => renderSecurityScan(p),
   security_modules: (p) => renderSecurityModules(p),
+  neurosploit_audit: (p) => renderNeurosploitAudit(p),
 
   // media generation (builtin.generator, Civitai-backed) — image one-shot + submit/fetch lanes
   media_generate_image: (p) => renderCivitaiImage(p),
