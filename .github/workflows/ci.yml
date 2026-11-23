@@ -271,6 +271,14 @@ jobs:
         run: cargo test -p binance
         working-directory: crates
 
+      # Security toolset: the scan-budget contract — a run's deadline clamps
+      # every request and stops new module dispatch, so a slow target returns
+      # partial findings instead of an error; plus the audit plan's step
+      # budget/wiring (recon once, scans skip the recon baseline).
+      - name: cargo test (crates/toolsets/security-tools)
+        run: cargo test -p security-tools
+        working-directory: crates
+
       # Recap cron (billing Variant A): unit test aritmetika uang (base/cursor/
       # rebase/unattributed) + truncate char-boundary — murni offline.
       - name: cargo test (crates/ops/recap)

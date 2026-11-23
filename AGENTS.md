@@ -701,9 +701,22 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
     auto-approved — `requires_confirmation` is false, category → module groups shared with lonkero's
     own AI agent via `lonkero::groups`), `security_modules` (catalog), and
     `security_subdomains` (DNS enum). All scans run in-process on a dedicated
-    thread (engine future is `!Send`) under a 240s tool budget and return
-    flat, `kind`-tagged envelopes the chat + workbench registries render as
-    severity-sorted finding cards (`registry-coverage.test.ts` gates them).
+    thread (engine future is `!Send`) and return flat, `kind`-tagged envelopes
+    the chat + workbench registries render as severity-sorted finding cards
+    (`registry-coverage.test.ts` gates them). **The 240s work budget is
+    enforced INSIDE the engine** (`lonkero::budget::ScanBudget`, wired into
+    `ScanConfig.budget`): every request clamps its own timeout to the time
+    left (`HttpClient::budgeted`) and `should_run_module` /
+    `should_run_any_module` stop dispatching new scanners at the deadline, so
+    a slow target finishes and returns the findings it collected with
+    `earlyTerminated: true` + `terminationReason` instead of a timeout that
+    throws them away (a failed step aborts the rest of a fixed pipeline).
+    `SCAN_BACKSTOP` (budget + 60s) is the only outer guard, and it exists for
+    a genuinely wedged engine — that is the one case reported as an error.
+    The budget is opt-in (`Option`, `#[serde(skip)]`), so the lonkero CLI
+    stays unbounded. Recon's wordlist sweeps (sensitive files, debug
+    endpoints) probe with bounded concurrency (`PROBE_CONCURRENCY = 8`) —
+    serially they alone could spend a whole budget on a high-latency client.
     Persona = kawai loop rules + authorized-targets directive + SMAC-5
     hostile-output rule composed with `lonkero::ai::system_prompt::
     methodology_prompt` (one methodology source for both hosts).
@@ -719,6 +732,18 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
     `/api/run_security_audit`; the `plan_task`-proving probe is
     `cargo run --example security_plan_smoke --features litert,security`
     from `src-tauri/`, whose optional `-- <target>` arg audits that site —
-    the nightly windows-smoke audits https://kawai.pro). Deferred: session-pinned
+    the nightly windows-smoke audits https://kawai.pro). One audit pays the
+    passive baseline once: the recon step runs it, and every scan step passes
+    `includeRecon: false` so the same ~165 discovery requests are not spent
+    again per category. Scans also set `endpoint_discovery: false` — the
+    wordlist discovery phase is ~1000 GETs and belongs to site-wide crawls,
+    not a targeted endpoint test. The plan's step budget derives from
+    `SCAN_BACKSTOP`, and `scan_steps_skip_the_recon_baseline` deserializes
+    the step args through the tool's own (camelCase) arg struct so a flag the
+    tool silently ignores fails the build instead of re-running the baseline.
+    The budget/concurrency contract is pinned by
+    `crates/toolsets/security-tools/tests/scan_budget.rs` (lonkero's own test
+    target does not compile — its vendored `#[cfg(test)]` modules are stale),
+    run in CI by `cargo test -p security-tools`. Deferred: session-pinned
     scope registry (`lonkero::scope` extraction exists), scan-progress
     streaming, persisted reports, Android.
