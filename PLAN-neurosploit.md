@@ -189,7 +189,8 @@ feature), `kawai-tools`, `kawai-agent-contract`, `serde`, `serde_json`, `tokio`.
   "kawai:venice/deepseek-v4.1-flash"]` (failover order = pool priority),
   `vote_n`, `concurrency`, `workdir = <data_root>/<user_id>/neurosploit/runs/ns-<ts>-<target>`,
   `pivot_proxy` untouched (off), no `oob_domain`, no `neo4j`, `scope` locked to
-  the target origin, and `Library::load_embedded()`.
+  the target origin, and the agent library root passed in from
+  `neurosploit_agents::agents_md_dir` (runtime-fetch design, §3 P1).
 - **Envelope** (flat, `kind` discriminator — repo rule):
 
 ```json
@@ -198,14 +199,17 @@ feature), `kawai-tools`, `kawai-agent-contract`, `serde`, `serde_json`, `tokio`.
   "summary": { "confirmed": 3, "needsReview": 2, "total": 5 },
   "findings": [ { "title", "severity", "confidence", "cwe", "cvss", "url",
                   "evidence", "impact", "remediation", "validated": true } ],
-  "agentsRan": ["…"], "usage": { "calls": 0, "inputTokens": 0, "outputTokens": 0 } }
+  "agentsRan": ["…"], "usage": { "calls": 0, "input": 0, "output": 0 } }
 ```
 
-  Finding fields are the producer's `Finding` fields flattened (fixture comes
-  from a real run — §8). `severity/confidence/evidence/cwe/remediation` match
-  the security card contract so the renderer work is additive. Findings are
-  capped inline (top 25 + `truncated: true`) — a full engagement can emit
-  hundreds; the report stays on disk.
+  Producer notes (from the `Finding` serde shape): `confidence` is f64
+  0.0–1.0; the harness field is `endpoint` — the envelope maps it to `url`
+  for the security-card contract; `usage` reuses the harness `Usage` keys
+  verbatim. Finding fields are the producer's `Finding` fields flattened
+  (fixture comes from a real run — §8). `severity/confidence/evidence/cwe/
+  remediation` match the security card contract so the renderer work is
+  additive. Findings are capped inline (top 25 + `truncated: true`) — a full
+  engagement can emit hundreds; the report stays on disk.
 - **`plan.rs` — `build_neurosploit_audit_plan(target, budget, language)`.**
   Domain-crate builder per the checklist: one recon-skipping step (the harness
   does its own recon) dispatching `neurosploit_audit`, `timeout_ms = AUDIT_BACKSTOP
@@ -335,9 +339,9 @@ per-step debugging.
 |---|---|---|---|
 | 0 | Vendor to `crates/NeuroSploit`, workspace exclude, branch `kawai/core` | submodule gitlink pinned `e38381f`, pushed | ✅ 2026-11-24 |
 | 1 | Harness patches P5–P3 (P1 superseded, see §3) | five commits on `kawai/core` (yudaprama/NeuroSploit), triple cargo-check green | ✅ 2026-11-24 |
-| 2 | `neurosploit-tools` crate + fixture + tests | `cargo test -p neurosploit-tools` | — |
+| 2 | `neurospilot-tools` crate + fixture + tests | `cargo test` 8/8 (staging harness-tree @ e38381f); committed `179f39d` — workspace member registration + canonical-path compile land once the concurrent automation stops deleting the vendored worktree | ✅ code 2026-11-24 |
 | 3 | src-tauri feature + streaming op + supervisor + template + catalog | plan_task e2e (offline) | — |
-| 4 | Frontend registries + cards + coverage test | `bun run build`, UI run against local target | — |
+| 4 | Frontend registries + cards + coverage test | `neurosploit.tsx` in both registries, coverage 46/46, typecheck+build green, commit `e4111c2` | ✅ 2026-11-24 |
 | 5 | Docs + manual gateway smoke | AGENTS.md/ARCHITECTURE updated, ledger delta observed | — |
 
 Rough size: Phase 1 is the deep end (P3 touches ~10 files); Phases 2–4 are the
