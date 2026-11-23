@@ -336,7 +336,19 @@ fn establish_local_session(email: &str, session: State<'_, Session>) -> Result<U
     // gateway. Published HERE (not in `persist_token`, which the multi-user
     // web server also runs) so the ambient credential never crosses accounts.
     if let Some(token) = logic::local_auth::stored_token(email) {
-        remote_llm::set_gateway_bearer(Some(token));
+        remote_llm::set_gateway_bearer(Some(token.clone()));
+        // The NeuroSploit harness calls the SAME OpenAI-compatible gateway
+        // (`/v1` passthrough) as remote-llm's gateway tier — same worker URL
+        // source, same bearer. Without this injection a deep audit would run
+        // its own model pool keyless and fail on the first generation call.
+        #[cfg(feature = "neurosploit")]
+        {
+            harness::set_gateway_endpoint(Some(format!(
+                "{}/v1",
+                logic::local_auth::worker_base_url()
+            )));
+            harness::set_gateway_bearer(Some(token));
+        }
     }
     Ok(logic::whoami(email))
 }
@@ -377,8 +389,15 @@ fn clear_local_session(session: &Session, email: &str) {
     let _ = std::fs::remove_file(kawai_paths::last_session());
     kawai_telemetry::set_current_user(None);
     // Same funnel for the gateway tier: a torn-down session must not keep
-    // funding remote-llm's gateway candidates.
+    // funding remote-llm's gateway candidates — or the harness's deep-audit
+    // pool, which would otherwise carry a revoked bearer into the next
+    // account's run.
     remote_llm::set_gateway_bearer(None);
+    #[cfg(feature = "neurosploit")]
+    {
+        harness::set_gateway_endpoint(None);
+        harness::set_gateway_bearer(None);
+    }
 }
 
 /// Requires an active session. Demonstrates the auth-required pattern: the
@@ -2600,6 +2619,48 @@ pub async fn run_security_audit(
         &target,
         categories,
         intensity.as_deref(),
+        language.as_deref(),
+        None,
+    )
+    .await
+    .map_err(|e| e.message().to_string())?;
+    ctx.run_prepared(run, stream_id, on_event, &pending)
+        .await
+}
+
+/// NeuroSploit Deep Audit: ONE confirmation-gated autonomous engagement
+/// (recon → specialist agents → wire-validated exploitation → cross-model
+/// voting) through the vendored harness, in-process. Every run is
+/// remote-gateway spend (eco budget ≈120k tokens) — the confirmation gate
+/// the executor forces before dispatch IS the price path. The plan builder
+/// carries the server-supplied workdir + verified agent-library root; the
+/// model can supply neither.
+#[cfg(all(feature = "litert", feature = "neurosploit"))]
+#[tauri::command]
+pub async fn run_neurosploit_audit(
+    session_id: i64,
+    target: String,
+    budget: Option<String>,
+    // Continue the previous (timed-out) run for this user instead of
+    // re-spending: the supervisor reuses the newest run dir, and the harness
+    // resumes from its incremental snapshot.
+    resume: Option<bool>,
+    // Raw locale tag (the app's active language, e.g. "id") — resolved into the
+    // report's output language at this edge.
+    language: Option<String>,
+    stream_id: String,
+    on_event: Channel<kawai_events::SupervisorEvent>,
+    registry: State<'_, StreamRegistry>,
+    session: State<'_, Session>,
+    pending: State<'_, crate::supervisor::PendingConfirmations>,
+) -> Result<(), String> {
+    let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
+    let run = crate::supervisor::prepare_neurosploit_audit_run(
+        &ctx.user_id,
+        session_id,
+        &target,
+        budget.as_deref(),
+        resume.unwrap_or(false),
         language.as_deref(),
         None,
     )

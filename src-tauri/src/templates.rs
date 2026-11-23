@@ -225,6 +225,8 @@ pub static TEMPLATES: &[&PlanTemplate] = &[
     &TRADING_PERFORMANCE,
     #[cfg(feature = "security")]
     &SECURITY_AUDIT,
+    #[cfg(feature = "neurosploit")]
+    &NEUROSPLOIT_AUDIT,
 ];
 
 /// Security Audit — the fixed pipeline over one target: passive recon, then
@@ -277,6 +279,75 @@ static SECURITY_AUDIT: PlanTemplate = PlanTemplate {
     // `security_recon`/`security_scan` ride the merged catalog.
     registry_kind: PlanRegistryKind::Auto,
     build: build_security_audit,
+};
+
+/// NeuroSploit Deep Audit — the HEAVY lane beside the fast `security_audit`
+/// template: ONE autonomous multi-model engagement per target instead of the
+/// deterministic triad. Claimed by deep-audit idioms only ("pentest" stays
+/// with the fast lane — a routed "pentest" without the word "deep" must not
+/// silently price a 45-minute engagement). Routed runs carry no user-scoped
+/// state, so the build binds the SHARED agent-library root and a fresh run
+/// workdir; the streaming ops re-resolve both per user.
+#[cfg(feature = "neurosploit")]
+static NEUROSPLOIT_SLOT_URL: Slot = Slot {
+    name: "url",
+    required: true,
+    hint: "the origin to deep-audit, e.g. https://example.com",
+};
+
+#[cfg(feature = "neurosploit")]
+fn build_neurosploit_audit(slots: &ResolvedSlots) -> Result<TaskPlan, String> {
+    let base = kawai_paths::data_root();
+    // Routed runs have no ensure step, and the builder refuses a missing
+    // library root. Materialize the (empty) directory so the plan BUILDS:
+    // an empty library makes the harness fail fast with guidance at dispatch
+    // time instead of failing the route — and the first streaming op run
+    // fetches the real library via `ensure_agents_md`.
+    let _ = std::fs::create_dir_all(base.join("agents_md"));
+    let url = slots.get("url").unwrap_or_default();
+    let host = url
+        .trim_start_matches("http")
+        .trim_start_matches("s://")
+        .trim_start_matches("://")
+        .split('/')
+        .next()
+        .unwrap_or("target")
+        .replace([':', '.'], "_");
+    let workdir = base
+        .join("neurosploit")
+        .join("runs")
+        .join(format!("ns-{}-{host}", chrono::Utc::now().timestamp()));
+    neurosploit_tools::plan::build_neurosploit_audit_plan(
+        slots.get("url").unwrap_or_default(),
+        // Routed runs stay on the eco budget: budget escalation happens in
+        // the workbench form, never from free text.
+        None,
+        workdir,
+        base,
+        slots.get("language"),
+    )
+}
+
+#[cfg(feature = "neurosploit")]
+static NEUROSPLOIT_AUDIT: PlanTemplate = PlanTemplate {
+    id: "neurosploit_audit",
+    purpose: "deep autonomous security audit of one target: multi-agent engagement with validated exploitation (confirmation-gated, up to ~120k gateway tokens)",
+    // "deep audit" idioms only — every plain "audit"/"pentest" phrase stays
+    // with the fast security_audit template (or accounting).
+    keywords: &[
+        "deep audit",
+        "deep security audit",
+        "deep pentest",
+        "neurosploit",
+        "audit mendalam",
+        "pengujian keamanan mendalam",
+    ],
+    requires_literal: true,
+    market_bound: false,
+    slots: &[NEUROSPLOIT_SLOT_URL],
+    // `neurosploit_audit` rides the merged catalog.
+    registry_kind: PlanRegistryKind::Auto,
+    build: build_neurosploit_audit,
 };
 
 pub fn registry() -> TemplateRegistry<'static> {

@@ -278,8 +278,15 @@ pub fn restore_session() -> Option<String> {
         return None;
     }
     // Restored bearer unlocks the worker's model-routed LLM gateway until the
-    // next teardown (`clear_local_session`) or sign-in refresh.
-    remote_llm::set_gateway_bearer(Some(token));
+    // next teardown (`clear_local_session`) or sign-in refresh. The NeuroSploit
+    // harness pool rides the SAME gateway (same worker URL source, same
+    // bearer) — see `commands::establish_local_session` for the sign-in twin.
+    remote_llm::set_gateway_bearer(Some(token.clone()));
+    #[cfg(feature = "neurosploit")]
+    {
+        harness::set_gateway_endpoint(Some(format!("{}/v1", worker_base_url())));
+        harness::set_gateway_bearer(Some(token));
+    }
     Some(email)
 }
 

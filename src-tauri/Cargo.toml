@@ -105,6 +105,16 @@ mexc = { path = "../crates/toolsets/mexc", optional = true }
 # (in-process standalone pipeline, no Redis) exposed as recon/scan/catalog/
 # subdomain AgentTools.
 security-tools = { path = "../crates/toolsets/security-tools", optional = true }
+# NeuroSploit deep-audit toolset (builtin.security heavy lane) + its agent
+# library fetcher (lazy-on-use `agents_md` download). Desktop only: every run
+# is remote-gateway spend and the harness ships no Android graph.
+neurosploit-tools = { path = "../crates/toolsets/neurosploit-tools", optional = true }
+neurosploit-agents = { path = "../crates/integrations/neurosploit-agents", optional = true }
+# The harness's injected gateway globals (`set_gateway_endpoint` /
+# `set_gateway_bearer`) are set at the session edges in commands.rs +
+# logic/local_auth.rs — the same rule as `remote_llm::set_gateway_bearer` —
+# so the shell needs the crate directly, not only through the toolset.
+harness = { package = "neurosploit-harness", path = "../crates/NeuroSploit/neurospilot-rs/crates/harness", optional = true, default-features = false, features = ["core"] }
 # CodeGraph agent tools (opt-in `codegraph` feature): LRU-cached sidecar CLI
 # explore/status, shared with the AgentTool surface in agent_registry.
 codegraph = { path = "../crates/toolsets/codegraph", optional = true }
@@ -225,6 +235,10 @@ accounting = ["dep:accounting-tools"]
 # openssl chain is vendored for the android target. Authenticated-scan login
 # and PDF report generation degrade to erroring stubs there by design.
 security = ["dep:security-tools"]
+# NeuroSploit deep audit (builtin.security heavy lane): the vendored harness
+# in-process + the lazy agent-library fetch. Desktop lane (rides
+# release-desktop); NOT in the kawai-web binary feature set.
+neurosploit = ["dep:neurosploit-tools", "dep:neurosploit-agents", "dep:harness"]
 # CodeGraph — sidecar-only explore/status tools + ops (zero cost off; the
 # gated code paths in logic::codegraph + agent_registry compile only here).
 codegraph = ["dep:codegraph"]
@@ -255,7 +269,7 @@ tts = ["dep:supertonic"]
 # Chromium executable exists in the app sandbox — Chrome ships as an APK;
 # targetSdk 29+ forbids exec from writable dirs) and its openssl chain is
 # vendored for the android target.
-release-desktop = ["litert", "tts", "binance", "accounting", "security"]
+release-desktop = ["litert", "tts", "binance", "accounting", "security", "neurosploit"]
 release-android = ["release-desktop"]
 # Play-distributed Android build: identical feature set + the IAP top-up
 # channel (tauri-plugin-iap). Play policy requires digital goods to go

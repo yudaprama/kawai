@@ -439,6 +439,9 @@ crates/toolsets/binance/         # Binance agent tools (feature `binance`): mark
 crates/toolsets/mexc/            # MEXC agent tools (feature `mexc`): fills sync into the same venue-keyed history; own keys only
 crates/toolsets/security-tools/  # Security agent tools (feature `security`, builtin.security): recon / targeted scan / module catalog / subdomain enum over the vendored lonkero engine — in-process (`lonkero::standalone::run_scan` on a dedicated thread; the engine future is !Send), flat kind-tagged envelopes, `security_scan` auto-approved (`requires_confirmation = false`). Smokes: `cargo run -p security-tools --example security_smoke` (tool loop vs a local vulnerable server) and, from `src-tauri/`, `cargo run --example security_plan_smoke --features litert,security` (plan → merged registry → confirmation policy → scheduler, real scans vs the same kind of local target; an optional `-- <target>` arg audits that site instead — the nightly windows-smoke audits https://kawai.pro)
 crates/lonkero/                  # vendored web-security scanner (own .git, excluded from the crates workspace): 127 modules behind `lonkero_scanner`; lib seams = `standalone::run_scan` (the one end-to-end pipeline, no Redis), `groups` (category→module IDs, shared with `ai::tools`), `scope::ScopeConfig`, `ai::system_prompt::methodology_prompt` (persona source for builtin.security). Its vendored #[cfg(test)] modules are pre-broken (stale vs current APIs) — `cargo test` is not a usable gate here; compile with `cargo check --lib --bins`
+crates/NeuroSploit/              # vendored NeuroSploit upstream (submodule inside the crates repo, workspace-excluded; origin = yudaprama/NeuroSploit, branch `kawai/core` @ e38381ff): the deep-audit harness — kawai patches add the kawai-gateway provider + bearer injection, the `core` feature (c2/webshell/pivot/sandbox/browser/neo4j/mcp compiled out), workdir-scoped caches, reqwest 0.13, and a usage-snapshot API
+crates/integrations/neurosploit-agents/ # downloads + verifies the NeuroSploit `agents_md/` specialist library at a pinned commit ref (lazy-on-use `ensure_agents_md`, per-user dir, truncated-tree refusal)
+crates/toolsets/neurospilot-tools/ # the `neurosploit_audit` deep-audit AgentTool + single-step plan builder (feature `neurospilot`; confirmation-gated, token-budgeted, 45-min backstop, resumable envelopes, process-global run slot, usage delta metering)
 crates/                          # split-out first-party crates (foundation / engines / toolsets / integrations / generated-tools / vendor); crates/vendor/accounting-core is a vendored copy of accounting-blue (double-entry ledger + Indian GST) whose invoice PDF renders through pdf_oxide; exposed as the `builtin.accounting` agent via the `accounting` feature and crates/toolsets/accounting
 nautilus_trader/                # submodule, REFERENCE-ONLY: never a workspace member or path dep. nautilus-binance does NOT replace binance-sdk in-app — see PLAN-nautilus-integration.md §5.1
 models/                          # .litertlm model files (gitignored, GB-scale)
@@ -747,3 +750,22 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
     run in CI by `cargo test -p security-tools`. Deferred: session-pinned
     scope registry (`lonkero::scope` extraction exists), scan-progress
     streaming, persisted reports, Android.
+    **Deep-audit lane (NeuroSploit harness, in-process) — wired 2026-11-24.**
+    The same agent also carries `neurosploit_audit` (feature `neurospilot`,
+    desktop runtime; Android gets the compile surface only): an autonomous
+    multi-model engagement — recon → parallel specialist agents →
+    wire-validated exploitation → cross-model voting → chaining — run
+    in-process through the vendored NeuroSploit harness. Confirmation-gated
+    (the confirmation prompt quotes the token ceiling: eco 120k gateway
+    tokens default, vote_n 1, concurrency 4), 45-min wall-clock backstop with
+    resumable envelopes (the harness persists incremental run snapshots and a
+    re-invoke with the same workdir continues instead of re-spending),
+    process-global run slot, usage-ledger delta metering, scope locked to the
+    target origin. The 493-specialist markdown agent library is fetched at a
+    pinned commit ref by `neurosploit-agents` and verified before every run.
+    Tool registration requires the remote tier (the deep_write rule).
+    Router template `neurosploit_audit`; fixed op `run_neurosploit_audit`
+    (both wrappers). Design + phase status: PLAN-neurosploit.md — wiring is
+    compile-verified (desktop + web + default gates); the live gateway smoke
+    (one real eco-budget run against a user-owned target, ledger delta
+    observed) is the remaining acceptance step.

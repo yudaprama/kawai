@@ -356,6 +356,11 @@ pub fn accounting_tools_for_supervisor(
 /// Security: the vendored lonkero engine as recon/scan/catalog/subdomain
 /// tools, plus the runtime cross-cutting set (deep_write serves pentest
 /// report writing when a remote LLM is configured).
+///
+/// With the `neurosploit` feature AND a configured remote tier, the
+/// NeuroSploit deep-audit tool joins the SAME agent's toolset: it is remote-
+/// gateway spend by construction, so no bearer ⇒ no tool — agents can't
+/// discover a run that would fail anyway (the deep_write rule).
 #[cfg(feature = "litert")]
 pub fn security_tools_for_supervisor(
     context: &AgentContext<'_>,

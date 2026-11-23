@@ -122,7 +122,12 @@ pub async fn merged_definitions() -> Result<Vec<ToolDefinition>, String> {
         ),
         (
             "security",
-            kawai_lib::agent_registry::security_tools_for_supervisor(&context, remote_configured),
+            // Catalog variant: the deep-audit tool rides ALWAYS when the
+            // neurosploit feature is on (stub identity — its gateway
+            // credentials are injected at the session edges, never per-user),
+            // so a dev machine without remote env cannot drift the shared
+            // catalog out of coverage.
+            kawai_lib::agent_registry::security_tools_for_catalog(&context, remote_configured),
         ),
         // The generator set carries no per-user gate here on purpose: the
         // catalog variant builds with stub identity (see

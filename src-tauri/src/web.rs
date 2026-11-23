@@ -2734,6 +2734,9 @@ pub fn router(dist_dir: PathBuf) -> Router {
     let protected = protected.route("/api/run_monthly_close", post(run_monthly_close_handler));
     #[cfg(all(feature = "litert", feature = "security"))]
     let protected = protected.route("/api/run_security_audit", post(run_security_audit_handler));
+    #[cfg(all(feature = "litert", feature = "neurosploit"))]
+    let protected =
+        protected.route("/api/run_neurosploit_audit", post(run_neurosploit_audit_handler));
 
     // Title generation — no LLM feature gate; only needs auth + Cloudflare creds.
     let protected = protected.route(
@@ -3329,6 +3332,22 @@ struct RunSecurityAuditRequest {
     stream_id: String,
 }
 
+/// NeuroSploit Deep Audit over the SSE transport — same fixed plan as the
+/// Tauri command. camelCase: the Web-request landmine.
+#[cfg(all(feature = "litert", feature = "neurosploit"))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunNeurosploitAuditRequest {
+    session_id: i64,
+    target: String,
+    /// eco | balanced | aggressive; None → eco.
+    budget: Option<String>,
+    /// Continue the previous (timed-out) run instead of a fresh engagement.
+    resume: Option<bool>,
+    language: Option<String>,
+    stream_id: String,
+}
+
 /// Crypto Screener: the FIXED multi-screen pipeline over public market data —
 /// one parallel `crypto_screener` step per selected screen, then the built-in
 /// deliverable writer. Same fixed-plan contract as the audit: the presets are
@@ -3507,6 +3526,38 @@ async fn run_security_audit_handler(
                 .collect()
         }),
         req.intensity.as_deref(),
+        req.language.as_deref(),
+        headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()),
+    )
+    .await
+    .map_err(fixed_run_status)?;
+    Ok(prepared_sse(
+        run,
+        req.stream_id,
+        user_id,
+        req.session_id,
+        &bearer,
+        pending,
+    ))
+}
+
+/// NeuroSploit Deep Audit over the SSE transport — same fixed plan as the
+/// Tauri command: ONE confirmation-gated autonomous engagement.
+#[cfg(all(feature = "litert", feature = "neurosploit"))]
+async fn run_neurosploit_audit_handler(
+    Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
+    Extension(user_id): Extension<String>,
+    headers: HeaderMap,
+    Json(req): Json<RunNeurosploitAuditRequest>,
+) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
+    let bearer = cookie_bearer(&headers)?;
+    ensure_session(&user_id, req.session_id).await?;
+    let run = crate::supervisor::prepare_neurosploit_audit_run(
+        &user_id,
+        req.session_id,
+        &req.target,
+        req.budget.as_deref(),
+        req.resume.unwrap_or(false),
         req.language.as_deref(),
         headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()),
     )

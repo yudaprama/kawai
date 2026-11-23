@@ -3810,6 +3810,128 @@ pub async fn prepare_security_audit_run(
     Ok(run)
 }
 
+/// NeuroSploit Deep Audit: ONE confirmation-gated autonomous engagement over
+/// one web origin, run in-process through the vendored harness. Unlike the
+/// fast security lane, the plan carries SERVER-SUPPLIED state the model can
+/// never write: the per-user run workdir (fresh or resumed) and the verified
+/// agent-library root — both resolved here, on both transports, so the Tauri
+/// command and the web handler cannot drift.
+///
+/// The agent library is lazy-on-use: `ensure_agents_md` verifies + downloads
+/// only when stale/missing, and a still-incomplete library refuses the run
+/// BEFORE any plan exists (a half-fetched library never reaches the harness).
+#[cfg(all(feature = "litert", feature = "neurosploit"))]
+pub async fn prepare_neurosploit_audit_run(
+    user_id: &str,
+    session_id: i64,
+    target: &str,
+    budget: Option<&str>,
+    resume: bool,
+    language: Option<&str>,
+    accept_language: Option<&str>,
+) -> Result<FixedRun, FixedRunError> {
+    // Library first (network possible): a stale/missing `agents_md/` is
+    // fetched at the pinned ref; an incomplete library refuses the audit.
+    let ensure = neurosploit_agents::ensure_agents_md(Some(user_id))
+        .await
+        .map_err(|e| FixedRunError::Precondition(format!(
+            "agent library unavailable — {e}. Sign in and retry; the first \
+             deep audit downloads the agent library at the pinned ref."
+        )))?;
+    if ensure.downloaded {
+        tracing::info!(
+            component = "supervisor",
+            files = ensure.files,
+            reason = ensure.reason.as_deref().unwrap_or(""),
+            "neurosploit agent library fetched"
+        );
+    }
+
+    let lang = pipeline_language(language, accept_language);
+    // Identity invariant: the workdir is scoped under the caller's data root
+    // (`<data_root>/<user_id>/neurosploit/runs`) — never model-supplied. A
+    // resume reuses the newest run dir for this user; there is nothing to
+    // resume across users, and a missing run dir is a plain op error.
+    let runs_root = kawai_paths::data_root()
+        .join(user_id)
+        .join("neurosploit")
+        .join("runs");
+    let workdir = if resume {
+        newest_run_dir(&runs_root).ok_or_else(|| {
+            FixedRunError::BadInput(
+                "no previous deep-audit run to resume — fire without resume to start one"
+                    .to_string(),
+            )
+        })?
+    } else {
+        let host = target
+            .trim_start_matches("http")
+            .trim_start_matches("s://")
+            .trim_start_matches("://")
+            .split('/')
+            .next()
+            .unwrap_or("target")
+            .replace([':', '.', '@'], "_");
+        runs_root.join(format!(
+            "ns-{}-{host}",
+            chrono::Utc::now().timestamp()
+        ))
+    };
+    // The builder wants the directory CONTAINING `agents_md/`
+    // (`neurosploit_agents::agents_md_dir` is `<data_root>/<user_id>/agents_md`).
+    let agents_base = kawai_paths::data_root().join(user_id);
+    if !agents_base.join("agents_md").is_dir() {
+        return Err(FixedRunError::Precondition(format!(
+            "agent library missing at {} — fetch it before auditing",
+            agents_base.display()
+        )));
+    }
+    std::fs::create_dir_all(&workdir)
+        .map_err(|e| FixedRunError::BadInput(format!("workdir: {e}")))?;
+
+    let plan = neurosploit_tools::plan::build_neurosploit_audit_plan(
+        target.trim(),
+        budget,
+        workdir,
+        agents_base,
+        Some(&lang),
+    )
+    .map_err(FixedRunError::BadInput)?;
+    let user_goal = plan.goal.clone();
+    let registry = build_registry_for_plan(user_id, session_id, &plan)
+        .await
+        .map_err(registry_err)?;
+    let run = FixedRun {
+        plan,
+        user_goal,
+        component: "neurosploit-audit",
+        message: "running neurosploit deep audit",
+        registry,
+        video_id: None,
+        allow_model_revision: false,
+    };
+    log_fixed_run(&run, user_id, session_id);
+    Ok(run)
+}
+
+/// Newest run dir under `runs_root` (the resume target) — the user-scoped
+/// twin of the toolset's `resume_workdir` resolution, which is global.
+#[cfg(all(feature = "litert", feature = "neurosploit"))]
+fn newest_run_dir(runs_root: &std::path::Path) -> Option<std::path::PathBuf> {
+    let mut best: Option<(std::time::SystemTime, std::path::PathBuf)> = None;
+    for entry in std::fs::read_dir(runs_root).ok()?.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let mtime = entry.metadata().and_then(|m| m.modified()).ok()?;
+        if best.as_ref().map_or(true, |(t, _)| mtime > *t) {
+            best = Some((mtime, path));
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
 /// Crypto Screener: one parallel `crypto_screener` step per selected screen.
 /// Strictly public market data — NO credential gate.
 #[cfg(all(feature = "litert", feature = "binance"))]

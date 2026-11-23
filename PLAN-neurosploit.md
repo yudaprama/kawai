@@ -339,8 +339,8 @@ per-step debugging.
 |---|---|---|---|
 | 0 | Vendor to `crates/NeuroSploit`, workspace exclude, branch `kawai/core` | submodule gitlink pinned `e38381f`, pushed | ✅ 2026-11-24 |
 | 1 | Harness patches P5–P3 (P1 superseded, see §3) | five commits on `kawai/core` (yudaprama/NeuroSploit), triple cargo-check green | ✅ 2026-11-24 |
-| 2 | `neurospilot-tools` crate + fixture + tests | `cargo test` 8/8 (staging harness-tree @ e38381f); committed `179f39d` — workspace member registration + canonical-path compile land once the concurrent automation stops deleting the vendored worktree | ✅ code 2026-11-24 |
-| 3 | src-tauri feature + streaming op + supervisor + template + catalog | plan_task e2e (offline) | — |
+| 2 | `neurospilot-tools` crate + fixture + tests | committed `179f39d` + casing/member follow-ups (`44e37ec`, `5d62df4`); `cargo check` + `cargo test` 8/8 at the canonical path (harness worktree re-materialized from origin `e38381ff` after the concurrent-automation damage) | ✅ 2026-11-24 |
+| 3 | src-tauri feature + streaming op + supervisor + template + catalog | `cargo check --features neurospilot` / default / `--no-default-features --features web` all green; toolset tests 8/8; plan_task execution deferred (the harness `offline` flag is not wireable through the tool's camelCase arg struct — noted in `examples/neurosploit_plan_smoke.rs`, which pins builder + merged-registry + policy without executing) | ✅ code 2026-11-24 |
 | 4 | Frontend registries + cards + coverage test | `neurosploit.tsx` in both registries, coverage 46/46, typecheck+build green, commit `e4111c2` | ✅ 2026-11-24 |
 | 5 | Docs + manual gateway smoke | AGENTS.md/ARCHITECTURE updated, ledger delta observed | — |
 
