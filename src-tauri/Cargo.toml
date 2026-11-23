@@ -349,3 +349,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # timeout test auto-advance the clock instead of sleeping 30s for real.
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "test-util"] }
 tower = { version = "0.5", features = ["util"] }
+
+[[example]]
+name = "neurosploit_plan_smoke"
+required-features = ["litert", "neurosploit"]

@@ -368,7 +368,14 @@ pub fn security_tools_for_supervisor(
 ) -> Option<kawai_tools::ToolSet> {
     #[cfg(feature = "security")]
     {
-        let set = security_tools::registry::all_tools();
+        let mut set = security_tools::registry::all_tools();
+        // Android: compile surface only (aarch64 proof via release-android),
+        // zero runtime — hours-long gateway-metered engagements are a
+        // desktop-only lane for now (PLAN-neurosploit §9).
+        #[cfg(all(feature = "neurosploit", not(target_os = "android")))]
+        if remote_configured {
+            set.merge(&mut neurosploit_tools::registry::all_tools());
+        }
         return Some(add_runtime_tools(set, context, remote_configured, false));
     }
     #[cfg(not(feature = "security"))]
@@ -376,6 +383,31 @@ pub fn security_tools_for_supervisor(
         let _ = (context, remote_configured);
         None
     }
+}
+
+/// Catalog-seed/drift variant of [`security_tools_for_supervisor`]: the SAME
+/// toolset with the NeuroSploit deep-audit tool ALWAYS included when the
+/// feature is on — the gateway bearer is a per-device runtime fact (the
+/// civitai stub-identity precedent); the Turso catalog only curates
+/// discoverability, and a dev machine without remote env must not drift the
+/// shared catalog out of coverage.
+#[cfg(feature = "litert")]
+pub fn security_tools_for_catalog(
+    context: &AgentContext<'_>,
+    remote_configured: bool,
+) -> Option<kawai_tools::ToolSet> {
+    #[cfg(all(feature = "neurosploit", not(target_os = "android")))]
+    {
+        let mut set = security_tools::registry::all_tools();
+        set.merge(&mut neurosploit_tools::registry::all_tools());
+        return Some(add_runtime_tools(set, context, remote_configured, false));
+    }
+    // Android with the feature on: compile surface only — the runtime arm
+    // above is cfg'd out, so the catalog falls back to the fast lane.
+    #[cfg(all(feature = "neurospilot", target_os = "android"))]
+    return security_tools_for_supervisor(context, remote_configured);
+    #[cfg(not(feature = "neurospilot"))]
+    security_tools_for_supervisor(context, remote_configured)
 }
 
 /// Generator: the Civitai generation tools (image / video / music / 3D), plus
