@@ -44,3 +44,4 @@ jscpd-report/jscpd-report.json
 .cache/duplicalis/analysis.msgpack
 .cache/duplicalis/embeddings.json
 .contracts-backup/
+.ns-staging/
