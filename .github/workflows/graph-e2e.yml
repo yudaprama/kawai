@@ -36,10 +36,15 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
-      # Manifest-only submodules — no C sources, no bazel.
-      - name: Init submodules (manifest only)
+      # Manifest-only submodules — no C engine build, no bazel. One exception:
+      # cognee-litert-lm is recursive because the `cargo check (… + litert)`
+      # gate below runs its build script, which bindgens the vendored
+      # LiteRT-LM C headers — the sources must be on disk, nothing is compiled
+      # from them (a `cargo check` never links the dylib).
+      - name: Init submodules (manifest only + LiteRT-LM headers)
         run: |
-          git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
+          git submodule update --init local-llm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
+          git submodule update --init --recursive cognee-litert-lm
           git -C crates submodule update --init vendor/binance-connector-rust lonkero NeuroSploit
 
       - uses: dtolnay/rust-toolchain@stable
