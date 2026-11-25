@@ -3034,10 +3034,18 @@ async fn execute_supervisor_plan_handler(
         .await
         .map_err(|(status, _)| status)?;
 
+    let mut plan = req.plan;
+    // Same edge rebinding as the Tauri twin: a routed deep-audit plan carries
+    // shared-root placeholders until this caller resolves them.
+    #[cfg(all(feature = "litert", feature = "neurosploit"))]
+    crate::supervisor::bind_neurosploit_plan_state(&user_id, &mut plan)
+        .await
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
     let tool_registry = crate::supervisor::build_registry_for_plan(
         &user_id,
         req.session_id,
-        &req.plan,
+        &plan,
     )
     .await
     .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
@@ -3049,12 +3057,12 @@ async fn execute_supervisor_plan_handler(
         headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()),
     );
     let user_goal = Some(kawai_router::goal_in_language(
-        req.user_goal.unwrap_or_else(|| req.plan.goal.clone()),
+        req.user_goal.unwrap_or_else(|| plan.goal.clone()),
         language.as_deref(),
     ));
 
     Ok(supervisor_sse(
-        req.plan,
+        plan,
         true,
         tool_registry,
         req.stream_id,
@@ -3078,6 +3086,7 @@ fn supervisor_sse_frame(
         kawai_events::SupervisorEvent::PlanRevising { .. } => "planRevising",
         kawai_events::SupervisorEvent::PlanRevised { .. } => "planRevised",
         kawai_events::SupervisorEvent::StepStarted { .. } => "stepStarted",
+        kawai_events::SupervisorEvent::ToolProgress { .. } => "toolProgress",
         kawai_events::SupervisorEvent::StepCompleted { .. } => "stepCompleted",
         kawai_events::SupervisorEvent::StepFailed { .. } => "stepFailed",
         kawai_events::SupervisorEvent::StepSkipped { .. } => "stepSkipped",

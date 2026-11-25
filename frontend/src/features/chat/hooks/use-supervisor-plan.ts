@@ -99,6 +99,15 @@ interface RunCryptoScreenerOptions {
   structure?: ScreenerStructureFilter;
 }
 
+interface RunDeepAuditOptions {
+  /** The one origin to deep-audit — a bare domain gets https:// prepended server-side. */
+  target: string;
+  /** Token ceiling: eco (default) | balanced | aggressive. */
+  budget?: string;
+  /** Continue the previous run for this target from its snapshot. */
+  resume?: boolean;
+}
+
 interface RunSecurityAuditOptions {
   /** The one target to audit — a bare domain gets https:// prepended server-side. */
   target: string;
@@ -798,6 +807,26 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     [startStream],
   );
 
+  /** NeuroSploit Deep Audit: the FIXED heavy lane — one autonomous
+   *  multi-model engagement behind the executor's confirmation gate. */
+  const runDeepAudit = useCallback(
+    (options: RunDeepAuditOptions, sessionId: number) => {
+      if (streamCtrl.current) return;
+      startStream(
+        {
+          sessionId,
+          target: options.target,
+          ...(options.budget ? { budget: options.budget } : {}),
+          ...(options.resume ? { resume: true } : {}),
+          language: getLocale(),
+        },
+        sessionId,
+        "run_neurosploit_audit",
+      );
+    },
+    [startStream],
+  );
+
   const planAndRun = useCallback(
     async (goal: string, sessionId: number, agentId: string, userGoal?: string) => {
       const cleanGoal = userGoal ?? goal;
@@ -1021,6 +1050,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     runMonthlyClose,
     runCryptoScreener,
     runSecurityAudit,
+    runDeepAudit,
     planAndRun,
     resume,
     approvePlan,

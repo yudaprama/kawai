@@ -305,18 +305,8 @@ fn build_neurosploit_audit(slots: &ResolvedSlots) -> Result<TaskPlan, String> {
     // fetches the real library via `ensure_agents_md`.
     let _ = std::fs::create_dir_all(base.join("agents_md"));
     let url = slots.get("url").unwrap_or_default();
-    let host = url
-        .trim_start_matches("http")
-        .trim_start_matches("s://")
-        .trim_start_matches("://")
-        .split('/')
-        .next()
-        .unwrap_or("target")
-        .replace([':', '.'], "_");
-    let workdir = base
-        .join("neurosploit")
-        .join("runs")
-        .join(format!("ns-{}-{host}", chrono::Utc::now().timestamp()));
+    let workdir =
+        neurosploit_tools::paths::run_workdir(&base.join("neurosploit").join("runs"), &url, false)?;
     neurosploit_tools::plan::build_neurosploit_audit_plan(
         slots.get("url").unwrap_or_default(),
         // Routed runs stay on the eco budget: budget escalation happens in

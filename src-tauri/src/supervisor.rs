@@ -3821,6 +3821,51 @@ pub async fn prepare_security_audit_run(
 /// only when stale/missing, and a still-incomplete library refuses the run
 /// BEFORE any plan exists (a half-fetched library never reaches the harness).
 #[cfg(all(feature = "litert", feature = "neurosploit"))]
+/// Router-driven plans carry no identity-bound state: the template builds
+/// against the shared app root (so a plan can be built at `plan_task` time).
+/// Rebind the step to the CALLER's library + run root immediately before
+/// execution, fetching the pinned library when needed. A half-fetched library
+/// never reaches the harness — `run_audit` re-verifies before spending.
+#[cfg(all(feature = "litert", feature = "neurosploit"))]
+pub async fn bind_neurosploit_plan_state(
+    user_id: &str,
+    plan: &mut kawai_router::TaskPlan,
+) -> Result<(), String> {
+    if !plan
+        .steps
+        .iter()
+        .any(|s| s.tool.as_deref() == Some("neurosploit_audit"))
+    {
+        return Ok(());
+    }
+    let ensure = neurosploit_agents::ensure_agents_md(Some(user_id))
+        .await
+        .map_err(|e| format!("agent library unavailable — {e}"))?;
+    if ensure.downloaded {
+        tracing::info!(
+            component = "supervisor",
+            files = ensure.files,
+            "neurosploit agent library fetched for routed audit"
+        );
+    }
+    let base = kawai_paths::data_root().join(user_id);
+    let runs_root = base.join("neurosploit").join("runs");
+    for step in plan
+        .steps
+        .iter_mut()
+        .filter(|s| s.tool.as_deref() == Some("neurosploit_audit"))
+    {
+        step.arguments["agentsBase"] = serde_json::json!(base);
+        let target = step.arguments["url"].as_str().unwrap_or_default();
+        let resume = step.arguments["resume"].as_bool().unwrap_or(false);
+        let workdir = neurosploit_tools::paths::run_workdir(&runs_root, target, resume)
+            .map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&workdir).map_err(|e| format!("workdir: {e}"))?;
+        step.arguments["workdir"] = serde_json::json!(workdir);
+    }
+    Ok(())
+}
+
 pub async fn prepare_neurosploit_audit_run(
     user_id: &str,
     session_id: i64,
@@ -3856,27 +3901,10 @@ pub async fn prepare_neurosploit_audit_run(
         .join(user_id)
         .join("neurosploit")
         .join("runs");
-    let workdir = if resume {
-        newest_run_dir(&runs_root).ok_or_else(|| {
-            FixedRunError::BadInput(
-                "no previous deep-audit run to resume — fire without resume to start one"
-                    .to_string(),
-            )
-        })?
-    } else {
-        let host = target
-            .trim_start_matches("http")
-            .trim_start_matches("s://")
-            .trim_start_matches("://")
-            .split('/')
-            .next()
-            .unwrap_or("target")
-            .replace([':', '.', '@'], "_");
-        runs_root.join(format!(
-            "ns-{}-{host}",
-            chrono::Utc::now().timestamp()
-        ))
-    };
+    // One resolver for ALL entry points (fixed op, router template, chat
+    // tool): stamps `ns-<ms>-<host>` and resumes only the SAME target's dir.
+    let workdir = neurosploit_tools::paths::run_workdir(&runs_root, target, resume)
+        .map_err(FixedRunError::BadInput)?;
     // The builder wants the directory CONTAINING `agents_md/`
     // (`neurosploit_agents::agents_md_dir` is `<data_root>/<user_id>/agents_md`).
     let agents_base = kawai_paths::data_root().join(user_id);
@@ -3912,24 +3940,6 @@ pub async fn prepare_neurosploit_audit_run(
     };
     log_fixed_run(&run, user_id, session_id);
     Ok(run)
-}
-
-/// Newest run dir under `runs_root` (the resume target) — the user-scoped
-/// twin of the toolset's `resume_workdir` resolution, which is global.
-#[cfg(all(feature = "litert", feature = "neurosploit"))]
-fn newest_run_dir(runs_root: &std::path::Path) -> Option<std::path::PathBuf> {
-    let mut best: Option<(std::time::SystemTime, std::path::PathBuf)> = None;
-    for entry in std::fs::read_dir(runs_root).ok()?.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let mtime = entry.metadata().and_then(|m| m.modified()).ok()?;
-        if best.as_ref().map_or(true, |(t, _)| mtime > *t) {
-            best = Some((mtime, path));
-        }
-    }
-    best.map(|(_, p)| p)
 }
 
 /// Crypto Screener: one parallel `crypto_screener` step per selected screen.
@@ -6225,7 +6235,26 @@ pub fn execute_plan_stream_with_cancel(
     // must own its state, or `impl Stream` would have to capture the caller's
     // lifetime.
     let bearer = bearer.map(str::to_string);
+    // Long-running tools (the deep audit) publish plain text lines into this
+    // channel. Bind the process-wide sink ONLY for plans that dispatch one —
+    // an unrelated concurrent stream must not steal another run's progress.
+    let is_deep_audit = plan
+        .steps
+        .iter()
+        .any(|s| s.tool.as_deref() == Some("neurosploit_audit"));
+    let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    #[cfg(feature = "neurosploit")]
+    let progress_sink = is_deep_audit.then(|| neurosploit_tools::progress::sink(progress_tx));
+    #[cfg(not(feature = "neurosploit"))]
+    let progress_sink: Option<()> = {
+        let _ = is_deep_audit;
+        drop(progress_tx);
+        None
+    };
     async_stream::stream! {
+        // Own the guard: the sink must stay bound for the whole stream and
+        // clear itself on cancellation, not at function return.
+        let _progress_sink = progress_sink;
         // ── Fase 0a, execution side ─────────────────────────────────────────
         // The same balance gate the planner passed, enforced again here
         // because execution has an entry point that never re-enters
@@ -6497,6 +6526,14 @@ pub fn execute_plan_stream_with_cancel(
                 tokio::select! {
                     Some(event) = event_rx.recv() => {
                         yield log_scheduler_event(&event_stream_id, event);
+                    }
+                    Some(line) = progress_rx.recv() => {
+                        let step_id = current_plan.steps.iter()
+                            .find(|s| s.tool.as_deref() == Some("neurosploit_audit"))
+                            .map(|s| s.id.clone()).unwrap_or_default();
+                        yield SupervisorEvent::ToolProgress {
+                            step_id, tool: "neurosploit_audit".into(), line,
+                        };
                     }
                     result = &mut execution => break result,
                 }

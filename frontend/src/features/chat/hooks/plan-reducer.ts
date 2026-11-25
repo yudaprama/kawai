@@ -173,6 +173,7 @@ export function initialSupervisorState(): SupervisorPlanState {
     steps: [],
     videoId: null,
     planning: null,
+    toolProgress: {},
     planStartedAt: null,
     planCompletedAt: null,
     pendingConfirmation: null,
@@ -252,6 +253,15 @@ export function supervisorReducer(
         { state: "running", startedAt: now },
       );
       return { ...state, steps };
+    }
+    case "toolProgress": {
+      // Latest line per step, capped: harness text can contain provider
+      // error bodies, so keep it out of logs and bound the stored size.
+      const line = event.line.slice(0, 240);
+      return {
+        ...state,
+        toolProgress: { ...state.toolProgress, [event.stepId]: line },
+      };
     }
     case "confirmationRequested": {
       const steps = upsertStepPure(state.steps, event.stepId, { task: event.task }, { state: "running" });

@@ -1127,6 +1127,29 @@ export function useWorkbench() {
     [supervisor, preflightRun, beginRun],
   );
 
+  /** NeuroSploit Deep Audit: the confirmation-gated heavy lane. Same client
+   *  mechanics as the fast security audit (balance gate, lazy session), but
+   *  a single 5–45 min engagement with a token ceiling quoted up front. */
+  const runDeepAudit = useCallback(
+    async (target: string, budget: string | undefined, resume: boolean, opts?: { onStart?: () => void }) => {
+      const host = (() => {
+        try {
+          return new URL(target).host;
+        } catch {
+          return target;
+        }
+      })();
+      const sid = await preflightRun(`Deep audit — ${host}`.slice(0, 80), "Couldn't start the deep audit");
+      const label =
+        `Deep audit — ${host}${budget && budget !== "eco" ? ` · ${budget}` : ""}${resume ? " · resume" : ""}`.slice(
+          0,
+          140,
+        );
+      launchFixedRun(beginRun, label, sid, (s) => supervisor.runDeepAudit({ target, budget, resume }, s), opts);
+    },
+    [supervisor, preflightRun, beginRun],
+  );
+
   /** Open a past session in the workbench: clears the in-memory runs and
    *  points sessionId at the picked session — the restore effect below then
    *  rehydrates the latest persisted plan record (runs + deliverable + deck).
@@ -1283,6 +1306,7 @@ export function useWorkbench() {
     runMonthlyClose,
     runScreener,
     runSecurityAudit,
+    runDeepAudit,
     selectSession,
     syncLatestRun,
     loadFullOutput,

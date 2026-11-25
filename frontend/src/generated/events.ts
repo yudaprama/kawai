@@ -113,7 +113,13 @@ summary: PlanSummary;
  *  frontend embeds the player from this id; the step `arguments` that
  *  also carry it never reach the wire, so this is the only channel.
  */
-videoId: string | null } | { type: "stepStarted"; stepId: string; tool: string } | { type: "confirmationRequested"; streamId: string; stepId: string; task: string; description: string } | { type: "stepCompleted"; stepId: string; output: string; artifacts: ArtifactInfo[]; 
+videoId: string | null } | { type: "stepStarted"; stepId: string; tool: string } | { type: "confirmationRequested"; streamId: string; stepId: string; task: string; description: string } | 
+/**
+ *  A live text line from a long-running tool (the NeuroSploit deep audit).
+ *  Forwarded lossily from the harness channel; the complete bounded tail
+ *  also rides the tool's terminal envelope for the result card.
+ */
+{ type: "toolProgress"; stepId: string; tool: string; line: string } | { type: "stepCompleted"; stepId: string; output: string; artifacts: ArtifactInfo[]; 
 /**
  *  Retries the scheduler spent on this step (0 = first attempt
  *  succeeded) — drives the retry indicator in the progress UI.

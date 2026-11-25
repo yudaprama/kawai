@@ -7765,9 +7765,12 @@ dependencies = [
 name = "neurosploit-tools"
 version = "0.1.0"
 dependencies = [
+ "kawai-db",
  "kawai-paths",
  "kawai-router",
+ "kawai-telemetry",
  "kawai-tools",
+ "neurosploit-agents",
  "neurosploit-harness",
  "serde",
  "serde_json",

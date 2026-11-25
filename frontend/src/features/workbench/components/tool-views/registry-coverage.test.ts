@@ -430,7 +430,7 @@ const NEUROSPLOIT_AUDIT = {
     {
       title: "Reflected XSS in search parameter",
       severity: "high",
-      confidence: "confirmed",
+      confidence: 0.97,
       cwe: "CWE-79",
       cvss: "8.1",
       url: "https://example.com/search?q=<img%20src=x>",
@@ -442,7 +442,7 @@ const NEUROSPLOIT_AUDIT = {
     {
       title: "Missing Content-Security-Policy",
       severity: "low",
-      confidence: "possible",
+      confidence: 0.42,
       cwe: "CWE-693",
       cvss: "3.7",
       url: "https://example.com/",
@@ -453,7 +453,8 @@ const NEUROSPLOIT_AUDIT = {
     },
   ],
   agentsRan: ["recon-agent"],
-  usage: { calls: 14, inputTokens: 91200, outputTokens: 31200 },
+  usage: { calls: 14, input: 91200, output: 31200 },
+  progress: ["notify: engagement started", "▶ recon-agent: probing /search"],
   truncated: false,
 };
 

@@ -35,6 +35,7 @@ import { CryptoScreenerForm } from "./crypto-screener-form";
 import { BookCloseForm } from "./book-close-form";
 import { TradingPerformanceForm, type TradingVenue } from "./trading-performance-form";
 import { SecurityAuditForm } from "./security-audit-form";
+import { DeepAuditForm } from "./deep-audit-form";
 import { emitOpenTopup } from "@/features/topup/open-topup";
 import { TokenBalanceChip } from "@/features/topup/token-balance-chip";
 import { useI18n } from "@/hooks/use-i18n";
@@ -522,6 +523,15 @@ export function WorkbenchPage({
     [beginPipelineRun, workbench.runSecurityAudit],
   );
 
+  /** NeuroSploit Deep Audit submit: same canvas handoff, confirmation-gated
+   *  on the backend before the first harness request fires. */
+  const submitDeepAudit = useCallback(
+    (target: string, budget: string | undefined, resume: boolean) => {
+      beginPipelineRun((onStart) => workbench.runDeepAudit(target, budget, resume, { onStart }));
+    },
+    [beginPipelineRun, workbench.runDeepAudit],
+  );
+
   const composerStatus = ["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)
     ? ("submitted" as const)
     : ("ready" as const);
@@ -752,6 +762,9 @@ export function WorkbenchPage({
               {templateOpensSecurityAudit(template) && (
                 <div className="mt-3">
                   <SecurityAuditForm disabled={composerStatus === "submitted"} onSubmit={submitSecurityAudit} />
+                  <div className="mt-3">
+                    <DeepAuditForm disabled={composerStatus === "submitted"} onSubmit={submitDeepAudit} />
+                  </div>
                 </div>
               )}
             </div>

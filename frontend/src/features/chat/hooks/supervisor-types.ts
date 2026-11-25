@@ -120,6 +120,9 @@ export interface SupervisorPlanState {
     /** Personal context loaded into the planner call (planningContext). */
     context?: { persona: boolean; memories: number; skills: number; files: number };
   } | null;
+  /** Latest live line per long-running step (toolProgress) — the deep audit
+   *  streams harness text here so a minutes-long run never looks frozen. */
+  toolProgress: Record<string, string>;
   /** Wall-clock plan start (planStarted) and terminal time — drive the
    *  workbench card's total-duration timer. */
   planStartedAt: number | null;

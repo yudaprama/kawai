@@ -199,6 +199,13 @@ jobs:
         run: cargo check --features release-desktop,web
         working-directory: src-tauri
 
+      # The deep-audit feature is independent of `security`. Compile that
+      # narrow combination too: `release-desktop` turns both on and masks
+      # cfg gaps in agent_registry::security_tools_for_catalog (E0433).
+      - name: cargo check (neurosploit without security)
+        run: cargo check --features litert,neurosploit
+        working-directory: src-tauri
+
       # Data analysis agent (polars + office_oxide xlsx bridge) is always
       # compiled — the default-feature check is its compile gate, backed by
       # the crate's unit tests below (AST translation, dtype coercion,

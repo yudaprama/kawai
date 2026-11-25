@@ -2360,7 +2360,7 @@ impl SupervisorStreamCtx {
 #[cfg(feature = "litert")]
 #[tauri::command]
 pub async fn execute_supervisor_plan(
-    plan: kawai_router::TaskPlan,
+    mut plan: kawai_router::TaskPlan,
     session_id: i64,
     user_goal: Option<String>,
     // Raw locale tag (the app's active language, e.g. "id"). A planner-driven or template-routed
@@ -2375,6 +2375,14 @@ pub async fn execute_supervisor_plan(
     pending: State<'_, crate::supervisor::PendingConfirmations>,
 ) -> Result<(), String> {
     let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
+
+    // Router-built deep-audit plans carry shared-root placeholders. Resolve
+    // them against this caller BEFORE the registry/plan key are built, so the
+    // harness can never read another user's library or run directory.
+    #[cfg(all(feature = "litert", feature = "neurosploit"))]
+    crate::supervisor::bind_neurosploit_plan_state(&ctx.user_id, &mut plan)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let tool_registry = crate::supervisor::build_registry_for_plan(
         &ctx.user_id,

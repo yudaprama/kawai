@@ -374,7 +374,12 @@ pub fn security_tools_for_supervisor(
         // desktop-only lane for now (PLAN-neurosploit §9).
         #[cfg(all(feature = "neurosploit", not(target_os = "android")))]
         if remote_configured {
-            set.merge(&mut neurosploit_tools::registry::all_tools());
+            // Identity-bound variant: the harness spends gateway tokens, so
+            // the tool must know whose ledger to bill and which session to
+            // attribute. The catalog uses the identity-free `all_tools()`.
+            let mut deep =
+                neurosploit_tools::registry::toolset(context.user_id, context.session_id);
+            set.merge(&mut deep);
         }
         return Some(add_runtime_tools(set, context, remote_configured, false));
     }
@@ -396,17 +401,21 @@ pub fn security_tools_for_catalog(
     context: &AgentContext<'_>,
     remote_configured: bool,
 ) -> Option<kawai_tools::ToolSet> {
-    #[cfg(all(feature = "neurosploit", not(target_os = "android")))]
+    // The catalog variant is gated on `security`: without the fast lane the
+    // security agent has no toolset to extend, and `neurosploit` alone must
+    // still compile (the narrow feature-matrix check in ci.yml).
+    #[cfg(all(
+        feature = "security",
+        feature = "neurosploit",
+        not(target_os = "android")
+    ))]
     {
         let mut set = security_tools::registry::all_tools();
+        // Stub identity: the Turso catalog only curates discoverability; the
+        // spend is billed by the per-user toolset at dispatch time.
         set.merge(&mut neurosploit_tools::registry::all_tools());
         return Some(add_runtime_tools(set, context, remote_configured, false));
     }
-    // Android with the feature on: compile surface only — the runtime arm
-    // above is cfg'd out, so the catalog falls back to the fast lane.
-    #[cfg(all(feature = "neurospilot", target_os = "android"))]
-    return security_tools_for_supervisor(context, remote_configured);
-    #[cfg(not(feature = "neurospilot"))]
     security_tools_for_supervisor(context, remote_configured)
 }
 

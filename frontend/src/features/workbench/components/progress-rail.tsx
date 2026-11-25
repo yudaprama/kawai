@@ -135,10 +135,14 @@ export function StepTree({
   live,
   onOpenReport,
   steps,
+  toolProgress,
 }: {
   live: boolean;
   onOpenReport: (stepId: string) => void;
   steps: SupervisorStep[];
+  /** Latest live line per step — supplied only by the active rail, never
+   *  by persisted history rows. */
+  toolProgress?: Record<string, string>;
 }) {
   const phases = computePhases(steps);
   const deliverableStep = steps.find(isDeliverableStep);
@@ -205,6 +209,17 @@ export function StepTree({
                         </button>
                       )}
                     </div>
+                    {/* Live harness text for long-running tools (deep audit).
+                        One line at a time from toolProgress; the full tail
+                        is rendered in the terminal result card. */}
+                    {toolProgress?.[step.stepId] && (
+                      <p
+                        className="text-muted-foreground line-clamp-2 max-h-8 overflow-hidden pl-3 font-mono text-[0.625rem] italic"
+                        title={toolProgress[step.stepId]}
+                      >
+                        ⌁ {toolProgress[step.stepId]}
+                      </p>
+                    )}
                     {/* Failure visibility: a failed/skipped step shows its WHY
                         right in the rail (live rows and history rows share
                         this tree). Full body still lives behind "see report". */}
@@ -577,7 +592,14 @@ export function ProgressRail({
           {/* Unseeded planning window: the stale tree is the PREVIOUS run's —
               show only the planning spinner until planStarted seeds the new
               steps (same policy as the canvas). */}
-          {!unseeded && <StepTree live onOpenReport={onOpenReport} steps={supervisor.steps} />}
+          {!unseeded && (
+            <StepTree
+              live
+              onOpenReport={onOpenReport}
+              steps={supervisor.steps}
+              toolProgress={supervisor.toolProgress}
+            />
+          )}
           {(unseeded || (supervisor.steps.length === 0 && supervisor.status !== "idle")) && (
             <div className="text-muted-foreground mt-2 space-y-1 font-mono text-xs">
               <div className="flex items-center gap-2">

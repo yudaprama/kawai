@@ -56,10 +56,12 @@ function severityOf(raw: unknown): Severity {
 
 function readFinding(v: unknown): Finding | null {
   if (!isRecord(v) || typeof v.title !== "string") return null;
+  // The producer emits an f64 (0.0–1.0); older fixtures used a string label.
+  const rawConfidence = num(v.confidence);
   return {
     title: v.title,
     severity: severityOf(v.severity),
-    confidence: str(v.confidence) ?? "—",
+    confidence: str(v.confidence) ?? (rawConfidence != null ? rawConfidence.toFixed(2) : "—"),
     cwe: str(v.cwe) ?? "",
     cvss: str(v.cvss) ?? "",
     url: str(v.url) ?? "",
@@ -164,15 +166,22 @@ export function renderNeurosploitAudit(output: unknown): ReactNode {
   const total = num(summary.total) ?? findings.length;
   const usage = isRecord(d.usage) ? d.usage : {};
   const calls = num(usage.calls);
+  // Producer shape is {input, output}; the legacy {inputTokens, outputTokens}
+  // spelling stays readable for persisted cards from earlier runs.
+  const inputTokens = num(usage.input) ?? num(usage.inputTokens);
+  const outputTokens = num(usage.output) ?? num(usage.outputTokens);
   const tokens =
-    num(usage.inputTokens) != null && num(usage.outputTokens) != null
-      ? (num(usage.inputTokens) ?? 0) + (num(usage.outputTokens) ?? 0)
+    inputTokens != null || outputTokens != null
+      ? (inputTokens ?? 0) + (outputTokens ?? 0)
       : null;
   const durationMs = num(d.durationMs);
   const timedOut = d.timedOut === true;
   const resumable = d.resumable === true;
   const truncated = d.truncated === true;
   const workdir = str(d.workdir) ?? "";
+  const progressLines = Array.isArray(d.progress)
+    ? d.progress.filter((x): x is string => typeof x === "string")
+    : [];
 
   const metrics: Metric[] = [
     {
@@ -198,6 +207,8 @@ export function renderNeurosploitAudit(output: unknown): ReactNode {
         {d.target}
       </div>
       <MetricGrid items={metrics} />
+      {str(d.error) && <Footnote>{str(d.error)}</Footnote>}
+      {progressLines.length > 0 && renderNeurosploitProgress(progressLines)}
       {(timedOut || resumable) && <TimedOutBanner workdir={workdir} resumable={resumable} />}
       {sorted.length === 0 && !timedOut ? (
         <Footnote>No findings — what was tested is recorded above.</Footnote>

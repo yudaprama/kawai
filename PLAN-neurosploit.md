@@ -231,13 +231,17 @@ feature), `kawai-tools`, `kawai-agent-contract`, `serde`, `serde_json`, `tokio`.
 - **Streaming op** `run_neurosploit_audit` (one snake_case string, both
   wrappers): `stream_id` + `Channel` + `State<StreamRegistry>` + `State<Session>`;
   identity → `user_id` first arg into pure logic. Events (`#[serde(tag = "type")]`,
-  mirrored in `use-local-chat.ts` + `agent.rs`):
-  `progress {line}` (tx lines, forwarded lossy), `result {envelope}`,
-  terminal `finished`/`error`. Cancel: registry `CancellationToken` breaks the
-  select loop AND calls the spawned handle's `pool.cancel()` — the pool exposes
-  cancel/soft/pause handles (`pool.rs:63-98`) so generation spend stops, not
-  just the consumer. The op runs through `android_foreground::run_streaming`
-  like every streaming op (no-op off Android, keeps the invariant).
+  mirrored in the TS event union):
+  live `SupervisorEvent::ToolProgress {step_id, tool, line}` for the harness
+  text lines (forwarded lossily through `neurosploit_tools::progress`, bound
+  only for plans that dispatch the deep-audit tool), `stepCompleted` with the
+  flat envelope, terminal `planCompleted`/`planFailed`. The envelope also
+  carries a bounded `progress` tail for the result card. Cancel: the registry
+  token drops the step future; `run_audit`'s `RunGuard` then flips the harness
+  HARD-cancel flag (obtained BEFORE the run) and aborts its spawned task, so
+  in-flight model calls stop instead of burning spend after the UI cancelled.
+  The op runs through `android_foreground::run_streaming` like every streaming
+  op (no-op off Android, keeps the invariant).
 - **Supervisor** `prepare_neurosploit_audit_run` beside
   `prepare_security_audit_run` (`supervisor.rs:3779`): builds the plan through
   the shared builder, persists the run, returns the streamed execution. Web
@@ -255,23 +259,32 @@ feature), `kawai-tools`, `kawai-agent-contract`, `serde`, `serde_json`, `tokio`.
 - New kinds in BOTH registries (checklist rule): chat
   `tool-renderers/index.tsx` + workbench `tool-views`; `registry-coverage.test.ts`
   gains `neurosploit_audit`.
-- Renderer: progress phase = the forwarded text lines in the terminal card
-  style (`terminal.tsx` pattern); result = summary chips (confirmed /
-  needs-review / total / tokens / duration) + severity-sorted finding cards
-  reusing the `security.tsx` card contract; `timedOut`/`resumable` state shows
-  a resume affordance that re-submits with `resume: true`.
-- Confirmation UI quotes the budget ceiling ("Deep audit: up to ~120k gateway
-  tokens on <target>") — the spend prompt IS the price path (civitai precedent).
+- Renderer: the terminal envelope's `progress` tail renders in the terminal
+  card style (`renderNeurosploitProgress`); live lines surface one at a time
+  in the workbench step rail via `toolProgress`. Result = summary chips
+  (confirmed / needs-review / total / tokens / duration) + severity-sorted
+  finding cards reusing the `security.tsx` card contract; `timedOut`/`resumable`
+  shows the resume affordance. `usage.{input,output}` and numeric `confidence`
+  are the producer's real field shapes (the fixture in `registry-coverage.test.ts`
+  matches them).
+- Intake: `DeepAuditForm` beside `SecurityAuditForm` routes through
+  `run_neurosploit_audit` with target / budget / resume; the workbench form
+  quotes the token ceiling and the authorized-target rule.
+- Confirmation UI quotes the budget ceiling in the form and the plan goal —
+  the spend prompt IS the price path (civitai precedent).
 
 ## 7. Billing / metering
 
 The harness calls the gateway directly (P2), so — like every remote tier call —
-the **client** meters. Snapshot `harness::usage_snapshot()` before and after the
-run, diff → `usage_ledger` row + `kawai_billing::bill_usage(input, output)`
-(`crates/foundation/billing/src/lib.rs:85-91`), attributed to the run's
-`user_id` + session, mirroring how the supervisor folds `RemoteUsage`
-(`supervisor.rs:1285-1297`). The run slot (§4) makes the global-ledger delta
-exact. `RunOutput`/envelope also reports usage to the UI. Agent-level labels
+the **client** meters. `neurosploit_tools::run_audit` snapshots
+`harness::usage_total()` around the run (a harness-only ledger, serialized by
+the run slot) and writes BOTH sinks: a `KIND_LLM` row into the per-user
+`usage_ledger` (`input_tokens`/`output_tokens`, `provider=gateway`,
+`tool=neurosploit_audit`) and `TOKEN_USAGE_COUNTER` with `user.id` +
+`gen_ai.token.type` labels for the recap. Identity reaches the tool through
+`registry::toolset(user_id, session_id)` — the catalog's `all_tools()` is a
+stub that never dispatches, so a definition probe cannot bill anyone.
+`RunOutput`/envelope also reports usage to the UI. Agent-level labels
 (`usage::record(label=agent-name)`) land in `usage.json` in the workdir for
 per-step debugging.
 
@@ -303,9 +316,11 @@ per-step debugging.
 
 - **kawai-web**: never — multi-user process, hours-long runs, shared usage
   ledger slot. The feature is not in the web binary.
-- **Android runtime**: not in `release-android`. Compile-green check only (§5).
-  Hours-long autonomous runs on mobile radios + foreground-service budget are a
-  post-MVP product call.
+- **Android runtime**: `release-android` aliases `release-desktop`, so the
+  harness COMPILES there (aarch64 gate), but every runtime arm is cfg'd out with
+  `not(target_os = "android")` — no deep-audit tool, command or route. Hours-long
+  autonomous runs on mobile radios + foreground-service budget are a post-MVP
+  product call.
 - **Offensive modules**: c2/webshell/pivot/payload/sandbox/container never ship
   in kawai's binary (P3). Upstream CLI keeps them via `full`.
 - **Other lanes** (whitebox/greybox/host/mobile/container/aitest): parked;
@@ -340,9 +355,10 @@ per-step debugging.
 | 0 | Vendor to `crates/NeuroSploit`, workspace exclude, branch `kawai/core` | submodule gitlink pinned `e38381f`, pushed | ✅ 2026-11-24 |
 | 1 | Harness patches P5–P3 (P1 superseded, see §3) | five commits on `kawai/core` (yudaprama/NeuroSploit), triple cargo-check green | ✅ 2026-11-24 |
 | 2 | `neurospilot-tools` crate + fixture + tests | committed `179f39d` + casing/member follow-ups (`44e37ec`, `5d62df4`); `cargo check` + `cargo test` 8/8 at the canonical path (harness worktree re-materialized from origin `e38381ff` after the concurrent-automation damage) | ✅ 2026-11-24 |
-| 3 | src-tauri feature + streaming op + supervisor + template + catalog | `cargo check --features neurospilot` / default / `--no-default-features --features web` all green; toolset tests 8/8; plan_task execution deferred (the harness `offline` flag is not wireable through the tool's camelCase arg struct — noted in `examples/neurosploit_plan_smoke.rs`, which pins builder + merged-registry + policy without executing) | ✅ code 2026-11-24 |
+| 3 | src-tauri feature + streaming op + supervisor + template + catalog | `cargo check --features litert,neurosploit` (narrow gate in `ci.yml`) / `release-desktop,web` / default / `--no-default-features --features web` all green; toolset tests 10/10; plan_task execution deferred (the harness `offline` flag is not wireable through the tool's camelCase arg struct — noted in `examples/neurosploit_plan_smoke.rs`, which pins builder + merged-registry + policy without executing) | ✅ code 2026-11-24 |
 | 4 | Frontend registries + cards + coverage test | `neurosploit.tsx` in both registries, coverage 46/46, typecheck+build green, commit `e4111c2` | ✅ 2026-11-24 |
-| 5 | Docs + manual gateway smoke | AGENTS.md/ARCHITECTURE updated, ledger delta observed | — |
+| 5 | Live progress, cancel, user-scoped resume, routed-plan rebinding, workbench intake | toolset tests 12/12; `bun run typecheck/test/lint/build` green (440 frontend tests); all four cargo gates green | ✅ |
+| 6 | Docs + manual gateway smoke | AGENTS.md / PLAN updated; one real eco-budget run against a user-owned target with a ledger delta observed is the only remaining acceptance step | — |
 
 Rough size: Phase 1 is the deep end (P3 touches ~10 files); Phases 2–4 are the
 security-tools checklist replayed.
