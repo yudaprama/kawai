@@ -409,6 +409,8 @@ export function Model3dGenerator() {
   /** Load a result's generating settings back into the form. The source
    *  image is never kept with the result, so image-to-3D re-asks for it. */
   function reuseEntry(entry: Model3dResultEntry) {
+    // Filling the form from a result is a form action — bring the form back.
+    pane.surface.set("create");
     const r = entry.req;
     if (!r) {
       setPrompt(entry.prompt);
@@ -795,6 +797,8 @@ export function Model3dGenerator() {
   /** Load a curated starter. A Hunyuan3D starter carries a texture hint
    *  rather than a subject prompt, so it fills the texture field instead. */
   function applyModel3dStarter(starter: Model3dStarter) {
+    // The starter lands in the form — show it.
+    pane.surface.set("create");
     if (starter.texturePrompt) {
       setTexturePrompt(starter.texturePrompt);
     } else {
@@ -822,6 +826,10 @@ export function Model3dGenerator() {
         />
       }
       form={form}
+      busy={job != null}
+      onSurfaceChange={pane.surface.set}
+      resultCount={results.length}
+      surface={pane.surface.active}
       header={<ResultsPaneHeader count={results.length} pane={pane} templatesLabel={t("model3dGenerator.templates")} />}
     >
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 pb-24 lg:overscroll-contain lg:pb-3">

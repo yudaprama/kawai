@@ -453,6 +453,8 @@ export function MusicGenerator() {
    *  directly instead of routing through `switchEcosystem`. Uploaded cover
    *  art is never kept with the result — ACE re-asks for it. */
   function reuseEntry(entry: MusicResultEntry) {
+    // Filling the form from a result is a form action — bring the form back.
+    pane.surface.set("create");
     const r = entry.req;
     if (!r) {
       setPrompt(entry.prompt);
@@ -985,6 +987,8 @@ export function MusicGenerator() {
    *  the steps) — in simple mode the draft path derives them upstream, so
    *  sending them would be ignored anyway. */
   function applyMusicTemplate(preset: MusicTemplatePreset) {
+    // The template lands in the form — show it.
+    pane.surface.set("create");
     if (preset.ecosystem !== ecoId) {
       const nextEco = preset.ecosystem as MusicEcosystemId;
       const nextRange = musicDurationRange(nextEco, "music");
@@ -1000,6 +1004,8 @@ export function MusicGenerator() {
 
   /** Load a curated starter. A starter with lyrics fills both fields. */
   function applyMusicStarter(starter: MusicStarter) {
+    // The starter lands in the form — show it.
+    pane.surface.set("create");
     applyPresetText(starter.caption, starter.lyrics ?? "");
   }
 
@@ -1024,6 +1030,10 @@ export function MusicGenerator() {
         />
       }
       form={form}
+      busy={job != null}
+      onSurfaceChange={pane.surface.set}
+      resultCount={results.length}
+      surface={pane.surface.active}
       header={<ResultsPaneHeader count={results.length} pane={pane} templatesLabel={t("musicGenerator.templates")} />}
     >
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 pb-24 lg:overscroll-contain lg:pb-3">
@@ -1049,7 +1059,7 @@ export function MusicGenerator() {
         ) : (
           <ResultsGrid
             Card={MusicResultCard}
-            className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3"
+            className="grid grid-cols-2 gap-2 xl:grid-cols-3"
             entries={results}
             onRemove={removeEntry}
             onReuse={reuseEntry}

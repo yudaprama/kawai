@@ -149,63 +149,77 @@ export function EcoPicker({
 
 /**
  * The lane shell: a fixed-width scrolling form column with its action footer,
- * beside a results pane. Below `lg` the two stack and the page scrolls, so the
- * footer leaves the flow and pins to the viewport bottom (the `pb-24` on both
- * scroll regions keeps the last row clear of it).
+ * beside a results pane. Below `lg` the two are separate SURFACES switched by
+ * `LaneSurfaceTabs` — Create (the form, its footer pinned to the viewport
+ * bottom) and Gallery (the results pane) — instead of one page scroll holding
+ * both. Each pane owns its scroll region either way, so the shell body itself
+ * never scrolls.
  *
  * The shell carries no page header: the mode bar above already names the lane
  * and carries the way back.
  */
 export function GeneratorLayout({
+  busy,
   children,
   footer,
   form,
   header,
+  onSurfaceChange,
+  resultCount,
+  surface,
 }: {
+  /** Whether a run is in flight — drives the gallery tab's pulsing dot. */
+  busy: boolean;
   children: ReactNode;
   /** The lane's `GenerateFooter` (or null while the key check is pending). */
   footer: ReactNode;
   form: ReactNode;
   /** Results-pane header contents — usually `ResultsPaneTabs`. */
   header: ReactNode;
+  onSurfaceChange: (surface: LaneSurface) => void;
+  /** Result count for the gallery tab's badge. */
+  resultCount: number;
+  /** Narrow-layout surface; ignored from `lg`, where both panes are visible. */
+  surface: LaneSurface;
 }) {
   const shellBodyRef = useRef<HTMLDivElement>(null);
-  // The AssetShell body div is a page scroller below lg (the narrow layout
-  // stacks the results pane under the form), but on lg+ the lane is fully
-  // pane-bound and must never scroll it — wheel chaining or reveal scrolling
-  // would otherwise shift the whole shell. `clip` is not a scroll container,
-  // so nothing can move it.
+  // The lane is pane-bound in both layouts — below lg the surface tabs pick
+  // one pane, from lg both sit side by side — so the AssetShell body div must
+  // never scroll it: wheel chaining or reveal scrolling would otherwise shift
+  // the whole shell. `clip` is not a scroll container, so nothing can move it.
   useEffect(() => {
     const body = shellBodyRef.current?.parentElement;
     if (!body) return;
-    const mql = window.matchMedia("(min-width: 1024px)");
     const prev = body.style.overflow;
-    const apply = () => {
-      body.style.overflow = mql.matches ? "clip" : "";
-    };
-    apply();
-    mql.addEventListener("change", apply);
+    body.style.overflow = "clip";
     return () => {
-      mql.removeEventListener("change", apply);
       body.style.overflow = prev;
     };
   }, []);
   return (
     <AssetShell>
-      <div ref={shellBodyRef} className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        {/* ── Form column — the generation panel ── */}
-        <section className="flex w-full shrink-0 flex-col border-b lg:w-[400px] lg:border-r lg:border-b-0">
-          <div className="min-h-0 flex-1 overflow-y-auto pb-24 overscroll-auto lg:overscroll-contain lg:pb-0">
-            {form}
-          </div>
-          {footer}
-        </section>
+      <div ref={shellBodyRef} className="flex min-h-0 flex-1 flex-col">
+        <LaneSurfaceTabs active={surface} busy={busy} count={resultCount} onChange={onSurfaceChange} />
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+          {/* ── Form column — the generation panel ── */}
+          <section
+            className={cn(
+              "flex w-full shrink-0 flex-col max-lg:min-h-0 max-lg:flex-1 lg:w-[400px] lg:border-r",
+              surface !== "create" && "max-lg:hidden",
+            )}
+          >
+            <div className="min-h-0 flex-1 overflow-y-auto pb-24 overscroll-auto lg:overscroll-contain lg:pb-0">
+              {form}
+            </div>
+            {footer}
+          </section>
 
-        {/* ── Results pane ── */}
-        <section className="flex min-h-[60vh] min-w-0 flex-1 flex-col border-t lg:min-h-0 lg:border-t-0">
-          {header}
-          {children}
-        </section>
+          {/* ── Results pane ── */}
+          <section className={cn("flex min-h-0 min-w-0 flex-1 flex-col", surface !== "gallery" && "max-lg:hidden")}>
+            {header}
+            {children}
+          </section>
+        </div>
       </div>
     </AssetShell>
   );
@@ -259,6 +273,81 @@ export function ResultsPaneTabs({
 }
 
 /**
+ * Which of the lane's two surfaces the narrow layout shows. From `lg` both
+ * panes are visible at once, so the surface is not consulted there — the tabs
+ * are `lg:hidden` and the shell renders both sections regardless.
+ */
+export type LaneSurface = "create" | "gallery";
+
+/**
+ * Where a new signal leaves the narrow layout: a run STARTING or a result
+ * LANDING pulls the user to the gallery (the job card and the new media live
+ * there); nothing else moves them — a finished run that produced nothing new
+ * never bounces the user off the form they went back to.
+ */
+export function laneSurface({
+  fresh,
+  started,
+  surface,
+}: {
+  /** A new result landed since the last tick. */
+  fresh: boolean;
+  /** A run just started — the false→true edge, so a lane reopening mid-run counts. */
+  started: boolean;
+  surface: LaneSurface;
+}): LaneSurface {
+  return fresh || started ? "gallery" : surface;
+}
+
+/**
+ * The narrow layout's Create ↔ Gallery switcher. The gallery tab carries the
+ * result count, and — while a run is in flight and the user has gone back to
+ * the form — a pulsing dot: the one state the form cannot show.
+ */
+export function LaneSurfaceTabs({
+  active,
+  busy,
+  count,
+  onChange,
+}: {
+  active: LaneSurface;
+  busy: boolean;
+  count: number;
+  onChange: (surface: LaneSurface) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="border-b px-3 py-2 lg:hidden">
+      <div className={cn(SEGMENTED_LIST, "flex w-full")}>
+        <button
+          aria-pressed={active === "create"}
+          className={cn(segmentClass(active === "create"), "flex-1 justify-center gap-1.5")}
+          onClick={() => onChange("create")}
+          type="button"
+        >
+          <Icon className="size-3.5" name="sparkles" />
+          {t("generator.surfaceCreate")}
+        </button>
+        <button
+          aria-pressed={active === "gallery"}
+          className={cn(segmentClass(active === "gallery"), "flex-1 justify-center gap-1.5")}
+          onClick={() => onChange("gallery")}
+          title={busy && active === "create" ? t("generator.surfaceRunning") : undefined}
+          type="button"
+        >
+          <Icon className="size-3.5" name="images" />
+          {t("generator.surfaceGallery")}
+          {count > 0 && <span className="tabular-nums opacity-60">{count}</span>}
+          {busy && active === "create" && (
+            <span aria-hidden="true" className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Which section the pane follows: templates while the lane is empty, results
  * as soon as there is one (or a run is in flight). `override` is the user's
  * explicit pick and wins until a new result or a new run arrives.
@@ -277,23 +366,37 @@ export function paneTab({
 }
 
 /**
- * Pane state for every lane: `paneTab`'s follow rules, plus the one bit of
+ * Lane view state for every lane: `paneTab`'s follow rules plus the one bit of
  * bookkeeping they need — an explicit choice survives until something new
  * arrives. A new result (or a new run) drops it, so generating from the
  * templates tab lands you on the media you just made instead of leaving you
- * staring at the gallery you generated from.
+ * staring at the gallery you generated from. The same call owns the narrow
+ * layout's Create ↔ Gallery surface (`laneSurface`), keyed off the same
+ * busy/count signal: a submit or a landing result pulls the user to the
+ * gallery once, and their own pick holds until the next signal.
  */
 export function useResultsPaneTab({ busy, count }: { busy: boolean; count: number }): {
   active: PaneTab;
   set: (tab: PaneTab) => void;
+  surface: { active: LaneSurface; set: (surface: LaneSurface) => void };
 } {
   const [override, setOverride] = useState<PaneTab | null>(null);
+  const [surface, setSurface] = useState<LaneSurface>("create");
   const seen = useRef(count);
+  const wasBusy = useRef(false);
   useEffect(() => {
-    if (count > seen.current || busy) setOverride(null);
+    const fresh = count > seen.current;
+    const started = busy && !wasBusy.current;
     seen.current = count;
+    wasBusy.current = busy;
+    if (fresh || busy) setOverride(null);
+    setSurface((s) => laneSurface({ fresh, started, surface: s }));
   }, [busy, count]);
-  return { active: paneTab({ busy, count, override }), set: setOverride };
+  return {
+    active: paneTab({ busy, count, override }),
+    set: setOverride,
+    surface: { active: surface, set: setSurface },
+  };
 }
 
 /**

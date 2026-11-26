@@ -901,6 +901,8 @@ function ImageGenerator() {
    *  The source image is never persisted, so image-input workflows need it
    *  re-asked; the form's own gate says so. */
   function reuseEntry(entry: HistoryEntry) {
+    // Filling the form from a result is a form action — bring the form back.
+    pane.surface.set("create");
     const p = entry.params;
     if (!p) {
       setPrompt(entry.prompt);
@@ -949,6 +951,8 @@ function ImageGenerator() {
    *  checkpoint + LoRAs are family-gated there, and cfg/steps follow the
    *  new ecosystem's defaults when the preset carries none. */
   function applyTemplate(p: TemplatePreset) {
+    // The template lands in the form — show it.
+    pane.surface.set("create");
     const nextEco = ECOSYSTEMS.find((e) => e.id === p.ecosystem) ?? eco;
     const switching = nextEco.id !== eco.id;
     setWorkflowId(DEFAULT_WORKFLOW);
@@ -1039,8 +1043,9 @@ function ImageGenerator() {
   /** AIR URNs already in the stack — keeps ModelBrowser clicks idempotent. */
   const addedLoraAirs = useMemo(() => new Set(loras.map((l) => l.air)), [loras]);
 
-  /** Results masonry density — four across on a wide window, like the old grid. */
-  const resultCols = useColumnCount(4);
+  /** Results masonry density — four across on a wide window, two on a phone
+   *  (the gallery is the full-width surface below `lg`). */
+  const resultCols = useColumnCount(4, 2);
 
   /** Results ↔ community templates: both stay reachable whatever the lane
    *  holds, and a new run pulls the pane back to the media. */
@@ -1507,6 +1512,10 @@ function ImageGenerator() {
         />
       }
       form={form}
+      busy={running}
+      onSurfaceChange={pane.surface.set}
+      resultCount={results.length}
+      surface={pane.surface.active}
       header={
         <ResultsPaneTabs
           active={pane.active}

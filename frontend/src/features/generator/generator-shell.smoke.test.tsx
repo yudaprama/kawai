@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { ChoiceChip, EcoPicker, NumberStepper, ToggleRow, choiceClass } from "./generator-shell";
+import { ChoiceChip, EcoPicker, LaneSurfaceTabs, NumberStepper, ToggleRow, choiceClass } from "./generator-shell";
 
 /**
  * Render-level smoke for the shared lane chrome. The refactor replaced four
@@ -126,5 +126,28 @@ describe("NumberStepper", () => {
     expect(html).toContain('min="1"');
     expect(html).toContain('max="12"');
     expect(html).toContain('value="7"');
+  });
+});
+
+describe("LaneSurfaceTabs", () => {
+  const tabs = (active: "create" | "gallery", busy: boolean, count: number) =>
+    renderToStaticMarkup(<LaneSurfaceTabs active={active} busy={busy} count={count} onChange={() => undefined} />);
+
+  it("marks the active surface and stays out of the desktop layout", () => {
+    const html = tabs("create", false, 0);
+    expect(html).toContain("lg:hidden");
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('aria-pressed="false"');
+  });
+
+  it("badges the gallery with the result count", () => {
+    expect(tabs("gallery", false, 7)).toContain(">7<");
+    expect(tabs("gallery", false, 0)).not.toContain("tabular-nums");
+  });
+
+  it("pulses the gallery tab only while a run is hidden behind the form", () => {
+    expect(tabs("create", true, 0)).toContain("animate-pulse");
+    expect(tabs("gallery", true, 3)).not.toContain("animate-pulse");
+    expect(tabs("create", false, 0)).not.toContain("animate-pulse");
   });
 });

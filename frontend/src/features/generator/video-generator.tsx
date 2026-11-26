@@ -127,11 +127,11 @@ function VideoTemplateGallery({ onApply }: { onApply: (preset: VideoTemplatePres
   // Community clips are NOT uniform (704x960, 864x480, 832x1504 all on one
   // page), so the grid is a masonry: a row-synced grid forces one height and
   // crops the rest, which is what made every tile look square.
-  const cols = useColumnCount(3);
+  const cols = useColumnCount(3, 2);
   const { presets, failed } = usePresetGallery<VideoTemplatePreset>("civitai_video_template_gallery", videoPresetMedia);
 
   if (presets === null) {
-    return <PresetSkeletonGrid aspect="aspect-video" grid="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3" />;
+    return <PresetSkeletonGrid aspect="aspect-video" grid="grid grid-cols-2 gap-2 xl:grid-cols-3" />;
   }
 
   if (presets.length === 0) {
@@ -575,6 +575,8 @@ export function VideoGenerator() {
    *  restored: the clip's pixel size is not the engine's quality tier
    *  ("1080p"), so copying it across would be meaningless. */
   function applyVideoPreset(preset: VideoTemplatePreset) {
+    // The preset lands in the form — show it.
+    pane.surface.set("create");
     const model = preset.model ?? "";
     setEcoId(preset.ecosystem);
     setModelKey(model);
@@ -599,6 +601,8 @@ export function VideoGenerator() {
    *  persisted values must land after it. Uploaded frames are never kept
    *  with the result, so image-input workflows re-ask for them. */
   function reuseEntry(entry: VideoResultEntry) {
+    // Filling the form from a result is a form action — bring the form back.
+    pane.surface.set("create");
     const r = entry.req;
     if (!r) {
       setPrompt(entry.prompt);
@@ -995,6 +999,10 @@ export function VideoGenerator() {
         />
       }
       form={form}
+      busy={job != null}
+      onSurfaceChange={pane.surface.set}
+      resultCount={results.length}
+      surface={pane.surface.active}
       header={<ResultsPaneHeader count={results.length} pane={pane} templatesLabel={t("videoGenerator.templates")} />}
     >
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 pb-24 lg:overscroll-contain lg:pb-3">
@@ -1016,7 +1024,7 @@ export function VideoGenerator() {
         ) : (
           <ResultsGrid
             Card={VideoResultCard}
-            className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3"
+            className="grid grid-cols-2 gap-2 xl:grid-cols-3"
             entries={results}
             onRemove={removeEntry}
             onReuse={reuseEntry}
