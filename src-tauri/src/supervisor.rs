@@ -3810,17 +3810,6 @@ pub async fn prepare_security_audit_run(
     Ok(run)
 }
 
-/// NeuroSploit Deep Audit: ONE confirmation-gated autonomous engagement over
-/// one web origin, run in-process through the vendored harness. Unlike the
-/// fast security lane, the plan carries SERVER-SUPPLIED state the model can
-/// never write: the per-user run workdir (fresh or resumed) and the verified
-/// agent-library root — both resolved here, on both transports, so the Tauri
-/// command and the web handler cannot drift.
-///
-/// The agent library is lazy-on-use: `ensure_agents_md` verifies + downloads
-/// only when stale/missing, and a still-incomplete library refuses the run
-/// BEFORE any plan exists (a half-fetched library never reaches the harness).
-#[cfg(all(feature = "litert", feature = "neurosploit"))]
 /// Router-driven plans carry no identity-bound state: the template builds
 /// against the shared app root (so a plan can be built at `plan_task` time).
 /// Rebind the step to the CALLER's library + run root immediately before
@@ -3866,6 +3855,17 @@ pub async fn bind_neurosploit_plan_state(
     Ok(())
 }
 
+/// NeuroSploit Deep Audit: ONE confirmation-gated autonomous engagement over
+/// one web origin, run in-process through the vendored harness. Unlike the
+/// fast security lane, the plan carries SERVER-SUPPLIED state the model can
+/// never write: the per-user run workdir (fresh or resumed) and the verified
+/// agent-library root — both resolved here, on both transports, so the Tauri
+/// command and the web handler cannot drift.
+///
+/// The agent library is lazy-on-use: `ensure_agents_md` verifies + downloads
+/// only when stale/missing, and a still-incomplete library refuses the run
+/// BEFORE any plan exists (a half-fetched library never reaches the harness).
+#[cfg(all(feature = "litert", feature = "neurosploit"))]
 pub async fn prepare_neurosploit_audit_run(
     user_id: &str,
     session_id: i64,
