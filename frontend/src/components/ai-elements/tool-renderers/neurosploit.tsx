@@ -178,6 +178,9 @@ export function renderNeurosploitAudit(output: unknown): ReactNode {
   const timedOut = d.timedOut === true;
   const resumable = d.resumable === true;
   const truncated = d.truncated === true;
+  // The pipeline ran with no model call (the CI/smoke lane). Label it: an
+  // offline run reports zero findings BY CONSTRUCTION, never as a clean audit.
+  const offline = d.offline === true;
   const workdir = str(d.workdir) ?? "";
   const progressLines = Array.isArray(d.progress)
     ? d.progress.filter((x): x is string => typeof x === "string")
@@ -208,6 +211,12 @@ export function renderNeurosploitAudit(output: unknown): ReactNode {
       </div>
       <MetricGrid items={metrics} />
       {str(d.error) && <Footnote>{str(d.error)}</Footnote>}
+      {offline && (
+        <Footnote>
+          Simulation run — offline mode made no model calls, so the empty result is not a clean
+          audit.
+        </Footnote>
+      )}
       {progressLines.length > 0 && renderNeurosploitProgress(progressLines)}
       {(timedOut || resumable) && <TimedOutBanner workdir={workdir} resumable={resumable} />}
       {sorted.length === 0 && !timedOut ? (

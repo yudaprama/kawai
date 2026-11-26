@@ -423,6 +423,7 @@ const NEUROSPLOIT_AUDIT = {
   target: "https://example.com",
   timedOut: false,
   resumable: false,
+  offline: false,
   workdir: "/Users/dev/.kawai/neurosploit/run-1",
   durationMs: 1540000,
   summary: { confirmed: 1, needsReview: 1, total: 2 },

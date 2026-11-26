@@ -645,7 +645,7 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
 
 1. **Chat history persistence.** ✅ Done 2026-08-16: `sessions(agent_id, title, …)` + `messages(session_id, role, content, …)` tables in SQLite (per-user DB — no user columns); ops `create_chat_session`/`list_chat_sessions`/`list_chat_messages`/`append_chat_message` (both wrappers). The default agent is `builtin.office` (the single catalog entry served by `list_agents`); sessions are created lazily on first message, first user message seeds the title, engine context stays in-memory (restart shows history, model context starts fresh).
 2. **Distributable desktop build.** ✅ Done 2026-08-17: `scripts/bundle-litert-dylibs.sh` preps the LiteRT dylib set (the main C API plus every `*.dylib` in `vendor/LiteRT-LM/prebuilt/macos_arm64/`) into `cognee-litert-lm/native/`; `.github/tauri-litert.json` copies them into `Contents/Frameworks/` via `bundle.macOS.files`; `src-tauri/build.rs` embeds the `@executable_path/../Frameworks` rpath (litert+macOS) so the release .app needs no dev rpath/env. Local: `bun run tauri:build:litert(-office)`.    CI builds via `tauri-action --config .github/tauri-litert.json`.
-3. **`local_llm_smoke` streaming regression gate.** ✅ Done 2026-08-20: `.github/workflows/ci.yml` runs `macos-smoke`, `linux-smoke`, and `windows-smoke` jobs (each bazel-builds the LiteRT-LM C engine natively, then runs `cargo test --features litert --lib` → `local_llm_smoke` (Gemma 4 E4B fixture, downloaded per run) / `remote_smoke` / `draft_smoke`), plus a `web` job (ubuntu: `bun install` + `bun run build` + `cargo check --no-default-features --features web`) and a `linux-check` job (`cargo check` default + all-features combo, crate unit tests, paddle-ocr + agent_eval-harness tests) and an `android-check` job (`cargo ndk check` for aarch64 with `--features release-android` — the compile gate proving both the supertonic/ocr-rs MNN chain and the cognee-litert-lm bindgen build over the nested LiteRT-LM C headers compile for android arm64). The Android runtime gate is a separate, manually dispatched `android-smoke.yml` on a self-hosted runner (`target=emulator` on Apple Silicon with HVF, or `target=device` against a physical arm64 phone over `adb` — a host without a hypervisor fails the preflight in seconds): it bazel-builds the android_arm64 `.so` with release-android's recipe, cross-compiles `local_llm_smoke` with the same feature set and runs it under bionic — load, streaming, and turn-2 history on the stack Android actually ships. GitHub-hosted macOS runners are arm64 VMs without nested virtualization, so the AVD cannot boot there; every-push Android coverage is the compile-only `android-check`. The `agent_eval` quality suites (office 19/20, analytics 16/18, screener 8/10) live in `.github/workflows/evals.yml` (three macos-26 jobs, own dylib builds) and run in parallel with ci and the release build; windows-smoke repeats the office suite on the nightly schedule only. `agent_smoke` stays skipped (interactive cloud state).
+3. **`local_llm_smoke` streaming regression gate.** ✅ Done 2026-08-20: `.github/workflows/ci.yml` runs `macos-smoke`, `linux-build`/`linux-smokes`, and the separate `windows-smoke` workflow (each bazel-builds the LiteRT-LM C engine natively, then runs `cargo test --features litert --lib` → `local_llm_smoke` (Gemma 4 E4B fixture, downloaded per run) / `remote_smoke` / `draft_smoke`), plus a `web` job (ubuntu: `bun install` + `bun run build` + `cargo check --no-default-features --features web`) and a `linux-check` job (`cargo check` default + all-features combo, crate unit tests, paddle-ocr + agent_eval-harness tests) and an `android-check` job (`cargo ndk check` for aarch64 with `--features release-android` — the compile gate proving both the supertonic/ocr-rs MNN chain and the cognee-litert-lm bindgen build over the nested LiteRT-LM C headers compile for android arm64). The Android runtime gate is a separate, manually dispatched `android-smoke.yml` on a self-hosted runner (`target=emulator` on Apple Silicon with HVF, or `target=device` against a physical arm64 phone over `adb` — a host without a hypervisor fails the preflight in seconds): it bazel-builds the android_arm64 `.so` with release-android's recipe, cross-compiles `local_llm_smoke` with the same feature set and runs it under bionic — load, streaming, and turn-2 history on the stack Android actually ships. GitHub-hosted macOS runners are arm64 VMs without nested virtualization, so the AVD cannot boot there; every-push Android coverage is the compile-only `android-check`. `linux-build` also runs `neurosploit_plan_smoke` — the OFFLINE deep-audit lane (real plan → merged registry → confirmation gate → scheduler → harness, zero model calls, zero gateway tokens) — which is the only place that pipeline is executed rather than merely compiled on every push. The `agent_eval` quality suites (office 19/20, analytics 16/18, screener 8/10) live in `.github/workflows/evals.yml` (three macos-26 jobs, own dylib builds) and run in parallel with ci and the release build; windows-smoke repeats the office suite on the nightly schedule only. `agent_smoke` stays skipped (interactive cloud state).
 4. **(standing) Upstream maintenance.** sentencepiece macOS fix — PR [#3262](https://github.com/google-ai-edge/LiteRT-LM/pull/3262), assume ignored. Submodule stays on our fork branch (`yudaprama/LiteRT-LM@fix/macos-sentencepiece-hdrs-check`); `cognee-litert-lm/tools/update-litert-lm.sh` rebases the fix onto new upstream main. If merged, drop the commit and repoint at `google-ai-edge` main.
 
 ### Post-MVP, pre-release (first milestones after MVP ships)
@@ -750,8 +750,8 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
     run in CI by `cargo test -p security-tools`. Deferred: session-pinned
     scope registry (`lonkero::scope` extraction exists), scan-progress
     streaming, persisted reports, Android.
-    **Deep-audit lane (NeuroSploit harness, in-process) — wired 2026-11-24.**
-    The same agent also carries `neurosploit_audit` (feature `neurospilot`,
+    **Deep-audit lane (NeuroSploit harness, in-process).**
+    The same agent also carries `neurosploit_audit` (feature `neurosploit`,
     desktop runtime; Android gets the compile surface only): an autonomous
     multi-model engagement — recon → parallel specialist agents →
     wire-validated exploitation → cross-model voting → chaining — run
@@ -761,11 +761,27 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
     resumable envelopes (the harness persists incremental run snapshots and a
     re-invoke with the same workdir continues instead of re-spending),
     process-global run slot, usage-ledger delta metering, scope locked to the
-    target origin. The 493-specialist markdown agent library is fetched at a
+    target origin. Harness text lines stream LIVE into the step rail: every
+    line goes through the process-wide sink in `neurosploit_tools::progress`
+    (bound for the run's duration by a drop guard) and is forwarded as
+    `SupervisorEvent::ToolProgress`; the envelope also carries a bounded
+    `progress` tail for the terminal card. Run directories have ONE resolver,
+    `neurosploit_tools::paths::run_workdir` (fresh run stamps
+    `ns-<millis>-<host>`; resume reuses the newest directory stamped for the
+    SAME host) — the chat tool, the fixed op and the router template all call
+    it, so a resume can never replay one origin's snapshot under another
+    origin's target. The 493-specialist markdown agent library is fetched at a
     pinned commit ref by `neurosploit-agents` and verified before every run.
     Tool registration requires the remote tier (the deep_write rule).
     Router template `neurosploit_audit`; fixed op `run_neurosploit_audit`
-    (both wrappers). Design + phase status: PLAN-neurosploit.md — wiring is
-    compile-verified (desktop + web + default gates); the live gateway smoke
-    (one real eco-budget run against a user-owned target, ledger delta
+    (both wrappers); workbench intake = `DeepAuditForm` (target / ceiling /
+    resume). The `offline` step arg is SERVER-ONLY (absent from the tool's
+    `parameters()`, so no agent can ask for a simulated run): the harness
+    returns after agent selection with zero model calls, zero tokens and zero
+    findings, and the envelope says `offline: true` so a card labels it a
+    simulation instead of a clean audit. `src-tauri/examples/neurosploit_plan_smoke`
+    runs that lane end-to-end (builder → merged registry → confirmation gate →
+    scheduler → harness → envelope assertions) in `linux-build`, on every push,
+    for free. Design + phase status: PLAN-neurosploit.md — the live gateway
+    smoke (one real eco-budget run against a user-owned target, ledger delta
     observed) is the remaining acceptance step.

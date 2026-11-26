@@ -184,10 +184,17 @@ feature), `kawai-tools`, `kawai-agent-contract`, `serde`, `serde_json`, `tokio`.
   `budget` (`eco|balanced|aggressive`, default eco), `voteN` (default 1 — the
   upstream default 3 triples spend; cap 3), `concurrency` (default 4, cap 8 —
   gateway politeness), `resume` (bool: reuse the last workdir for this target).
-  `requires_confirmation() -> true`. The tool builds `RunConfig::new(target)`,
+  Server-supplied args (`workdir` / `agentsBase` from the plan builder, and
+  `offline` for the smoke lane) are accepted but deliberately ABSENT from
+  `parameters()` — the model never sees them, so no agent can ask for a
+  simulated run and present it as an engagement. `requires_confirmation() ->
+  true`. Run directories come from the single resolver
+  `paths::run_workdir` (`host_stamp` normalizes both schemes; a resume only
+  matches a directory stamped for the SAME host), so the chat tool, the fixed
+  op and the router template cannot disagree. The tool builds `RunConfig::new(target)`,
   sets `models = ["kawai:zai/glm-5.3-flash", "kawai:deepseek/deepseek-chat",
   "kawai:venice/deepseek-v4.1-flash"]` (failover order = pool priority),
-  `vote_n`, `concurrency`, `workdir = <data_root>/<user_id>/neurosploit/runs/ns-<ts>-<target>`,
+  `vote_n`, `concurrency`, `workdir = <data_root>/<user_id>/neurosploit/runs/ns-<millis>-<host>`,
   `pivot_proxy` untouched (off), no `oob_domain`, no `neo4j`, `scope` locked to
   the target origin, and the agent library root passed in from
   `neurosploit_agents::agents_md_dir` (runtime-fetch design, §3 P1).
@@ -195,12 +202,19 @@ feature), `kawai-tools`, `kawai-agent-contract`, `serde`, `serde_json`, `tokio`.
 
 ```json
 { "kind": "neurosploit_audit", "target": "…", "timedOut": false, "resumable": false,
+  "offline": false,
   "workdir": "…", "durationMs": 0,
   "summary": { "confirmed": 3, "needsReview": 2, "total": 5 },
   "findings": [ { "title", "severity", "confidence", "cwe", "cvss", "url",
                   "evidence", "impact", "remediation", "validated": true } ],
-  "agentsRan": ["…"], "usage": { "calls": 0, "input": 0, "output": 0 } }
+  "agentsRan": ["…"], "usage": { "calls": 0, "input": 0, "output": 0 },
+  "progress": ["…"] }
 ```
+
+  `offline` is carried on both arms (completed and timed out) and is only ever
+  true for the server-injected smoke lane below; the renderer labels such a run
+  a simulation, because an offline run reports zero findings BY CONSTRUCTION —
+  never as a clean audit.
 
   Producer notes (from the `Finding` serde shape): `confidence` is f64
   0.0–1.0; the harness field is `endpoint` — the envelope maps it to `url`
@@ -226,8 +240,8 @@ feature), `kawai-tools`, `kawai-agent-contract`, `serde`, `serde_json`, `tokio`.
   `release-desktop`; NOT in `release-android` and NOT in the kawai-web binary
   (§9). `cargo ndk check --features release-android` stays green because the
   feature is absent there; compile-greenness of the harness itself for aarch64
-  is checked once via a temporary `cargo ndk -t arm64-v8a -P 24 check -p
-  neurospilot-harness --no-default-features --features core` when P3 lands.
+  is a one-off `cargo ndk -t arm64-v8a -P 24 check -p neurospilot-harness
+  --no-default-features --features core`.
 - **Streaming op** `run_neurosploit_audit` (one snake_case string, both
   wrappers): `stream_id` + `Channel` + `State<StreamRegistry>` + `State<Session>`;
   identity → `user_id` first arg into pure logic. Events (`#[serde(tag = "type")]`,
@@ -288,23 +302,39 @@ stub that never dispatches, so a definition probe cannot bill anyone.
 (`usage::record(label=agent-name)`) land in `usage.json` in the workdir for
 per-step debugging.
 
-## 8. Verification (one smoke, not the job)
+## 8. Verification
 
 1. **Producer fixture first** (checklist rule 4): one MANUAL real run via the
    gateway against a test target the user owns → capture `findings.json` +
    `report.json` into `crates/toolsets/neurosploit-tools/tests/fixtures/`.
-2. `cargo test -p neurosploit-tools`: envelope test CALLS the tool with
-   `offline = true` mode (harness runs without model API) against a local
-   vulnerable server (security_smoke pattern) and pins the JSON paths above
-   against the real fixture; plan-builder tests (§4).
-3. `plan_task` e2e through the REAL merged registry: offline harness lane so
-   CI spends zero gateway tokens; asserts `usage.input_tokens == 0` (planner
-   skipped) and that the step dispatches.
-4. Manual gateway smoke (dev only): `cargo run --example neurosploit_smoke
-   --features litert,neurosploit` — one eco-budget run, asserts confirmed
-   findings + ledger delta > 0.
+   Until then the envelope test's fixture is producer-SHAPED (the `Finding`
+   serde fields flattened into the card contract) and item 4 is the step that
+   replaces it.
+2. `cargo test -p neurosploit-tools`: the envelope test pins the JSON paths
+   above; `offline_is_accepted_but_never_advertised` pins the server-only
+   `offline` switch (accepted by the arg struct, absent from `parameters()`);
+   plan-builder tests cover `check_plan_conventions` + `validate_plan` +
+   the step timeout (§4).
+3. **Offline e2e (`src-tauri/examples/neurosploit_plan_smoke`)** — the real
+   builder → merged registry → `enforce_confirmation_policy` → scheduler →
+   harness, with `offline: true` injected after the builder so the plan stays
+   otherwise byte-identical. Asserts the gate is on the step, the timeout
+   outlives the scheduler default, and the envelope's shape (kind, summary,
+   empty `findings`, `offline: true`, `agentsRan` non-empty, `usage` all zero,
+   non-empty `progress` tail). The agent library is SYNTHETIC (one `.md` per
+   `REQUIRED_CATEGORIES`) — the subject is the wiring, not upstream content.
+   Runs on every push in `linux-build` (zero model calls, zero tokens) and
+   locally with:
+   `cargo run --example neurosploit_plan_smoke --features litert,security,neurosploit`
+   (the `cargo run` compiles the example with exactly the shipped feature set,
+   so no separate compile-only gate is needed).
+4. **Manual gateway smoke (dev only)** — the remaining acceptance step: one
+   real `eco`-budget run against a user-owned target, asserting confirmed
+   findings (or an honest empty result), `usage` > 0 and a matching
+   `usage_ledger` / recap delta for the signed-in user.
 5. Gates: `cargo check`, `cargo check --features web`, `cargo check --features
-   litert,neurosploit`, `bun run build`; harness dual-feature
+   litert,neurosploit`, `cargo check --features release-desktop,web`,
+   `bun run build`; harness dual-feature
    (`cargo check -p neurospilot-harness` default AND `--no-default-features
    --features core`).
 6. Docs same-commit: AGENTS.md (where-things-live + Roadmap entry +
@@ -354,11 +384,11 @@ per-step debugging.
 |---|---|---|---|
 | 0 | Vendor to `crates/NeuroSploit`, workspace exclude, branch `kawai/core` | submodule gitlink pinned `e38381f`, pushed | ✅ 2026-11-24 |
 | 1 | Harness patches P5–P3 (P1 superseded, see §3) | five commits on `kawai/core` (yudaprama/NeuroSploit), triple cargo-check green | ✅ 2026-11-24 |
-| 2 | `neurospilot-tools` crate + fixture + tests | committed `179f39d` + casing/member follow-ups (`44e37ec`, `5d62df4`); `cargo check` + `cargo test` 8/8 at the canonical path (harness worktree re-materialized from origin `e38381ff` after the concurrent-automation damage) | ✅ 2026-11-24 |
-| 3 | src-tauri feature + streaming op + supervisor + template + catalog | `cargo check --features litert,neurosploit` (narrow gate in `ci.yml`) / `release-desktop,web` / default / `--no-default-features --features web` all green; toolset tests 10/10; plan_task execution deferred (the harness `offline` flag is not wireable through the tool's camelCase arg struct — noted in `examples/neurosploit_plan_smoke.rs`, which pins builder + merged-registry + policy without executing) | ✅ code 2026-11-24 |
+| 2 | `neurosploit-tools` crate + fixture + tests | committed `179f39d` + casing/member follow-ups (`44e37ec`, `5d62df4`); `cargo check` + `cargo test` at the canonical path (harness worktree re-materialized from origin `e38381ff` after the concurrent-automation damage) | ✅ 2026-11-24 |
+| 3 | src-tauri feature + streaming op + supervisor + template + catalog | `cargo check --features litert,neurosploit` (narrow gate in `ci.yml`) / `release-desktop,web` / default / `--no-default-features --features web` all green; toolset tests 10/10; plan execution proven OFFLINE by `examples/neurosploit_plan_smoke` (§8.3) | ✅ 2026-11-24 |
 | 4 | Frontend registries + cards + coverage test | `neurosploit.tsx` in both registries, coverage 46/46, typecheck+build green, commit `e4111c2` | ✅ 2026-11-24 |
-| 5 | Live progress, cancel, user-scoped resume, routed-plan rebinding, workbench intake | toolset tests 12/12; `bun run typecheck/test/lint/build` green (440 frontend tests); all four cargo gates green | ✅ |
-| 6 | Docs + manual gateway smoke | AGENTS.md / PLAN updated; one real eco-budget run against a user-owned target with a ledger delta observed is the only remaining acceptance step | — |
+| 5 | Live progress, cancel, user-scoped resume, routed-plan rebinding, workbench intake, offline e2e + CI gate | toolset tests 13/13; `neurosploit_plan_smoke` green locally AND in `linux-build` on every push (zero tokens; `cargo run` compiles it with the shipped feature set); `bun run typecheck/test/lint/build` green; all cargo gates green | ✅ |
+| 6 | Docs + manual gateway smoke | AGENTS.md / PLAN describe the shipped wiring (offline lane, live progress, `paths::run_workdir`, `DeepAuditForm`). Remaining acceptance: one real eco-budget run against a user-owned target with a ledger delta observed (§8.4) | — |
 
 Rough size: Phase 1 is the deep end (P3 touches ~10 files); Phases 2–4 are the
 security-tools checklist replayed.

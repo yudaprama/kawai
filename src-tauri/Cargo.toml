@@ -352,4 +352,7 @@ tower = { version = "0.5", features = ["util"] }
 
 [[example]]
 name = "neurosploit_plan_smoke"
-required-features = ["litert", "neurosploit"]
+# `security` is not optional: the deep-audit tool joins the SECURITY agent's
+# toolset, so the merged registry only carries it in the shipped configuration
+# (`release-desktop`). Without it the plan cannot even validate.
+required-features = ["litert", "security", "neurosploit"]

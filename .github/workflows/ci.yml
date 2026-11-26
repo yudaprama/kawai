@@ -757,6 +757,22 @@ jobs:
           LLVM_PROFILE_FILE: /dev/null
         run: cargo test --features litert --lib
 
+      # ── Deep audit (NeuroSploit) end-to-end, OFFLINE ──
+      # Runs the real plan → merged registry → confirmation gate → scheduler →
+      # harness pipeline, with the harness in `offline` mode: zero model calls,
+      # zero gateway tokens, ~seconds. This is the only place the deep-audit
+      # lane is EXECUTED (not merely compiled) on every push — `security` is in
+      # the feature set because the tool joins the security agent's toolset,
+      # exactly as the desktop bundles ship it.
+      - name: neurosploit_plan_smoke (offline deep-audit pipeline)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+        run: cargo run --example neurosploit_plan_smoke --features litert,security,neurosploit
+
       # ── Unit tests (local-llm: generation gate, FIFO queue, stateless reset) ──
       - name: cargo test (local-llm; generation gate + queue)
         working-directory: local-llm
