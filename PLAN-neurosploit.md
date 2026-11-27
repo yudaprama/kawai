@@ -160,6 +160,26 @@ not a patch of the call path.
 MVP forwards the text lines as-is; defer a typed event enum until the UI proves
 it needs more than lines.
 
+**P8 — hard budget ceiling + publish-read credentials.** Three changes, all
+proven by the live §8.4 run: (a) `pool::ModelPool::record_usage(input, output)`
+feeds the budget counter the PRECISE provider-reported delta of every call
+(`usage::total()` before/after in `pool::one`) — the legacy `record_tokens`
+heuristic counted response chars/4 only, so agent turns' dominant input cost
+was invisible and a real eco run read ~61k on the counter while the provider
+billed 1.26M; (b) `pool::one` refuses to START a call once the counter reaches
+`token_limit` — the spawn-time gate only stops NEW agents, and the in-flight
+wave used to run to natural completion; overshoot is now bounded by one wave
+(measured: 130,090 total on the 120k eco ceiling vs 1,259,103 before, same
+target). The gate's error text deliberately avoids the exhaustion keyword
+family ("exhausted", "usage limit", …) — that vocabulary parks the pool for an
+operator resume, while a spent budget must simply end the run; (c)
+`gateway_bearer_published` / `gateway_endpoint_published` doc-hidden getters
+pair with the setters so the embedder can prove credential preservation, and
+`neurospilot_tools::run_audit` applies explicit `AuditParams` credentials only
+when `Some` — the chat/fixed-pipeline path passes `None` (context-free tool)
+and must not retract the session-published bearer (clearing it failed the
+harness model preflight with "no API key" on a signed-in session).
+
 ## 4. New toolset crate `crates/toolsets/neurosploit-tools/`
 
 Shape copied from `crates/toolsets/security-tools/` (lib.rs 264 LOC, tools.rs,
@@ -328,10 +348,17 @@ per-step debugging.
    `cargo run --example neurosploit_plan_smoke --features litert,security,neurosploit`
    (the `cargo run` compiles the example with exactly the shipped feature set,
    so no separate compile-only gate is needed).
-4. **Manual gateway smoke (dev only)** — the remaining acceptance step: one
-   real `eco`-budget run against a user-owned target, asserting confirmed
-   findings (or an honest empty result), `usage` > 0 and a matching
-   `usage_ledger` / recap delta for the signed-in user.
+4. **Live gateway smoke — ✅ observed 2026-11-27.** `src-tauri/examples/neurospilot_live_smoke.rs`
+   (manual, dev-only, never CI): signs in, publishes the bearer to the gateway
+   AND the harness pool, fetches the real agent library (`ensure_agents_md`),
+   builds the fixed plan, runs it through the real scheduler against a
+   user-owned target (`KAWAI_LIVE_SMOKE_TARGET`, default https://kawai.pro),
+   and asserts the §8.4 contract: `usage` > 0, the `usage_ledger` delta
+   EXACTLY equals the envelope spend, findings honest (an empty result from a
+   budget-bound or backstopped run is accepted — the envelope labels
+   `timedOut`/`resumable`), offline never set. Observed run: 11 calls,
+   107,898 input + 22,192 output = 130,090 ledger tokens on the eco ceiling,
+   confirmed=0 (honest; kawai.pro is a static landing page).
 5. Gates: `cargo check`, `cargo check --features web`, `cargo check --features
    litert,neurosploit`, `cargo check --features release-desktop,web`,
    `bun run build`; harness dual-feature
@@ -388,7 +415,7 @@ per-step debugging.
 | 3 | src-tauri feature + streaming op + supervisor + template + catalog | `cargo check --features litert,neurosploit` (narrow gate in `ci.yml`) / `release-desktop,web` / default / `--no-default-features --features web` all green; toolset tests 10/10; plan execution proven OFFLINE by `examples/neurosploit_plan_smoke` (§8.3) | ✅ 2026-11-24 |
 | 4 | Frontend registries + cards + coverage test | `neurosploit.tsx` in both registries, coverage 46/46, typecheck+build green, commit `e4111c2` | ✅ 2026-11-24 |
 | 5 | Live progress, cancel, user-scoped resume, routed-plan rebinding, workbench intake, offline e2e + CI gate | toolset tests 13/13; `neurosploit_plan_smoke` green locally AND in `linux-build` on every push (zero tokens; `cargo run` compiles it with the shipped feature set); `bun run typecheck/test/lint/build` green; all cargo gates green | ✅ |
-| 6 | Docs + manual gateway smoke | AGENTS.md / PLAN describe the shipped wiring (offline lane, live progress, `paths::run_workdir`, `DeepAuditForm`). Remaining acceptance: one real eco-budget run against a user-owned target with a ledger delta observed (§8.4) | — |
+| 6 | Docs + manual gateway smoke | AGENTS.md / PLAN describe the shipped wiring (offline lane, live progress, `paths::run_workdir`, `DeepAuditForm`). Acceptance OBSERVED 2026-11-27: `neurospilot_live_smoke` ran a real eco-budget audit of https://kawai.pro — 130,090 ledger tokens (ceiling held after P8; the pre-P8 run spent 1,259,103 and exposed the counter bug), ledger delta exactly matches the envelope, findings honest | ✅ |
 
 Rough size: Phase 1 is the deep end (P3 touches ~10 files); Phases 2–4 are the
 security-tools checklist replayed.

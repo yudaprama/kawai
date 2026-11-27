@@ -137,7 +137,7 @@ async fn main() {
     let mut limits = SchedulerLimits::default();
     limits.confirmation_handler = Some(approve());
     limits.observer = Some(std::sync::Arc::new(|event| match event {
-        kawai_router::SchedulerEvent::StepStarted { step_id, tool } => {
+        kawai_router::SchedulerEvent::StepStarted { step_id, tool, .. } => {
             println!("  ▶ {step_id} ({tool})")
         }
         kawai_router::SchedulerEvent::StepCompleted {

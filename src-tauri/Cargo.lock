@@ -6632,6 +6632,7 @@ dependencies = [
 name = "kawai-office"
 version = "0.1.0"
 dependencies = [
+ "analytics",
  "base64 0.22.1",
  "image",
  "kawai-agent-contract",

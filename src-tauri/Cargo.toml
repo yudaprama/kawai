@@ -321,6 +321,10 @@ required-features = ["litert", "office"]
 name = "agent_eval"
 
 [[example]]
+# On-demand offline pipeline smoke (temp data root, fixture sources) — not in CI.
+name = "onboarding_smoke"
+
+[[example]]
 name = "turn_log_report"
 required-features = ["litert"]
 [[example]]
@@ -355,4 +359,10 @@ name = "neurosploit_plan_smoke"
 # `security` is not optional: the deep-audit tool joins the SECURITY agent's
 # toolset, so the merged registry only carries it in the shipped configuration
 # (`release-desktop`). Without it the plan cannot even validate.
+required-features = ["litert", "security", "neurosploit"]
+
+[[example]]
+name = "neurosploit_live_smoke"
+# §8.4 acceptance: one REAL eco-budget run against a user-owned target —
+# spends gateway tokens, runs for many minutes. Manual, dev-only, never CI.
 required-features = ["litert", "security", "neurosploit"]
