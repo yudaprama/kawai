@@ -154,6 +154,7 @@ pub fn onboarding_run_stream(
         // their memories carry source='linkedin' provenance.
         let mut linkedin_materials = String::new();
         let mut linkedin_items: u32 = 0;
+        let mut gmail_items: u32 = 0;
         let mut signals = IdentitySignals::default();
         let mut processed: Vec<String> = Vec::new();
         let mut linkedin_search: Option<onboarding::SearchFn> =
@@ -236,10 +237,76 @@ pub fn onboarding_run_stream(
                     };
                 }
             }
+
+            // Metadata scan (§2.4): top contacts + recurring subject themes
+            // from one bounded headers-only page. Aggregates only — the
+            // pure aggregation layer cannot hold bodies or snippets.
+            let mut gmail_materials = String::new();
+            match gmail_metadata_materials(&user_id).await {
+                Ok(md) if !md.trim().is_empty() => {
+                    yield OnboardingEvent::SourceProgress {
+                        source: SOURCE_GMAIL.into(),
+                        note: "aggregated recent contacts + topic hints from message headers".into(),
+                    };
+                    gmail_materials = md;
+                }
+                Ok(_) => {
+                    yield OnboardingEvent::SourceProgress {
+                        source: SOURCE_GMAIL.into(),
+                        note: "no recent mail headers to aggregate".into(),
+                    };
+                }
+                Err(e) => {
+                    yield OnboardingEvent::SourceProgress {
+                        source: SOURCE_GMAIL.into(),
+                        note: format!("metadata scan skipped: {e}"),
+                    };
+                }
+            }
+
+            // Compress + persist the gmail aggregates with honest
+            // `source='gmail'` provenance (external source: profile items
+            // keep their namespace for the facet distill).
+            if !gmail_materials.trim().is_empty() {
+                yield OnboardingEvent::CompressStarted;
+                match compress_with_cloud(&user_id, &gmail_materials).await {
+                    Ok(compressed) => {
+                        let counts = (
+                            compressed.profile.len() as u32,
+                            compressed.people.len() as u32,
+                            compressed.goals.len() as u32,
+                        );
+                        match persist_compressed(&user_id, &compressed, SOURCE_GMAIL, false).await {
+                            Ok(n) => gmail_items = n,
+                            Err(e) => {
+                                yield OnboardingEvent::SourceProgress {
+                                    source: SOURCE_GMAIL.into(),
+                                    note: format!("persistence failed: {e}"),
+                                };
+                            }
+                        }
+                        yield OnboardingEvent::ProfileReady {
+                            profile: counts.0,
+                            people: counts.1,
+                            goals: counts.2,
+                        };
+                        if let Err(e) = kawai_memory::facet_distill(&user_id).await {
+                            tracing::warn!(user_id = %user_id, component = "onboarding", "facet distill skipped: {e}");
+                        }
+                    }
+                    Err(e) => {
+                        yield OnboardingEvent::SourceProgress {
+                            source: SOURCE_GMAIL.into(),
+                            note: format!("compression failed: {e}"),
+                        };
+                    }
+                }
+            }
+
             processed.push(SOURCE_GMAIL.into());
             yield OnboardingEvent::SourceCompleted {
                 source: SOURCE_GMAIL.into(),
-                items_found: gmail_linkedin_url.is_some() as u32,
+                items_found: gmail_linkedin_url.is_some() as u32 + gmail_items,
             };
         }
 
@@ -399,7 +466,7 @@ pub fn onboarding_run_stream(
             tracing::warn!(user_id = %user_id, component = "onboarding", "facet distill skipped: {e}");
         }
         mark_done(&user_id, &processed).await;
-        yield OnboardingEvent::OnboardingFinished { total_items: stored + linkedin_items };
+        yield OnboardingEvent::OnboardingFinished { total_items: stored + linkedin_items + gmail_items };
     }
 }
 
@@ -494,7 +561,12 @@ pub async fn onboarding_import_document(user_id: &str, file_id: &str) -> Result<
 /// survives — message bodies and all other matches are discarded in-memory.
 /// `Ok(None)` = connected but nothing found; `Err` = no vault key / no
 /// active Gmail connection / fetch failure (all best-effort skip reasons).
-async fn gmail_self_url(user_id: &str) -> Result<Option<String>, OnboardingError> {
+/// Resolve the Composio client + the active Gmail connected account, or a
+/// best-effort skip reason. Shared by the self-URL stage and the metadata
+/// scan.
+async fn gmail_account(
+    user_id: &str,
+) -> Result<(composio::ComposioClient, composio::ConnectedAccountInfo), OnboardingError> {
     let api_key = kawai_constants::composio::get_composio_api_key();
     if api_key.trim().is_empty() {
         return Err(OnboardingError::Composio("no Composio key".into()));
@@ -506,9 +578,14 @@ async fn gmail_self_url(user_id: &str) -> Result<Option<String>, OnboardingError
         .map_err(|e| OnboardingError::Composio(format!("list connections: {e}")))?;
     let account = accounts
         .items
-        .iter()
+        .into_iter()
         .find(|a| a.toolkit_slug().eq_ignore_ascii_case("gmail") && a.status.eq_ignore_ascii_case("ACTIVE"))
         .ok_or_else(|| OnboardingError::Composio("no active Gmail connection".into()))?;
+    Ok((client, account))
+}
+
+async fn gmail_self_url(user_id: &str) -> Result<Option<String>, OnboardingError> {
+    let (client, account) = gmail_account(user_id).await?;
 
     let resp = client
         .execute_tool(
@@ -527,6 +604,42 @@ async fn gmail_self_url(user_id: &str) -> Result<Option<String>, OnboardingError
     // the serialized payload for the URL patterns instead of walking it.
     let payload = resp.data.to_string();
     Ok(extract_self_linkedin_url(&payload))
+}
+
+/// Metadata scan (plan §2.4 `recent_contacts` + `topic_hints`): one bounded
+/// `GMAIL_FETCH_EMAILS` page over the last 90 days, From/Subject headers
+/// only, aggregated to top contacts + recurring subject keywords via the
+/// pure `onboarding::gmail_meta` layer. Bodies/snippets returned by the
+/// action are never read — the aggregator has no field to receive them — so
+/// nothing beyond aggregates can reach materials, the compressor, or the DB.
+/// Returns the aggregate materials text (empty when the mailbox is quiet).
+async fn gmail_metadata_materials(user_id: &str) -> Result<String, OnboardingError> {
+    let max_messages = std::env::var("KAWAI_GMAIL_MAX_MESSAGES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(onboarding::gmail_meta::DEFAULT_MAX_MESSAGES)
+        .clamp(1, 1000);
+    let (client, account) = gmail_account(user_id).await?;
+    let resp = client
+        .execute_tool(
+            "GMAIL_FETCH_EMAILS",
+            serde_json::json!({ "query": "newer_than:90d", "maxResults": max_messages }),
+            Some(account.id.clone()),
+            Some(user_id),
+        )
+        .await
+        .map_err(|e| OnboardingError::Composio(format!("fetch headers: {e}")))?;
+    if !resp.successful {
+        return Err(OnboardingError::Gmail(
+            resp.error.unwrap_or_else(|| "gmail header fetch failed".into()),
+        ));
+    }
+    let headers = onboarding::gmail_meta::parse_headers(&resp.data);
+    let aggregates = onboarding::gmail_meta::aggregate(
+        &headers,
+        onboarding::gmail_meta::DEFAULT_CONTACT_LIMIT,
+    );
+    Ok(onboarding::gmail_meta::render_materials(&aggregates))
 }
 
 /// Two-priority self-URL extraction over arbitrary Gmail payload text.
@@ -604,13 +717,16 @@ async fn compress_with_cloud(
 /// Store compressed items as memories (dedup by title, case-insensitive).
 /// Returns how many rows landed.
 ///
+/// Public: the `onboarding_smoke` example drives this real persist path with
+/// `parse_compressed` output instead of the networked LLM stage.
+///
 /// `source` is the provenance written on every row. Namespace mapping: for
 /// LOCAL sources (`questions`) `profile`-namespace items are stored as
 /// `general` so they inject into agent prompts immediately; EXTERNAL
 /// sources (linkedin/documents) keep `profile` — those rows are the facet
 /// distill's input and inject via the `<profile>` block. `people`/`goals`
 /// inject in either namespace.
-async fn persist_compressed(
+pub async fn persist_compressed(
     user_id: &str,
     compressed: &onboarding::compress::CompressedProfile,
     source: &str,
