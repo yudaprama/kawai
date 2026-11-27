@@ -404,6 +404,8 @@ jobs:
             # `base/lib/arm64-v8a/...` (verified against vc 10126 — the root
             # layout is the only one accepted).
             (cd "$SYMBOLS/lib" && zip -qr "$ZIP" .)
+            echo "Native debug symbols: $ZIP ($(du -h "$ZIP" | cut -f1))"
+            echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
           else
             echo "zip=" >> "$GITHUB_OUTPUT"
             echo "::warning::No unstripped native debug symbols were exported — Play cannot symbolicate native crashes for this build."
