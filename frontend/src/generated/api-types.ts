@@ -965,8 +965,9 @@ export type VideoBlobView = {
  */
 export type VideoGenParams = {
 	/**
-	 *  Registry key: `seedance` | `veo3` | `kling` | `minimax` | `wan` |
-	 *  `flux3` | `grok` | `vidu` | `hunyuan`.
+	 *  Registry key: `seedance` | `veo3` | `kling` | `minimax` |
+	 *  `minimax-comfy` | `wan` | `flux3` | `grok` | `vidu` | `hunyuan` |
+	 *  `ltx`.
 	 */
 	ecosystem: string,
 	/**
