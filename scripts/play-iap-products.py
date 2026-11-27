@@ -64,8 +64,8 @@ PRODUCTS: list[dict[str, object]] = [
         "priceIdr": "10000",
         "title": {"id": "1 juta token", "en-US": "1 million tokens"},
         "description": {
-            "id": "Tambah 1.000.000 token ke saldo kawai. Sekali pakai. kawai bersifat privat & lokal: data tersimpan di tiap perangkat, jadi dengan akun yang sama data desktop dan mobile tetap terpisah.",
-            "en-US": "Add 1,000,000 tokens to your kawai balance. One-time purchase. kawai is private & local: data stays on each device, so the same account has separate data on desktop and mobile.",
+            "id": "Tambah 1.000.000 token ke saldo kawai. Sekali pakai.",
+            "en-US": "Add 1,000,000 tokens to your kawai balance. One-time purchase.",
         },
     },
     {
@@ -73,8 +73,8 @@ PRODUCTS: list[dict[str, object]] = [
         "priceIdr": "25000",
         "title": {"id": "2,5 juta token", "en-US": "2.5 million tokens"},
         "description": {
-            "id": "Tambah 2.500.000 token ke saldo kawai. Sekali pakai. kawai bersifat privat & lokal: data tersimpan di tiap perangkat, jadi dengan akun yang sama data desktop dan mobile tetap terpisah.",
-            "en-US": "Add 2,500,000 tokens to your kawai balance. One-time purchase. kawai is private & local: data stays on each device, so the same account has separate data on desktop and mobile.",
+            "id": "Tambah 2.500.000 token ke saldo kawai. Sekali pakai.",
+            "en-US": "Add 2,500,000 tokens to your kawai balance. One-time purchase.",
         },
     },
     {
@@ -82,8 +82,8 @@ PRODUCTS: list[dict[str, object]] = [
         "priceIdr": "50000",
         "title": {"id": "5 juta token", "en-US": "5 million tokens"},
         "description": {
-            "id": "Tambah 5.000.000 token ke saldo kawai. Sekali pakai. kawai bersifat privat & lokal: data tersimpan di tiap perangkat, jadi dengan akun yang sama data desktop dan mobile tetap terpisah.",
-            "en-US": "Add 5,000,000 tokens to your kawai balance. One-time purchase. kawai is private & local: data stays on each device, so the same account has separate data on desktop and mobile.",
+            "id": "Tambah 5.000.000 token ke saldo kawai. Sekali pakai.",
+            "en-US": "Add 5,000,000 tokens to your kawai balance. One-time purchase.",
         },
     },
     {
@@ -91,8 +91,8 @@ PRODUCTS: list[dict[str, object]] = [
         "priceIdr": "100000",
         "title": {"id": "10 juta token", "en-US": "10 million tokens"},
         "description": {
-            "id": "Tambah 10.000.000 token ke saldo kawai. Sekali pakai. kawai bersifat privat & lokal: data tersimpan di tiap perangkat, jadi dengan akun yang sama data desktop dan mobile tetap terpisah.",
-            "en-US": "Add 10,000,000 tokens to your kawai balance. One-time purchase. kawai is private & local: data stays on each device, so the same account has separate data on desktop and mobile.",
+            "id": "Tambah 10.000.000 token ke saldo kawai. Sekali pakai.",
+            "en-US": "Add 10,000,000 tokens to your kawai balance. One-time purchase.",
         },
     },
 ]
