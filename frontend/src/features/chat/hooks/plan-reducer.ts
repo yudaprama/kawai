@@ -35,6 +35,7 @@ export function seedSteps(
     id: string;
     tool: string;
     task: string;
+    agent?: string | null;
     dependsOn: string[];
     inputs?: { arg: string; fromStep: string; output: string }[];
   }[],
@@ -43,6 +44,7 @@ export function seedSteps(
     stepId: s.id,
     tool: s.tool,
     task: s.task,
+    agent: s.agent ?? undefined,
     dependsOn: s.dependsOn,
     inputs: s.inputs ?? [],
     state: "pending" as const,
@@ -77,6 +79,7 @@ export function parseReview(plan: unknown, sessionId: number, agentId: string) {
       id?: unknown;
       tool?: unknown;
       task?: unknown;
+      agent?: unknown;
       dependsOn?: unknown;
       requiresConfirmation?: unknown;
     }[];
@@ -100,10 +103,12 @@ export function parseReview(plan: unknown, sessionId: number, agentId: string) {
   for (const s of p.steps) {
     if (typeof s.id !== "string") continue;
     if (typeof s.tool === "string" && NON_DISPATCHABLE_REVIEW_TOOLS.includes(s.tool)) continue;
+    const rawAgent = s.agent;
     steps.push({
       id: s.id,
       tool: typeof s.tool === "string" ? s.tool : "",
       task: typeof s.task === "string" ? s.task : "",
+      agent: typeof rawAgent === "string" ? rawAgent : undefined,
       dependsOn: Array.isArray(s.dependsOn) ? s.dependsOn.filter((d): d is string => typeof d === "string") : [],
       inputs: parseInputBindings((s as { inputs?: unknown }).inputs),
       requiresConfirmation: s.requiresConfirmation === true,
@@ -179,6 +184,7 @@ export function initialSupervisorState(): SupervisorPlanState {
     pendingConfirmation: null,
     finalOutput: null,
     artifacts: [],
+    deliverableFileId: null,
     error: null,
     review: null,
     planVersion: 0,
@@ -243,6 +249,7 @@ export function supervisorReducer(
         planStartedAt: now,
         planCompletedAt: null,
         planKey: event.planKey,
+        deliverableFileId: null,
       };
     }
     case "stepStarted": {
@@ -250,7 +257,17 @@ export function supervisorReducer(
         state.steps,
         event.stepId,
         { tool: event.tool },
-        { state: "running", startedAt: now },
+        { state: "running", startedAt: now, argsSummary: event.argsSummary || undefined },
+      );
+      return { ...state, steps };
+    }
+    case "stepUsage": {
+      // Per-step token cost — the transparency layer's usage row.
+      const steps = upsertStepPure(
+        state.steps,
+        event.stepId,
+        {},
+        { usage: { inputTokens: event.inputTokens, outputTokens: event.outputTokens } },
       );
       return { ...state, steps };
     }
@@ -342,6 +359,7 @@ export function supervisorReducer(
         revising: null,
         finalOutput: event.finalOutput ?? null,
         artifacts: hydrateArtifacts(event.artifacts),
+        deliverableFileId: event.deliverableFileId ?? null,
         planCompletedAt: now,
       };
     }

@@ -53,6 +53,15 @@ export interface SupervisorStep {
   /** Wall-clock end — freezes the per-step duration. */
   finishedAt?: number;
   artifacts: SupervisorArtifact[];
+  /** Planner-authored agent display name (S2) — the rail's primary label
+   *  when present; falls back to the task/tool naming. */
+  agent?: string;
+  /** Bounded one-line summary of the RESOLVED dispatch arguments
+   *  (stepStarted.argsSummary) — what the step actually ran with. */
+  argsSummary?: string;
+  /** Provider-reported LLM usage the step's tool consumed
+   *  (stepUsage) — token cost shown in the timeline. */
+  usage?: { inputTokens: number; outputTokens: number };
   /** Explicit dataflow bindings — shown as the wiring the step consumes. */
   inputs?: SupervisorInputBinding[];
 }
@@ -63,6 +72,9 @@ export interface PlanReviewStep {
   id: string;
   tool: string;
   task: string;
+  /** Planner-authored agent display name — the review list's primary label
+   *  when present. */
+  agent?: string;
   dependsOn: string[];
   /** Dataflow bindings — reviewed alongside the step list so the user sees
    *  what each step consumes, not just what it runs. */
@@ -134,6 +146,9 @@ export interface SupervisorPlanState {
     description: string;
   } | null;
   finalOutput: string | null;
+  /** Office-store file id the final markdown deliverable was persisted under
+   *  (planCompleted.deliverableFileId) — the run view surfaces it. */
+  deliverableFileId: string | null;
   /** Deliverable artifacts of the finished run — a deck artifact renders as
    *  the deliverable hero in the viewer. */
   artifacts: SupervisorArtifact[];
@@ -165,6 +180,9 @@ export interface PersistedPlanStep {
   output?: string;
   /** Planner's human task label (restored journals show it, not the tool). */
   task?: string;
+  /** Planner-authored agent display name — restored journals keep the same
+   *  rail naming the live run had. */
+  agent?: string;
   /** Dispatch order — lets a restored journal re-derive phases. */
   dependsOn?: string[];
   /** Dataflow bindings — restored so the rail shows the step's wiring. */
@@ -248,6 +266,7 @@ export function hydrateStep(s: PersistedPlanStep): SupervisorStep {
     stepId: s.id,
     tool: s.tool,
     task: s.task ?? s.tool,
+    agent: s.agent,
     state: (s.state === "completed" || s.state === "failed" || s.state === "skipped"
       ? s.state
       : "pending") as SupervisorStep["state"],

@@ -226,6 +226,7 @@ function buildPlanRecord(
       state: s.state,
       output: s.output,
       task: s.task,
+      agent: s.agent,
       dependsOn: s.dependsOn,
       inputs: s.inputs,
       artifacts: s.artifacts.length > 0 ? s.artifacts : undefined,

@@ -104,7 +104,11 @@ describe("supervisorReducer — happy path", () => {
 
   it("full lifecycle: planStarted → stepStarted → stepCompleted → planCompleted", () => {
     let s = makePlan([step("a")]);
-    s = supervisorReducer(s, { type: "stepStarted", stepId: "a", tool: "web_read" }, { now: NOW + 100 });
+    s = supervisorReducer(
+      s,
+      { type: "stepStarted", stepId: "a", tool: "web_read", argsSummary: "" },
+      { now: NOW + 100 },
+    );
     expect(s.steps[0].state).toBe("running");
     expect(s.steps[0].startedAt).toBe(NOW + 100);
 
@@ -122,6 +126,85 @@ describe("supervisorReducer — happy path", () => {
     expect(s.finalOutput).toBe("done");
     expect(s.planCompletedAt).toBe(NOW + 300);
     expect(s.pendingConfirmation).toBeNull();
+  });
+
+  it("S2: stepStarted records the args summary and stepUsage records token cost", () => {
+    let s = makePlan([step("a")]);
+    s = supervisorReducer(
+      s,
+      { type: "stepStarted", stepId: "a", tool: "cli_run", argsSummary: '{"query":"btc"}' },
+      { now: NOW + 100 },
+    );
+    expect(s.steps[0].argsSummary).toBe('{"query":"btc"}');
+
+    s = supervisorReducer(
+      s,
+      { type: "stepUsage", stepId: "a", tool: "cli_run", inputTokens: 120, outputTokens: 45 },
+      { now: NOW + 150 },
+    );
+    expect(s.steps[0].usage).toEqual({ inputTokens: 120, outputTokens: 45 });
+
+    s = supervisorReducer(
+      s,
+      { type: "stepCompleted", stepId: "a", output: "ok", artifacts: [], retriesUsed: 0 },
+      { now: NOW + 200 },
+    );
+    // Usage survives the terminal event — the timeline keeps showing it.
+    expect(s.steps[0].usage).toEqual({ inputTokens: 120, outputTokens: 45 });
+  });
+
+  it("S2: planner agent names seed the rail and planCompleted surfaces the saved file id", () => {
+    let s = initialSupervisorState();
+    s = supervisorReducer(
+      s,
+      {
+        type: "planStarted",
+        goal: "g",
+        stepCount: 1,
+        steps: [{ id: "a", tool: "cli_run", task: "Fetch", agent: "Market Scout", dependsOn: [] }],
+        planKey: "pk",
+        summary: { overview: "o", actions: [], outputs: [] },
+        videoId: null,
+      },
+      { now: NOW },
+    );
+    expect(s.steps[0].agent).toBe("Market Scout");
+    expect(s.deliverableFileId).toBeNull();
+
+    s = supervisorReducer(
+      s,
+      { type: "planCompleted", finalOutput: "done", artifacts: [], deliverableFileId: "of_123" },
+      { now: NOW + 100 },
+    );
+    expect(s.deliverableFileId).toBe("of_123");
+  });
+
+  it("S2: parseReview threads the planner agent name into the review model", () => {
+    const review = parseReview(
+      {
+        goal: "g",
+        steps: [
+          {
+            id: "s1",
+            tool: "cli_run",
+            task: "Fetch",
+            agent: "Market Scout",
+            dependsOn: [],
+            requiresConfirmation: false,
+          },
+        ],
+      },
+      1,
+      "builtin.supervisor",
+    );
+    expect(review?.steps[0].agent).toBe("Market Scout");
+    // Missing agent stays undefined — the rail falls back to task naming.
+    const plain = parseReview(
+      { goal: "g", steps: [{ id: "s1", tool: "cli_run", task: "Fetch", dependsOn: [], requiresConfirmation: false }] },
+      1,
+      "builtin.supervisor",
+    );
+    expect(plain?.steps[0].agent).toBeUndefined();
   });
 
   it("planStarted → stepFailed → planFailed", () => {
@@ -142,8 +225,16 @@ describe("supervisorReducer — happy path", () => {
 
   it("planFailed closes in-flight running steps as cancelled", () => {
     let s = makePlan([step("a"), step("b"), step("c")]);
-    s = supervisorReducer(s, { type: "stepStarted", stepId: "a", tool: "data_chart" }, { now: NOW + 100 });
-    s = supervisorReducer(s, { type: "stepStarted", stepId: "b", tool: "data_chart" }, { now: NOW + 110 });
+    s = supervisorReducer(
+      s,
+      { type: "stepStarted", stepId: "a", tool: "data_chart", argsSummary: "" },
+      { now: NOW + 100 },
+    );
+    s = supervisorReducer(
+      s,
+      { type: "stepStarted", stepId: "b", tool: "data_chart", argsSummary: "" },
+      { now: NOW + 110 },
+    );
     s = supervisorReducer(s, { type: "stepFailed", stepId: "a", error: "boom", kind: "tool" }, { now: NOW + 200 });
     // b never gets its own stepFailed — the scheduler cancelled it silently.
     s = supervisorReducer(s, { type: "planFailed", error: "step a failed" }, { now: NOW + 300 });
@@ -159,7 +250,11 @@ describe("supervisorReducer — happy path", () => {
 describe("supervisorReducer — replan", () => {
   it("snapshots prior version and re-seeds steps on planRevised", () => {
     let s = makePlan([step("a"), step("b")], { planKey: "pk1" });
-    s = supervisorReducer(s, { type: "stepStarted", stepId: "a", tool: "web_read" }, { now: NOW + 100 });
+    s = supervisorReducer(
+      s,
+      { type: "stepStarted", stepId: "a", tool: "web_read", argsSummary: "" },
+      { now: NOW + 100 },
+    );
     s = supervisorReducer(
       s,
       { type: "stepCompleted", stepId: "a", output: "ok", artifacts: [], retriesUsed: 0 },
@@ -316,7 +411,11 @@ describe("supervisorReducer — edge cases", () => {
 
   it("stepStarted for unknown stepId creates a new step entry", () => {
     let s = makePlan([step("a")]);
-    s = supervisorReducer(s, { type: "stepStarted", stepId: "unknown", tool: "web_read" }, { now: NOW + 100 });
+    s = supervisorReducer(
+      s,
+      { type: "stepStarted", stepId: "unknown", tool: "web_read", argsSummary: "" },
+      { now: NOW + 100 },
+    );
     expect(s.steps).toHaveLength(2);
     expect(s.steps[1].stepId).toBe("unknown");
     expect(s.steps[1].state).toBe("running");
@@ -489,9 +588,21 @@ describe("pruneReviewStep", () => {
 describe("supervisorReducer — multi-step execution ordering", () => {
   it("parallel steps complete independently", () => {
     let s = makePlan([step("a"), step("b"), step("c")]);
-    s = supervisorReducer(s, { type: "stepStarted", stepId: "a", tool: "web_read" }, { now: NOW + 100 });
-    s = supervisorReducer(s, { type: "stepStarted", stepId: "b", tool: "code_write" }, { now: NOW + 110 });
-    s = supervisorReducer(s, { type: "stepStarted", stepId: "c", tool: "web_read" }, { now: NOW + 120 });
+    s = supervisorReducer(
+      s,
+      { type: "stepStarted", stepId: "a", tool: "web_read", argsSummary: "" },
+      { now: NOW + 100 },
+    );
+    s = supervisorReducer(
+      s,
+      { type: "stepStarted", stepId: "b", tool: "code_write", argsSummary: "" },
+      { now: NOW + 110 },
+    );
+    s = supervisorReducer(
+      s,
+      { type: "stepStarted", stepId: "c", tool: "web_read", argsSummary: "" },
+      { now: NOW + 120 },
+    );
 
     // Complete in reverse order
     s = supervisorReducer(

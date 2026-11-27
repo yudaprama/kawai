@@ -70,6 +70,13 @@ export type PlanStepInfo = {
 	 *  specta unified export cannot represent.
 	 */
 	inputs?: PlanInputBinding[],
+	/**
+	 *  Planner-authored display name for the agent running this step — the
+	 *  rail's primary label when present. `None` for plans that omit it
+	 *  (fixed pipelines, older persisted plans); the frontend falls back to
+	 *  its task/tool naming.
+	 */
+	agent?: string | null,
 };
 
 /**
@@ -113,7 +120,13 @@ summary: PlanSummary;
  *  frontend embeds the player from this id; the step `arguments` that
  *  also carry it never reach the wire, so this is the only channel.
  */
-videoId: string | null } | { type: "stepStarted"; stepId: string; tool: string } | { type: "confirmationRequested"; streamId: string; stepId: string; task: string; description: string } | 
+videoId: string | null } | { type: "stepStarted"; stepId: string; tool: string; 
+/**
+ *  Bounded one-line summary of the step's RESOLVED dispatch
+ *  arguments — the transparency layer's "what did this actually run
+ *  with". Char-truncated on the backend (never a payload dump).
+ */
+argsSummary: string } | { type: "confirmationRequested"; streamId: string; stepId: string; task: string; description: string } | 
 /**
  *  A live text line from a long-running tool (the NeuroSploit deep audit).
  *  Forwarded lossily from the harness channel; the complete bounded tail
@@ -124,7 +137,15 @@ videoId: string | null } | { type: "stepStarted"; stepId: string; tool: string }
  *  Retries the scheduler spent on this step (0 = first attempt
  *  succeeded) — drives the retry indicator in the progress UI.
  */
-retriesUsed: number } | { type: "stepFailed"; stepId: string; error: string; 
+retriesUsed: number } | 
+/**
+ *  Provider-reported LLM usage one step's tool consumed — input/output
+ *  tokens folded from every remote call inside its dispatch (a `reason`
+ *  one-shot, a subagent round). Emitted right after the step's terminal
+ *  event, ONLY when the tool reported usage; pure-local steps never
+ *  fire it. Rendered in the workbench timeline as the step's token cost.
+ */
+{ type: "stepUsage"; stepId: string; tool: string; inputTokens: number; outputTokens: number } | { type: "stepFailed"; stepId: string; error: string; 
 /**
  *  Failure class for UI/telemetry: `timeout` | `confirmation` |
  *  `cancelled` | `tool`.
@@ -192,4 +213,11 @@ searching: boolean } |
  *  deck file as the deliverable hero). File artifacts from the steps
  *  ride along so the UI can surface them without re-parsing outputs.
  */
-artifacts: ArtifactInfo[] } | { type: "planFailed"; error: string };
+artifacts: ArtifactInfo[]; 
+/**
+ *  Office-store file id the final markdown deliverable was persisted
+ *  under (`.md`, per-user store) — `None` for deck deliverables (the
+ *  deck file id rides `artifacts`), raw-writer runs, and legacy/test
+ *  callers without a user id.
+ */
+deliverableFileId?: string | null } | { type: "planFailed"; error: string };

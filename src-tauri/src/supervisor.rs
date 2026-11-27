@@ -137,6 +137,7 @@ fn plan_step_infos(plan: &kawai_router::TaskPlan) -> Vec<PlanStepInfo> {
                 s.task.clone()
             },
             depends_on: s.depends_on.clone(),
+            agent: s.agent.clone(),
             inputs: s
                 .inputs
                 .as_object()
@@ -2476,7 +2477,7 @@ Respond ONLY with ONE JSON object — either:
   (request tool search results; up to 3 diverse queries; describe CAPABILITIES, not tool names)
   — ALWAYS write the queries in ENGLISH: the catalog descriptions are English,
   so queries in any other language return junk and waste the search budget.
-{{"goal": "<one-line goal>", "summary": {{"overview": "<1–3 sentences>", "actions": ["…"], "outputs": ["…"]}}, "steps": [{{"id": "s1", "tool": "<exact name>", "task": "…", "arguments": {{}}, "inputs": {{}}, "dependsOn": [], "produces": [], "timeoutMs": 30000, "retries": 0, "onError": "fail", "requiresConfirmation": false}}], "finalWriter": "deck_writer"}}
+{{"goal": "<one-line goal>", "summary": {{"overview": "<1–3 sentences>", "actions": ["…"], "outputs": ["…"]}}, "steps": [{{"id": "s1", "tool": "<exact name>", "task": "…", "agent": "<2-3 word agent name>", "arguments": {{}}, "inputs": {{}}, "dependsOn": [], "produces": [], "timeoutMs": 30000, "retries": 0, "onError": "fail", "requiresConfirmation": false}}], "finalWriter": "deck_writer"}}
   (the final plan, once you know which tools to use)
 
 Plan rules:
@@ -2493,6 +2494,11 @@ Plan rules:
   USER'S LANGUAGE (the goal's language), for the progress UI — e.g.
   "Cek cuaca Tokyo", "Find 3 Bali beach photos". ALWAYS keep "arguments"
   complete and precise — the arguments are what the tool executes.
+- "agent" (optional but encouraged): a short 2–3 word display NAME for the
+  agent running the step, in the user's language — personality, not
+  description ("PDF Analyst", "Document Sweeper", "Pencari Foto"). The UI
+  shows it as the agent's name on the rail; "task" stays the plain
+  description. Vary the names across steps.
 - Be concise overall: no prose outside the JSON, no repeated context.
 - "dependsOn" lists step ids that must finish first; no cycles.
 - To consume a previous step's output, bind it in "inputs": {{"<arg name>": {{"fromStep": "<step id>", "output": "<artifact name>"}}}} — never paste large content.
@@ -2576,12 +2582,14 @@ completes the original goal from the current state.
 
 The FULL tool catalog is provided below — do NOT ask for more tools, do NOT
 search. Respond ONLY with ONE JSON object, exactly this shape:
-{{"goal": "<one-line goal>", "summary": {{"overview": "<1–3 sentences, user's language>", "actions": ["…"], "outputs": ["…"]}}, "steps": [{{"id": "s1", "tool": "<exact name>", "task": "…", "arguments": {{}}, "inputs": {{}}, "dependsOn": [], "produces": [], "timeoutMs": 30000, "retries": 0, "onError": "fail", "requiresConfirmation": false}}], "finalWriter": "deck_writer"}}
+{{"goal": "<one-line goal>", "summary": {{"overview": "<1–3 sentences, user's language>", "actions": ["…"], "outputs": ["…"]}}, "steps": [{{"id": "s1", "tool": "<exact name>", "task": "…", "agent": "<2-3 word agent name>", "arguments": {{}}, "inputs": {{}}, "dependsOn": [], "produces": [], "timeoutMs": 30000, "retries": 0, "onError": "fail", "requiresConfirmation": false}}], "finalWriter": "deck_writer"}}
 
 Rules:
 - Reuse the outputs of already-completed steps by binding them in "inputs": {{"<arg name>": {{"fromStep": "<step id>", "output": "<artifact name>"}}}} — never redo work that succeeded. A bound input implies its dependency.
 - Fix ONLY what failed: the failure reason is in the execution report.
 - "task" is REQUIRED: one line ≤80 chars in the USER'S LANGUAGE.
+- "agent": short 2–3 word display name for the step's agent (same contract as
+  the original plan).
 - "summary" mirrors the planner's contract: overview = 1–3 sentences in
   the user's language; ≤4 actions that GROUP steps (never restate one); ≤5 expected outputs.
 - Keep "arguments" complete and precise — they are what the tool executes.
@@ -4094,6 +4102,8 @@ pub(crate) async fn build_registry_from_toolset(
                     error: None,
                     retries_used: 0,
                     error_kind: kawai_router::FailureKind::Other,
+                    // Memo hits never re-executed the tool — no fresh usage.
+                    ..Default::default()
                 });
             }
             let args = kawai_router::canonical_json(&args_value);
@@ -4235,6 +4245,12 @@ pub(crate) async fn build_registry_from_toolset(
                 error,
                 retries_used: 0,
                     error_kind: kawai_router::FailureKind::Other,
+                // Every remote LLM call inside this tool folded its
+                // provider-reported usage into `step_charge` — surface the
+                // per-step numbers on the wire (the scheduler emits a
+                // `StepUsage` timeline event when nonzero).
+                input_tokens: step_charge.input_tokens(),
+                output_tokens: step_charge.output_tokens(),
             })
         })
     });
@@ -4557,6 +4573,35 @@ pub const WRITER_DECK: &str = "deck_writer";
 /// second cloud call nor pollute the planner's `<experiences>` context.
 pub const WRITER_RAW: &str = "raw";
 
+/// Slugified, length-bounded filename for the persisted markdown deliverable:
+/// alphanumerics + dashes from the goal, collapsing runs, truncating to ~48
+/// chars, with a `deliverable` fallback — deterministic per goal, and safe
+/// for the store's listing/preview surfaces.
+fn deliverable_filename(goal: &str) -> String {
+    let mut slug = String::new();
+    let mut prev_dash = true; // suppress a leading dash
+    for ch in goal.chars() {
+        let c = ch.to_ascii_lowercase();
+        if c.is_ascii_alphanumeric() {
+            slug.push(c);
+            prev_dash = false;
+        } else if !prev_dash {
+            slug.push('-');
+            prev_dash = true;
+        }
+        if slug.chars().count() >= 48 {
+            break;
+        }
+    }
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+    if slug.is_empty() {
+        slug.push_str("deliverable");
+    }
+    format!("{slug}.md")
+}
+
 /// Char-boundary-safe prefix of `s` (at most `max_chars` characters).
 fn preview_chars(s: &str, max_chars: usize) -> &str {
     match s.char_indices().nth(max_chars) {
@@ -4630,8 +4675,20 @@ fn finish_step_telemetry(
 
 fn log_scheduler_event(stream_id: &str, event: kawai_router::SchedulerEvent) -> SupervisorEvent {
     let label = match &event {
-        kawai_router::SchedulerEvent::StepStarted { step_id, tool } => {
-            format!("stepStarted step={step_id} tool={tool}")
+        kawai_router::SchedulerEvent::StepStarted {
+            step_id,
+            tool,
+            args_summary,
+        } => {
+            format!("stepStarted step={step_id} tool={tool} args={args_summary}")
+        }
+        kawai_router::SchedulerEvent::StepUsage {
+            step_id,
+            tool,
+            input_tokens,
+            output_tokens,
+        } => {
+            format!("stepUsage step={step_id} tool={tool} in={input_tokens} out={output_tokens}")
         }
         kawai_router::SchedulerEvent::ConfirmationRequested { step_id, .. } => {
             format!("confirmationRequested step={step_id}")
@@ -4661,9 +4718,26 @@ fn log_scheduler_event(stream_id: &str, event: kawai_router::SchedulerEvent) -> 
     };
     tracing::info!("[supervisor] {label}");
     match event {
-        kawai_router::SchedulerEvent::StepStarted { step_id, tool } => {
-            SupervisorEvent::StepStarted { step_id, tool }
-        }
+        kawai_router::SchedulerEvent::StepStarted {
+            step_id,
+            tool,
+            args_summary,
+        } => SupervisorEvent::StepStarted {
+            step_id,
+            tool,
+            args_summary,
+        },
+        kawai_router::SchedulerEvent::StepUsage {
+            step_id,
+            tool,
+            input_tokens,
+            output_tokens,
+        } => SupervisorEvent::StepUsage {
+            step_id,
+            tool,
+            input_tokens,
+            output_tokens,
+        },
         kawai_router::SchedulerEvent::ConfirmationRequested { step_id, task, description } => {
             SupervisorEvent::ConfirmationRequested { stream_id: stream_id.to_string(), step_id, task, description }
         }
@@ -6348,7 +6422,7 @@ pub fn execute_plan_stream_with_cancel(
             let obs_user = telemetry_user.clone();
             Arc::new(move |event| {
                 match &event {
-                    kawai_router::SchedulerEvent::StepStarted { step_id, tool } => {
+                    kawai_router::SchedulerEvent::StepStarted { step_id, tool, .. } => {
                         let mut span_attrs = vec![
                             ("kawai.step_id".into(), step_id.clone()),
                             ("kawai.tool".into(), tool.clone()),
@@ -6596,6 +6670,7 @@ pub fn execute_plan_stream_with_cancel(
                             yield SupervisorEvent::PlanCompleted {
                                 final_output: raw_final,
                                 artifacts: run_artifacts,
+                                deliverable_file_id: None,
                             };
                             break;
                         }
@@ -6604,6 +6679,7 @@ pub fn execute_plan_stream_with_cancel(
                             yield SupervisorEvent::StepStarted {
                                 step_id: DELIVERABLE_STEP_ID.into(),
                                 tool: WRITER_DECK.into(),
+                                args_summary: String::new(),
                             };
                             let materials = synthesis_materials(&current_plan, &result);
                             let synthesis_goal = user_goal
@@ -6648,6 +6724,7 @@ pub fn execute_plan_stream_with_cancel(
                             yield SupervisorEvent::StepStarted {
                                 step_id: DELIVERABLE_STEP_ID.into(),
                                 tool: DELIVERABLE_TOOL.into(),
+                                args_summary: String::new(),
                             };
                         }
                         let raw_final = result.final_output().map(String::from);
@@ -6760,6 +6837,7 @@ pub fn execute_plan_stream_with_cancel(
                         // Persist the deliverable alongside the tool-step
                         // results so later runs in this session can read it
                         // via `session_step_results` (the enhancement chain).
+                        let mut deliverable_file_id: Option<String> = None;
                         if let Some(written) = &written {
                             if !user_id.is_empty() {
                                 let _ = kawai_db::upsert_supervisor_step_result(
@@ -6775,6 +6853,31 @@ pub fn execute_plan_stream_with_cancel(
                                     },
                                 )
                                 .await;
+                                // First-class persistence: the markdown
+                                // deliverable lands in the per-user office
+                                // store as a real `.md` document — it opens
+                                // in the existing preview and survives
+                                // restarts. Deck deliverables skip this (the
+                                // deck file id already rides `run_artifacts`).
+                                // Best-effort — persistence failure never
+                                // fails a finished run.
+                                if deck_artifact.is_none() && !written.trim().is_empty() {
+                                    match kawai_office::export_deliverable(
+                                        &user_id,
+                                        written,
+                                        &deliverable_filename(&current_plan.goal),
+                                    )
+                                    .await
+                                    {
+                                        Ok(file) => deliverable_file_id = Some(file.id),
+                                        Err(e) => tracing::warn!(
+                                            user_id = %user_id,
+                                            component = "supervisor",
+                                            error = %e,
+                                            "office-store deliverable persistence failed"
+                                        ),
+                                    }
+                                }
                             }
                         }
                         if let Some(artifact) = &deck_artifact {
@@ -6835,6 +6938,7 @@ pub fn execute_plan_stream_with_cancel(
                         yield SupervisorEvent::PlanCompleted {
                             final_output: written,
                             artifacts: run_artifacts,
+                            deliverable_file_id,
                         };
                         break;
                     }
@@ -7381,6 +7485,7 @@ mod tests {
             error: Some(error.into()),
             error_kind: kawai_router::FailureKind::Tool,
             retries_used: 0,
+            ..Default::default()
         };
         let spawn_miss = kawai_router::ExecutionResult {
             results: vec![failed("`cat` failed: exit code -1 in 2 ms. stderr: spawn failed: No such file or directory (os error 2)")],
@@ -7647,6 +7752,43 @@ mod tests {
         assert_eq!(cut.chars().count(), 2500);
     }
 
+    /// The persisted deliverable's filename is a slug of the goal — bounded,
+    /// filesystem-safe, non-empty even for a non-ASCII goal.
+    #[test]
+    fn deliverable_filename_is_a_bounded_slug() {
+        assert_eq!(
+            deliverable_filename("Fetch BTC prices & compare"),
+            "fetch-btc-prices-compare.md"
+        );
+        let long = deliverable_filename(&"x".repeat(500));
+        assert!(long.chars().count() <= 52, "{long}");
+        assert!(long.ends_with(".md"));
+        // Non-ASCII (e.g. Indonesian) goals still produce a valid name.
+        assert_eq!(deliverable_filename("cek cuaca Tokyo 🎉"), "cek-cuaca-tokyo.md");
+    }
+
+    /// Planner-authored agent display names survive the plan → wire mapping
+    /// (`PlanStarted.steps[].agent`) — the rail's S2 named-agent source.
+    #[test]
+    fn plan_step_infos_carry_planner_agent_names() {
+        let plan = kawai_router::TaskPlan {
+            goal: "g".into(),
+            steps: vec![
+                kawai_router::TaskStep {
+                    id: "s1".into(),
+                    task: "Fetch price".into(),
+                    agent: Some("Market Scout".into()),
+                    ..kawai_router::TaskStep::tool_step("s1", "Fetch price", "cli_run", serde_json::json!({}), &[])
+                },
+                kawai_router::TaskStep::tool_step("s2", "Summarize", "cli_run", serde_json::json!({}), &["s1"]),
+            ],
+            ..serde_json::from_str::<kawai_router::TaskPlan>(r#"{"goal":"g","steps":[]}"#).unwrap()
+        };
+        let infos = plan_step_infos(&plan);
+        assert_eq!(infos[0].agent.as_deref(), Some("Market Scout"));
+        assert_eq!(infos[1].agent, None);
+    }
+
     /// The degraded terminal answer must stay marked AND bounded: a failed
     /// synthesis used to paste the last step's whole provider payload into
     /// the chat (a wall of source JSON on Android, where the local writer
@@ -7738,6 +7880,7 @@ mod tests {
                     error: None,
                     retries_used: 0,
                     error_kind: kawai_router::FailureKind::Other,
+                    ..Default::default()
                 })
             })
         });
@@ -7859,6 +8002,7 @@ mod tests {
                     error: None,
                     retries_used: 0,
                     error_kind: kawai_router::FailureKind::Other,
+                    ..Default::default()
                 })
             })
         });
@@ -8856,6 +9000,7 @@ mod indicator_summary_tests {
             error: None,
             error_kind: kawai_router::FailureKind::default(),
             retries_used: 0,
+            ..Default::default()
         }
     }
 

@@ -209,6 +209,25 @@ export function StepTree({
                         </button>
                       )}
                     </div>
+                    {/* S2 transparency: what the step ran with (bounded
+                        resolved-args summary) and what its tool cost in
+                        tokens (provider-reported LLM usage). */}
+                    {step.argsSummary && (
+                      <p
+                        className="text-muted-foreground line-clamp-1 overflow-hidden pl-3 font-mono text-[0.625rem]"
+                        title={step.argsSummary}
+                      >
+                        ⌘ {step.argsSummary}
+                      </p>
+                    )}
+                    {step.usage && (
+                      <p
+                        className="text-muted-foreground pl-3 font-mono text-[0.625rem]"
+                        title={`LLM tokens: ${step.usage.inputTokens} in / ${step.usage.outputTokens} out`}
+                      >
+                        ↑ {step.usage.inputTokens.toLocaleString()} ↓ {step.usage.outputTokens.toLocaleString()} tok
+                      </p>
+                    )}
                     {/* Live harness text for long-running tools (deep audit).
                         One line at a time from toolProgress; the full tail
                         is rendered in the terminal result card. */}
@@ -353,6 +372,7 @@ export function RunHistoryRail({
                     stepId: s.stepId,
                     tool: s.tool,
                     task: s.task,
+                    agent: s.agent,
                     state: s.state,
                     dependsOn: s.dependsOn,
                     inputs: s.inputs ?? [],
@@ -569,7 +589,7 @@ export function ProgressRail({
           {reviewStepsOpen &&
             supervisor.review.steps.map((s) => (
               <div className="text-foreground/80 pl-4 font-mono text-xs" key={s.id}>
-                · {s.task || s.tool || s.id}
+                · {s.agent || s.task || s.tool || s.id}
                 {(s.inputs?.length ?? 0) > 0 && (
                   <div className="text-muted-foreground pl-4 text-[0.625rem]">
                     {s.inputs?.map((b) => (

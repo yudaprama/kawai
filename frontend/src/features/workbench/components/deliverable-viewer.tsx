@@ -1109,6 +1109,15 @@ export function DeliverableViewer({
                 </>
               )}
             </div>
+            {/* S2: the final deliverable was persisted into the user's office
+              store — surface the saved file so "it survives restarts as a
+              first-class file" is visible, not just true. */}
+            {!unseeded && supervisor.deliverableFileId != null && (
+              <div className="text-muted-foreground mt-1 font-mono text-[0.625rem]">
+                <Icon className="mr-1 inline size-3 align-[-2px]" name="file-check" />
+                saved to Files
+              </div>
+            )}
           </div>
 
           {/* Sticky document nav — the deliverable ↔ report picker stays

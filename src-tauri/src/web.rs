@@ -3090,6 +3090,7 @@ fn supervisor_sse_frame(
         kawai_events::SupervisorEvent::StepCompleted { .. } => "stepCompleted",
         kawai_events::SupervisorEvent::StepFailed { .. } => "stepFailed",
         kawai_events::SupervisorEvent::StepSkipped { .. } => "stepSkipped",
+        kawai_events::SupervisorEvent::StepUsage { .. } => "stepUsage",
         kawai_events::SupervisorEvent::ConfirmationRequested { .. } => {
             "confirmationRequested"
         }
