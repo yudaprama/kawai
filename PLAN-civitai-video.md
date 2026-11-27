@@ -10,7 +10,11 @@ Fase 3 menambah **LTX** (2.3/2.5, Dev/Distilled) dan **multi-klip**
 (`output.additionalVideos` diimpor sebagai klip terpisah). Fase 4 menambah
 **vid2vid:edit** (grok v1.0 — upload video sumber MP4/WebM ≤64MB ke
 consumer blob, sniffer mime `ftyp`/EBML; `analyzedDuration` tidak dikirim —
-kawai tidak mem-probe durasi video lokal). Kunci vault yang sama
+kawai tidak mem-probe durasi video lokal). Fase 5 (Sisa) menambah
+**minimax-comfy** (controlVideo + turbo), **Sulphur 2** (`diffusionModel`
+AIR di lane ltx), **LTX prompt enhancer** (step `promptEnhancement`
+berantai), dan **Wan 2.7** (edit-video + slot audio) — semua live-probe
+whatif 2026-11-27 (§Sisa). Kunci vault yang sama
 (`kawai-vault/constants::civitai::get_civitai`) membukti kemampuan submit/poll
 di kedua jalur (bearer API key adalah subject kelas satu di orchestrator,
 `generation-surface.ts:21-22`). Implementasi: klien `crates/integrations/civitai`
@@ -36,29 +40,33 @@ gagal dicatat di stderr, tidak fatal).
 
 Fase 1 — enum divalidasi **live** lewat whatif (26 kombinasi aspect + 5
 bentuk engine, 200 semua, 2026-10-05). Fase 2 — ditranskrip dari handler
-orkestrator civitai (`ecosystems/*.handler.ts`), status **live-pending**
-(jaringan ke civitai sedang diblokir saat implementasi — probe dijalankan
-begitu terjangkau; whatif pre-flight panel memvalidasi tiap pick sebelum
-spend, jadi enum salah = error cost, bukan pembelian).
+orkestrator civitai (`ecosystems/*.handler.ts`) dan kini **live-probe
+hijau** (baterai `live_whatif`, 2026-11-27; hunyuan diblokir upstream —
+lihat §Sisa). Whatif pre-flight panel memvalidasi tiap pick sebelum
+spend, jadi enum salah = error cost, bukan pembelian.
 
 | Ecosystem | Engine (wire) | Model | Durasi | Resolusi | Slot frame | Ref2vid | Catatan |
 |---|---|---|---|---|---|---|---|
 | minimax (default) | `minimax-h3` | — | slider 4–15 | `2K` (pin) | 2 (first/last) | ≤9 (`referenceImages`) | aspect `adaptive` saat ada frame |
+| minimax-comfy | `minimax-h3-comfy` | — | slider 4–15 | piksel (tabel `MINIMAX_COMFY_DIMS`, kelipatan 32 ≤1344 — harga tetap) | 2 (`firstFrame`/`lastFrame`) | ≤9 (`images`) | `draft` → wire `turbo` (¼ harga); `steps` 1–60 (tidak ditagih); lane `vid2vid:control` mengambil AIR peta kontrol terproses |
 | seedance | `seedance` | v2/v2-fast/v2-mini/v2.5 | slider 4–15 | 480p/720p | 1 | ≤9 (`images`) | aspect di txt2vid+ref2vid |
 | veo3 | `veo3` | — (`fastMode`) | enum 4/6/8 | — | 1 | ≤3 (`images` + placeholder prompt `[@imageN]`) | pin `version:"3.1"`, enhancer `true` |
 | kling | `kling` / `kling-v3` (model `v3`) | v1.6/v2/v2.5-turbo/v3 | legacy enum 5/10; v3 slider 5–15 | — | v3: 2 (`sourceImage`+`endImage`) | v3 ≤7 (`operation:"reference-to-video"` + `images`) | audio v3; negative legacy; enhancer legacy |
-| wan | `wan` | v2.5 (`provider:"fal"`) | enum 5/10 | 480p/720p/1080p | 1 | — | pin `frameRate:24` |
+| wan | `wan` | v2.5/v2.7 (`provider:"fal"`) | enum 5/10 | 480p/720p/1080p | 1 (v2.7: 2 — `startImage`+`endImage`) | — | pin `frameRate:24`; v2.7 menambah lane `vid2vid:edit` (`edit-video` + `videoUrl`, `audioSetting:"auto"`) dan slot `audioUrl` |
 | flux3 | `flux` (`version:"v3.0"`) | — | slider 4–20 | 720p/1080p (draft pin 720p) | 2 (operation dari jumlah frame: `imageToVideo`/`firstLastFrameToVideo`) | — | aspect `auto` saat ada frame; `draft` bool |
 | grok | `grok` (`version:"v1.5"`, edit: `v1.0`) | v1.5; v1.0 = lane edit | slider 6–15 | v1.5: 480p/720p/1080p; **v1.0: 480p/720p** | 1 | v1.5 ≤7 (`referenceToVideo` + aspect) | operasi camelCase; **v1.0 = `edit-video`** (`videoUrl`, tanpa aspect — video menentukan) |
 | vidu | `vidu` (q1) / `vidu-q3` (q3) | q1/q3 | **q1 tanpa durasi**; q3 slider 1–16 | q3: 360p/540p/720p/1080p | q1: 2 (`sourceImage`+`endSourceImage`); q3: `images` array | ≤7 (`images`) | q1: style/movementAmplitude/enhancer; q3: `enableAudio`+`turbo` |
 | hunyuan | `hunyuan` | — | enum 3/5 | piksel @480p (tabel `HUNYUAN_DIMS_480P`) | — (txt2vid saja) | — | `cfgScale` 1–10, `steps` 10–30 |
-| ltx | `ltx2.3` / `ltx2.5` | v2.3/v2.3-distilled/v2.5/v2.5-distilled | slider 3–20 (**1080p cap 15**) | piksel (tabel `LTX_DIMS_720P/1080P`, identik antar versi) | 2 (`firstFrame`+`lastFrame` — img2vid SELALU `firstLastFrameToVideo`) | — | satu-satunya engine dengan `generateAudio` default **ON**; distilled pin `guidanceScale:1`+`steps:8`; `22b-dev` default cfg 3/steps 30 |
+| ltx | `ltx2.3` / `ltx2.5` | v2.3/v2.3-distilled/v2.5/v2.5-distilled + sulphur-2-dev/sulphur-2-distilled (`diffusionModel` AIR civitai 2601098) | slider 3–20 (**1080p cap 15**) | piksel (tabel `LTX_DIMS_720P/1080P`, identik antar versi) | 2 (`firstFrame`+`lastFrame` — img2vid SELALU `firstLastFrameToVideo`) | — | satu-satunya engine dengan `generateAudio` default **ON**; distilled pin `guidanceScale:1`+`steps:8`; `22b-dev` default cfg 3/steps 30; toggle enhancer = step `promptEnhancement` berantai (`ecosystem:"ltx2"`, prompt videoGen jadi `$ref` `output.enhancedPrompt`, +1 Buzz) |
 
 **Sora absen dengan sengaja**: orchestrator live menjawab 400 `"Sora has
 been retired by OpenAI… Use another videoGen engine such as veo3, kling-v3
-or wan instead"`. **LTX ditunda (fase 3)**: wire-nya mengambil width/height
-PIKSEL per-resolusi + varian Distilled/Sulphur — port terberat, permintaan
-panel paling rendah. Semua engine `quantity:1`.
+or wan instead"`. **LTX** (fase 3) dan empat engine Sisa (§Sisa) kini
+terekam di registry — LTX mengambil width/height PIKSEL per-resolusi plus
+varian Distilled/Sulphur via `diffusionModel` AIR. **Hunyuan diblokir
+upstream** ("720_cfgdistill_bf16 is not enabled for generation") — entry-nya
+tetap di registry tapi tiap whatif live menolak; jangan membangun untuknya
+sampai civitai membuka. Semua engine `quantity:1`.
 
 **Deviasi sadar dari UI civitai**: `img2vid:first-last` TIDAK menjadi
 workflow id terpisah — first/last adalah slot kedua opsional pada
@@ -141,13 +149,16 @@ native (poster thumbnail), klik → file preview. i18n: grup
 
 ```
 cd crates
-cargo run -p civitai --example live_whatif          # auth + 5 engine + 26 aspect + img2vid-whatif + GET list
-cargo run -p civitai --example live_video_whatif    # jalur API publik: validate → input_json → whatif
+cargo run -p civitai --example live_whatif          # auth + sisa + 5 engine + 26 aspect + img2vid-whatif + GET list
+cargo run -p civitai --example live_video_whatif    # jalur API publik: validate → input_json → whatif (+ baterai Sisa)
 ```
 
 Tidak membelanjakan Buzz. `live_whatif` memuat baterai fase 2 (13 probe
-engine + 19 sweep aspect untuk flux3/grok/vidu/hunyuan). `live_generate.rs`
-tetap satu-satunya smoke berbayar (image).
+engine + 19 sweep aspect untuk flux3/grok/vidu/hunyuan) plus baterai Sisa
+(minimax-comfy termasuk boundary `controlVideo`, Sulphur 2 via
+`diffusionModel`, chain enhancer LTX 2-step, wan v2.7 edit/audioSlot —
+2026-11-27, semua hijau kecuali hunyuan yang diblokir upstream).
+`live_generate.rs` tetap satu-satunya smoke berbayar (image).
 
 ### Hook deliverable (fase 5 — selesai)
 
@@ -159,12 +170,62 @@ dan dirender viewer deliverable (`markdown-with-charts.tsx`) sebagai
 hantu tetap distrip dengan caption dipertahankan. Panel video punya tombol
 copy-token supaya klip bisa direferensikan lewat goal.
 
-### Sisa (belum, sengaja)
+### Sisa (selesai — live-probe 2026-11-27)
 
-Probe live fase 2–4 (flux3/grok/vidu/hunyuan/ltx + edit-video — jaringan ke
-civitai sedang diblokir saat implementasi; jalankan `live_whatif` begitu
-terbuka), MiniMax-comfy (controlVideo), Sulphur 2 (`diffusionModel` AIR),
-LTX prompt enhancer (chained step), Wan 2.7 edit (jalur fal + slot audio),
-dan hook deliverable (mp4 tidak bisa di-embed markdown/pdf/docx — tetap di
-panel + asset viewer). Generasi sungguhan pertama dari panel tetap
-verifikasi end-to-end terakhir (membelanjakan Buzz).
+Keempat item Sisa terekam penuh di registry (`registry.rs` ↔
+`video-ecosystems.ts`), arg-mapping submit (`VideoGenParams::input_json`),
+dan UI panel — semua divalidasi dengan whatif GRATIS melalui
+`live_whatif` (bentuk wire) + `live_video_whatif` (jalur op panel).
+**Hunyuan tetap diblokir upstream** ("720_cfgdistill_bf16 is not enabled
+for generation") — tidak dibangun untuknya.
+
+1. **MiniMax-comfy** (`minimax-h3-comfy`, key `minimax-comfy`) — bobot H3
+   terbuka di worker Comfy civitai: `width`/`height` piksel dari tabel
+   `MINIMAX_COMFY_DIMS` (kelipatan 32, ≤1344/sisi, harga tetap), durasi
+   4–15, `steps` 1–60 (tidak ditagih), `draft` → wire `turbo`
+   (¼ harga), slot frame 2 (`firstFrame`/`lastFrame`), ref ≤9
+   (`referenceToVideo` + `images`). Probe: txt 864×480 5s **OK buzz=340**;
+   turbo 4s **OK buzz=100**; 1344×768 15s **OK buzz=1020**; op-path panel
+   turbo **OK buzz=125**; 1280×720 → 400 `"width and height must be
+   multiples of 32"` (boundary); ref tanpa images → 400 `"At least one
+   reference image or audio clip is required"`. Lane `vid2vid:control`
+   (`controlVideo`) mengambil **AIR peta kontrol terproses**
+   (`urn:air:...`, dikirim verbatim — `resolve_video_to_blob_url`
+   melewatkan AIR); kawai tidak mem-preprocess video mentah, jadi
+   `validate()` menolak nilai non-AIR dan server menolak AIR yang tak
+   dikenalnya: raw URL → 400 `"'video' must be a preprocessed Civitai
+   AIR URN (urn:air:...) or civitai-hosted URL"` (boundary wire).
+2. **Sulphur 2** — model key `sulphur-2-dev`/`sulphur-2-distilled` di
+   ecosystem `ltx`: wire tetap `engine:"ltx2.3"` + `model`
+   `22b-dev`/`22b-distilled`, checkpoint komunitas dipilih lewat
+   `diffusionModel` AIR (`registry::ltx_diffusion_model` →
+   `civitai:2601098@2921800` dev / `@2923808` distilled). Probe: short
+   AIR **OK buzz=52**, bentuk `urn:air:video:...` **OK buzz=52**,
+   distilled **OK buzz=52**; op-path panel **OK buzz=58** (prompt kini
+   ikut terkirim — ditemukan hilang dari branch `ltx` dan diperbaiki).
+3. **LTX prompt enhancer (step berantai)** — toggle enhancer panel (ltx)
+   mengirim `enhancePrompt:true`; `video_workflow_body` menambahkan step
+   `{$type:"promptEnhancement", name:"enhance", input:{ecosystem:"ltx2",
+   prompt}}` di depan dan prompt videoGen menjadi
+   `{"$ref":"enhance","path":"output.enhancedPrompt"}` (+1 Buzz flat,
+   `whatif` ikut menghargai). Probe chain 2-step **OK buzz=44**; op-path
+   **OK buzz=41**. Flag ini ltx-only (`validate()` menolak di ecosystem
+   lain); toggle `enablePromptEnhancer` wire-field tetap kling legacy +
+   vidu q1.
+4. **Wan 2.7 edit + slot audio** — model key `v2.7` (`provider:"fal"`):
+   lane `vid2vid:edit` (`operation:"edit-video"` + `videoUrl` dari upload
+   blob, `audioSetting:"auto"`), i2v memakai `startImage`+`endImage`
+   (bukan `images[]` — v2.5 tetap array), slot audio opsional
+   `audioUrl` + `audioSetting` di semua operasinya. Probe: txt 720p 5s
+   **OK buzz=650**; 1080p 10s + `audioSetting` **OK buzz=1950** (flat
+   130/s); edit **OK buzz=650**; edit + `audioSetting` **OK buzz=650**;
+   op-path edit **OK buzz=650**; `audioUrl` attach **OK buzz=650**;
+   i2v `startImage`/`+endImage` dengan URL citra nyata **OK buzz=650**
+   (URL eksternal sembarangan ditolak "failed to download" — i2v butuh
+   URL yang bisa diunduh server). `audioSetting` divalidasi (`auto`
+   saja). Perbaikan ikutan: whatif kini meneruskan URL video http(s)
+   verbatim sehingga lane edit bisa dihargai sebelum upload.
+
+Sisa benar-benar: generasi sungguhan pertama dari panel (membelanjakan
+Buzz) sebagai verifikasi end-to-end terakhir, dan hook deliverable mp4
+(tidak bisa di-embed markdown/pdf/docx — tetap di panel + asset viewer).

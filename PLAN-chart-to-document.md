@@ -1,15 +1,23 @@
 # Implementation Plan — Chart → Document embedding (kawai)
 
-Status: **PARTIALLY IMPLEMENTED (2026-09-23) — deliverable path shipped.** Charts now
-ride the supervisor deliverable: `data_chart` saves a png twin next to the svg
-(`store::import_chart`, charton `png` feature), the deliverable writer receives a
-`<charts>` block and may embed `![caption](kawai-file://<fileId>)`, the Workbench
-viewer resolves tokens (svg inline + preview), the docx export embeds the raster,
-and the pdf export prints a standalone `[Image: caption]` line (pdf_oxide's
-markdown renderer has no image blocks — only the separate `Pdf::from_html_css`
-pipeline paints `<img>`). Still open: image embedding in the pdf export,
-`DocBlock::Image` in `office_create_document` (the tool path below), and pptx
-export images. Earlier scope notes follow.
+Status: **IMPLEMENTED (2026-11-27) — all three export targets embed the chart.**
+Charts ride the supervisor deliverable: `data_chart` saves a png twin next to
+the svg (`store::import_chart`) and persists a re-render recipe (source data
+fileId + query/spec args, `analytics::chart::ChartRecipe`) in the svg's
+`.meta.json`. Every consumer resolves `![caption](kawai-file://<fileId>)`
+tokens store-side (`deliverable::rewrite_tokens`): the Workbench viewer
+inlines the svg, the docx export and the PDF export both emit data-URI image
+lines — office_oxide embeds them as OOXML media parts (docx DrawingML,
+pptx slide pictures), pdf_oxide's markdown renderer paints them as image
+XObjects scaled to the text width (`LaidItem::Image`, pure-Rust PNG/JPEG
+header decode). `office_create_document` accepts an
+`Image { fileId, alt }` block (docx/pptx): rasters pass through, chart svgs
+follow the companion twin and, when it is missing, re-render through the
+recipe at embed time (kawai-office `chart-render` feature, enabled by every
+analytics-capable build). Persona rule `CHART_REPORT_RULE` steers the model
+to compose reports with an Image block referencing the chart's fileId.
+Non-goals held: no image edit path, no sizing/cropping params, create-path
+only.
 
 ---
 

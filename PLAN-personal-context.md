@@ -1,12 +1,12 @@
 # Implementation Plan — Personal context: "knows you in minutes"
 
-Status: **IN PROGRESS** — Phases 1, 2, and 4 are implemented (memory namespaces + agent
-experiences; the onboarding pipeline + UI; profile facets + `<profile>` injection). Remaining:
-Phase 3 (Gmail connector — Composio-vs-direct OAuth decision in §6.1 is unresolved; document
-import; Apify opt-in enrichment), the `onboarding_smoke` example, and the §2.7 continuous
-learning loop (deferred). Inspired by openhuman's onboarding/memory stack (Gmail/LinkedIn scan →
-LLM compress → PROFILE.md → memory families → experience store → facet cache), re-scoped to
-kawai's architecture: per-user SQLite, pure `crates/`, dual wrappers, prompt-block injection.
+Status: **IN PROGRESS** — Phases 1, 2, 4 and most of Phase 3 are implemented (memory
+namespaces + agent experiences; the onboarding pipeline + UI; profile facets + `<profile>`
+injection; Apify enrichment, document import, and the Gmail stages). Remaining: the §2.7
+continuous learning loop (deferred). Inspired by openhuman's onboarding/memory stack
+(Gmail/LinkedIn scan → LLM compress → PROFILE.md → memory families → experience store →
+facet cache), re-scoped to kawai's architecture: per-user SQLite, pure `crates/`, dual
+wrappers, prompt-block injection.
 The shipped claim (Phases 2+4): after a 1–2 minute opt-in flow, the agent already knows what
 the user cares about and has useful identity context — before the user types anything.
 Migration numbers in the body below are STALE — the authoritative numbers are:
@@ -381,7 +381,7 @@ frontend Memory page                       # tabs: L1 | Experiences | Profile (f
 - Workspace registration for both crates in `crates/Cargo.toml`.
 - Verification: `cargo test -p apify -p onboarding` — 47 tests passed.
 
-### Implementation status (update 2026 — phases 1/2/4 shipped)
+### Implementation status (phases 1/2/3/4 shipped)
 
 **Phase 1 — namespaces + experiences: SHIPPED.** Migrations 0016 + 0017;
 `memory_create_ns`/`memory_update_ns` + pinned-first prompt blocks (profile
@@ -391,14 +391,15 @@ via the `experience-distiller` role, vault-less = empty lesson, row still
 lands); planner `<experiences>` block incl. repair materials; ops
 `experience_list`/`experience_delete`; Memory page Experiences tab.
 
-**Phase 2 — onboarding pipeline + UI: SHIPPED** (minus the smoke example).
+**Phase 2 — onboarding pipeline + UI: SHIPPED.**
 `crates/engines/onboarding` compress.rs (strict-JSON profile parser) +
 `logic/onboarding.rs` orchestration; `OnboardingEvent` in kawai-events + TS
 bindings; `onboarding_status/run/skip/reset` ops (Tauri Channel + Axum SSE);
 `ContextGatheringStep` post-auth (skippable, never re-prompts); state in
 `onboarding_state` (0018). Quick-question `profile` items persist as
 `general` so they inject immediately; `source='questions'` provenance.
-Missing: `onboarding_smoke` example.
+The `onboarding_smoke` example proves the pipeline offline (temp data root,
+fixture sources, no-bodies invariant).
 
 **Phase 4 — facets + distill: SHIPPED.** Migration 0019;
 `crates/foundation/memory/src/facets.rs` (upsert/list/pin/forget/reset +
@@ -409,15 +410,18 @@ reset_non_pinned`; Memory page Profile tab. The "memory_extract stops
 emitting profile rows" deprecation pressure is NOT applied — extract still
 classifies into namespaces and the distill folds them.
 
-**Phase 3 — connectors + LinkedIn enrichment: MOSTLY SHIPPED** (decision
+**Phase 3 — connectors + LinkedIn enrichment: SHIPPED** (decision
 §6.1: Composio). Shipped: Apify auto-scrape (vault-keyed, high-confidence
 only), document import (`onboarding_import_document`: ragloader → compress →
-`source='document'`), and the Gmail LinkedIn-URL stage via the existing
+`source='document'`), and the Gmail stages via the existing
 `crates/toolsets/composio` client (opt-in `gmail` source; `GMAIL_FETCH_EMAILS`
 `from:linkedin.com` ≤10; `/comm/in/` > `/in/` priorities; bodies never
 persisted; Gmail URL outranks discovery and goes straight to the scrape).
-Remaining: `recent_contacts`/`topic_hints` metadata scan, `onboarding_smoke`
-example.
+The opt-in gmail stage also runs the §2.4 metadata scan: one bounded
+headers-only page (`newer_than:90d`, `KAWAI_GMAIL_MAX_MESSAGES` default 300)
+aggregated by `onboarding::gmail_meta` into `recent_contacts` +
+`topic_hints` (aggregates only — bodies/snippets never read) → compress →
+`source='gmail'` memories → facet distill.
 
 ### Remaining phases (original gate descriptions — migration numbers stale, see header)
 

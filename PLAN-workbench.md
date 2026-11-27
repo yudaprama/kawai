@@ -1,6 +1,6 @@
 # Plan — Kawai Workbench: the work-centric primary surface
 
-Status: **SHIPPED (S1)** — the Workbench is the app's only surface (landing hero composer → two-pane run view, deliverable-writer synthesis, planner progress streaming). S2 backlog: tool-args + per-step LLM-usage timeline events, deliverable persistence to the office store, planner-authored agent names.
+Status: **SHIPPED (S1 + S2)** — the Workbench is the app's only surface (landing hero composer → two-pane run view, deliverable-writer synthesis, planner progress streaming). S2 is in: `stepStarted.argsSummary` (bounded resolved-args summary) + per-step `stepUsage` token events on the timeline, deliverable persisted to the office store as a `.md` file (`planCompleted.deliverableFileId`, surfaced as "saved to Files"), and planner-authored per-step agent display names (`TaskStep.agent` → rail/review naming). Remaining S3 backlog: export (pdf/docx), run comparison, reflection memory.
 
 ## The UX thesis (what "adopting TradingAgents' UX" means here)
 
