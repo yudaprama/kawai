@@ -207,8 +207,13 @@ bun run bundle:litert
 # src-tauri/gen/android/app/build.gradle.kts (`llvm-strip --strip-unneeded`,
 # .symtab only — .dynsym/JNI/litert exports stay), which exports the
 # unstripped copies to build/outputs/native-debug-symbols/ and uploads them as
-# native-debug-symbols.zip both to Play and as a run artifact. The workflow
-# verifies the packaged APK is stripped and keeps its JNI/LiteRT exports.
+# native-debug-symbols.zip both to Play and as a run artifact. The zip's ABI
+# dirs sit at its ROOT (`arm64-v8a/libkawai_lib.so`): Play validates the
+# layout and answers a bare 400 "Validation of uploaded file failed." for
+# `lib/arm64-v8a/...` and `base/lib/arm64-v8a/...` (verified against a live
+# bundle upload). The upload stays best-effort — a diagnostic file never
+# blocks a release. The workflow verifies the packaged APK is stripped and
+# keeps its JNI/LiteRT exports.
 # arm64-only is enough for Play (64-bit required, 32-bit optional; Play splits
 # the AAB per device), and a single-ABI APK avoids the multi-ABI sideload
 # bloat — native libs are stored uncompressed in an APK. litert pins it to

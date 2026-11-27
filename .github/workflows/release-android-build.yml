@@ -398,9 +398,12 @@ jobs:
           "$READELF" -S "$SYM_LIB" > "$WORK/symbols.sections" 2>/dev/null || true
           if [ -f "$SYM_LIB" ] && grep -q '\.symtab' "$WORK/symbols.sections"; then
             ZIP="$RUNNER_TEMP/native-debug-symbols.zip"
-            (cd "$SYMBOLS" && zip -qr "$ZIP" lib)
-            echo "Native debug symbols: $ZIP ($(du -h "$ZIP" | cut -f1))"
-            echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+            # ABI dirs must sit at the ZIP ROOT (`arm64-v8a/libfoo.so`): Play
+            # validates the layout and answers a bare 400 "Validation of
+            # uploaded file failed." for `lib/arm64-v8a/...` and
+            # `base/lib/arm64-v8a/...` (verified against vc 10126 — the root
+            # layout is the only one accepted).
+            (cd "$SYMBOLS/lib" && zip -qr "$ZIP" .)
           else
             echo "zip=" >> "$GITHUB_OUTPUT"
             echo "::warning::No unstripped native debug symbols were exported — Play cannot symbolicate native crashes for this build."
@@ -710,14 +713,14 @@ jobs:
                           open(symbols, "rb").read(), "application/octet-stream")
                       print("native debug symbols uploaded")
                   except urllib.error.HTTPError as e:
-                      # Best-effort: the deobfuscationfiles API rejects this
-                      # app's symbols zip even trimmed below the 1.6 GB
-                      # guidance (v0.3.37: 2.8 GB FULL DWARF, then a 113 MB
-                      # SYMBOL_TABLE variant — both "Validation of uploaded
-                      # file failed.", identical under r0adkll). A diagnostic
-                      # file must never block the release: warn and ship.
-                      # The symbols zip stays a run artifact for a manual
-                      # Play Console upload (App bundle explorer).
+                      # Best-effort: a diagnostic file must never block the
+                      # release. The zip is packaged with the ABI dirs at its
+                      # ROOT (see the native_symbols step) — Play rejects any
+                      # other layout with this same bare "Validation of
+                      # uploaded file failed.", so a warning here means the
+                      # packaging regressed, not that Play is flaky. The zip
+                      # stays a run artifact for a manual Play Console upload
+                      # (App bundle explorer).
                       print(f"::warning::native debug symbols rejected by Play "
                             f"(HTTP {e.code}); release continues without them")
               else:
