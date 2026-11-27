@@ -252,8 +252,13 @@ bun run bundle:litert
 # and an account with >=2 refunds in 30 days hits a credit hold
 # (purchase_hold_refunds, 403) instead of a debt. A run refuses (409
 # refund_window_too_large) rather than silently truncating. The cron pass lives
-# in crates/ops/recap beside the billing recap; this build + wiring deploy only
-# after the first end-to-end purchase is proven on the internal track.
+# in crates/ops/recap beside the billing recap: each cycle reads
+# /internal/iap/refunds/cursor (epoch MS), bootstraps once (refunds before the
+# bootstrap are never billed) and then POSTs `[cursor - 24h, now]` with
+# expectedFrom in the same `--apply`/dry-run mode as the billing pass, as an
+# INDEPENDENT pass — a recap failure never skips refunds, 409
+# cursor_conflict/cursor_not_initialized is a quiet skip, and 503
+# iap_not_configured warns once.
 
 # Build the LiteRT-LM C library (first build ~15-30 min; cached afterwards)
 cd cognee-litert-lm/vendor/LiteRT-LM && bazel build //c:litert-lm --config=macos_arm64 --jobs=6
