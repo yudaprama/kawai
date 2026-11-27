@@ -1023,6 +1023,19 @@ export type VideoGenParams = {
 	style?: string | null,
 	/**  Vidu q1 movement amplitude (`auto`/`small`/`medium`/`large`). */
 	movementAmplitude?: string | null,
+	/**
+	 *  Wan v2.7 source-audio slot: a music/voice URL attached to the clip
+	 *  (or driving edit-video audio inference). Passed through verbatim.
+	 */
+	audioUrl?: string | null,
+	/**  Wan v2.7 edit-video audio mode (`auto`). */
+	audioSetting?: string | null,
+	/**
+	 *  LTX chained prompt enhancer: prepend a `promptEnhancement` step and
+	 *  feed its `output.enhancedPrompt` into the videoGen prompt via `$ref`
+	 *  (+1 Buzz). Registry `enhancer_step` gates it.
+	 */
+	enhancePrompt?: boolean | null,
 	seed?: number | null,
 	quantity?: number | null,
 };

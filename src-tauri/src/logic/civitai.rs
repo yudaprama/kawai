@@ -1506,6 +1506,15 @@ pub struct VideoGenRequest {
     pub style: Option<String>,
     #[serde(default)]
     pub movement_amplitude: Option<String>,
+    /// Wan v2.7 source-audio slot (URL attached / edit audio inference).
+    #[serde(default)]
+    pub audio_url: Option<String>,
+    /// Wan v2.7 edit-video audio mode (`auto`).
+    #[serde(default)]
+    pub audio_setting: Option<String>,
+    /// LTX chained prompt-enhancer step (+1 Buzz).
+    #[serde(default)]
+    pub enhance_prompt: Option<bool>,
     #[serde(default)]
     pub seed: Option<i64>,
     #[serde(default)]
@@ -1534,6 +1543,9 @@ impl VideoGenRequest {
             draft: self.draft,
             style: self.style.clone(),
             movement_amplitude: self.movement_amplitude.clone(),
+            audio_url: self.audio_url.clone(),
+            audio_setting: self.audio_setting.clone(),
+            enhance_prompt: self.enhance_prompt,
             seed: self.seed,
             quantity: self.quantity,
         }

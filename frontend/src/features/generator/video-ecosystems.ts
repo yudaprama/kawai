@@ -9,12 +9,12 @@
  * live-pending — the panel's whatif pre-flight validates every pick before
  * any spend regardless. The Rust side re-validates before any network call.
  *
- * Sora is absent: the live orchestrator retired that engine. LTX is deferred
- * (phase 3): its wire takes width/height PIXELS from per-resolution tables
- * plus Distilled/Sulphur model variants.
+ * Sora is absent: the live orchestrator retired that engine. The Sisa
+ * engines (minimax-comfy, wan v2.7, LTX Sulphur 2 + chained enhancer) are
+ * live-probed via free whatif — see PLAN-civitai-video.md §Probe gratis.
  */
 
-export type VideoWorkflowId = "txt2vid" | "img2vid" | "img2vid:ref2vid" | "vid2vid:edit";
+export type VideoWorkflowId = "txt2vid" | "img2vid" | "img2vid:ref2vid" | "vid2vid:edit" | "vid2vid:control";
 
 export interface VideoEcosystemConfig {
   /** Registry key (Rust `VideoEcosystem.key`). */
@@ -51,8 +51,11 @@ export interface VideoEcosystemConfig {
   cfgRange?: { min: number; max: number; default: number };
   /** Draft quality tier offered (flux3 pins 720p; vidu q3 turbo). */
   draft: boolean;
-  /** Prompt-enhancer toggle offered (defaults ON on the wire). */
+  /** Prompt-enhancer toggle offered (kling legacy / vidu q1 = wire field
+   *  defaulting ON; ltx = chained `promptEnhancement` step, +1 Buzz). */
   promptEnhancer: boolean;
+  /** Source-audio slot (`audioUrl` + `audioSetting` — wan v2.7 fal lane). */
+  audioAttach: boolean;
   /** Tailwind gradient for the model tile (civitai-panel look). */
   gradient: string;
   note: string;
@@ -77,6 +80,7 @@ export const VIDEO_ECOSYSTEMS: VideoEcosystemConfig[] = [
     movements: [],
     draft: false,
     promptEnhancer: false,
+    audioAttach: false,
     gradient: "from-cyan-500 to-blue-600",
     note: "Default civitai — 2K pinned, first/last frame slots",
   },
@@ -103,6 +107,7 @@ export const VIDEO_ECOSYSTEMS: VideoEcosystemConfig[] = [
     movements: [],
     draft: false,
     promptEnhancer: false,
+    audioAttach: false,
     gradient: "from-violet-500 to-purple-600",
     note: "ByteDance — cheap tier (v2-mini ≈ 490 buzz / 5s)",
   },
@@ -125,6 +130,7 @@ export const VIDEO_ECOSYSTEMS: VideoEcosystemConfig[] = [
     movements: [],
     draft: false,
     promptEnhancer: false,
+    audioAttach: false,
     gradient: "from-amber-500 to-orange-600",
     note: "Google — fast/standard toggle, audio native (≈1000 buzz / 4s)",
   },
@@ -152,15 +158,42 @@ export const VIDEO_ECOSYSTEMS: VideoEcosystemConfig[] = [
     movements: [],
     draft: false,
     promptEnhancer: true,
+    audioAttach: false,
     gradient: "from-pink-500 to-rose-600",
     note: "Legacy 5/10s enum — V3 slider 5–15s + 2 frame slots + refs",
   },
   {
+    id: "minimax-comfy",
+    label: "MiniMax Comfy",
+    engine: "minimax-h3-comfy",
+    models: [],
+    workflows: ["txt2vid", "img2vid", "img2vid:ref2vid", "vid2vid:control"],
+    durationMin: 4,
+    durationMax: 15,
+    resolutions: [],
+    aspectRatios: ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+    audio: false,
+    negativePrompt: false,
+    maxFrames: 2,
+    refMax: 9,
+    styles: [],
+    movements: [],
+    stepsRange: { min: 1, max: 60, default: 20 },
+    draft: true,
+    promptEnhancer: false,
+    audioAttach: false,
+    gradient: "from-teal-500 to-cyan-700",
+    note: "Open H3 di Comfy — murah (~340/5s), Turbo ¼ harga, kontrol via AIR",
+  },
+  {
     id: "wan",
-    label: "Wan 2.5",
+    label: "Wan",
     engine: "wan",
-    models: [{ key: "v2.5", label: "V2.5" }],
-    workflows: ["txt2vid", "img2vid"],
+    models: [
+      { key: "v2.5", label: "V2.5" },
+      { key: "v2.7", label: "V2.7" },
+    ],
+    workflows: ["txt2vid", "img2vid", "vid2vid:edit"],
     durationChoices: [5, 10],
     durationMin: 5,
     durationMax: 10,
@@ -174,8 +207,9 @@ export const VIDEO_ECOSYSTEMS: VideoEcosystemConfig[] = [
     movements: [],
     draft: false,
     promptEnhancer: false,
+    audioAttach: false,
     gradient: "from-emerald-500 to-teal-600",
-    note: "Alibaba fal lane — cheap (≈500 buzz / 5s)",
+    note: "V2.5 murah (~500/5s) — V2.7: edit-video + slot audio (fal)",
   },
   {
     id: "flux3",
@@ -195,6 +229,7 @@ export const VIDEO_ECOSYSTEMS: VideoEcosystemConfig[] = [
     movements: [],
     draft: true,
     promptEnhancer: false,
+    audioAttach: false,
     gradient: "from-slate-500 to-zinc-700",
     note: "Black Forest Labs — draft mode, first/last frame ops (live-pending)",
   },
@@ -219,6 +254,7 @@ export const VIDEO_ECOSYSTEMS: VideoEcosystemConfig[] = [
     movements: [],
     draft: false,
     promptEnhancer: false,
+    audioAttach: false,
     gradient: "from-neutral-600 to-neutral-800",
     note: "xAI v1.5 — s/d 1080p, 7 referensi (live-pending)",
   },
@@ -243,6 +279,7 @@ export const VIDEO_ECOSYSTEMS: VideoEcosystemConfig[] = [
     movements: ["auto", "small", "medium", "large"],
     draft: true,
     promptEnhancer: true,
+    audioAttach: false,
     gradient: "from-lime-500 to-green-600",
     note: "Q1 style/movement — Q3 resolusi 360p–1080p (live-pending)",
   },
@@ -255,6 +292,8 @@ export const VIDEO_ECOSYSTEMS: VideoEcosystemConfig[] = [
       { key: "v2.3-distilled", label: "2.3 Distilled" },
       { key: "v2.5", label: "2.5 Dev" },
       { key: "v2.5-distilled", label: "2.5 Distilled" },
+      { key: "sulphur-2-dev", label: "Sulphur 2 Dev" },
+      { key: "sulphur-2-distilled", label: "Sulphur 2 Distilled" },
     ],
     workflows: ["txt2vid", "img2vid"],
     durationMin: 3,
@@ -270,9 +309,11 @@ export const VIDEO_ECOSYSTEMS: VideoEcosystemConfig[] = [
     stepsRange: { min: 10, max: 60, default: 30 },
     cfgRange: { min: 1, max: 10, default: 3 },
     draft: false,
-    promptEnhancer: false,
+    // Chained `promptEnhancement` step (not a wire field) — +1 Buzz.
+    promptEnhancer: true,
+    audioAttach: false,
     gradient: "from-fuchsia-500 to-pink-600",
-    note: "Comfy lane — img2vid = first/last frame, distilled = cepat (live-pending)",
+    note: "Comfy lane — first/last frame, Sulphur 2 via AIR, enhancer +1",
   },
   {
     id: "hunyuan",
@@ -299,6 +340,7 @@ export const VIDEO_ECOSYSTEMS: VideoEcosystemConfig[] = [
     movements: [],
     draft: false,
     promptEnhancer: false,
+    audioAttach: false,
     gradient: "from-sky-600 to-indigo-700",
     note: "Tencent 480p — cfg/steps penuh, LoRA di wire (live-pending)",
   },
@@ -318,6 +360,8 @@ export function isKlingV3(ecoId: string, modelKey: string): boolean {
 
 export function videoMaxFrames(ecoId: string, modelKey: string): 1 | 2 {
   if (isKlingV3(ecoId, modelKey)) return 2;
+  // wan v2.7 i2v takes startImage (+ optional endImage).
+  if (ecoId === "wan" && modelKey === "v2.7") return 2;
   return videoEcosystem(ecoId).maxFrames;
 }
 
@@ -334,9 +378,14 @@ export function videoResolutions(ecoId: string, modelKey: string): string[] {
   return videoEcosystem(ecoId).resolutions;
 }
 
-/** The edit-video workflow applies (grok v1.0 lane only). */
+/** The edit-video workflow applies (grok v1.0 / wan v2.7 lanes). */
 export function videoHasEdit(ecoId: string, modelKey: string): boolean {
-  return ecoId === "grok" && modelKey === "v1.0";
+  return (ecoId === "grok" && modelKey === "v1.0") || (ecoId === "wan" && modelKey === "v2.7");
+}
+
+/** A source-audio slot (`audioUrl`/`audioSetting`) applies — wan v2.7. */
+export function videoHasAudioAttach(ecoId: string, modelKey: string): boolean {
+  return ecoId === "wan" && modelKey === "v2.7";
 }
 
 export function videoAspects(ecoId: string, modelKey: string): string[] {

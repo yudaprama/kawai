@@ -26,6 +26,7 @@ import {
   videoDurationRange,
   videoEcosystem,
   videoHasAudio,
+  videoHasAudioAttach,
   videoHasNegative,
   videoHasPromptEnhancer,
   videoHasEdit,
@@ -366,6 +367,8 @@ export function VideoGenerator() {
   const [resolution, setResolution] = useState<string>("");
   const [aspect, setAspect] = useState<string>("16:9");
   const [audio, setAudio] = useState(false);
+  /** Wan v2.7 source-audio slot (URL attached / edit audio inference). */
+  const [audioUrl, setAudioUrl] = useState("");
   const [seed, setSeed] = useState("");
   const [enhancer, setEnhancer] = useState(true);
   const [cfgScale, setCfgScale] = useState("");
@@ -398,6 +401,7 @@ export function VideoGenerator() {
     setAspect(asp.includes("16:9") ? "16:9" : (asp[0] ?? ""));
     // LTX is the one engine whose audio defaults ON.
     setAudio(id === "ltx");
+    setAudioUrl("");
     setDraft(false);
     setStyle("");
     setMovement("");
@@ -426,6 +430,10 @@ export function VideoGenerator() {
   const hasNegative = videoHasNegative(ecoId, modelKey);
   const promptEnhancer = videoHasPromptEnhancer(ecoId, modelKey);
   const isEdit = videoHasEdit(ecoId, modelKey) && workflow === "vid2vid:edit";
+  /** minimax-comfy controlVideo: the source is a preprocessed control-map
+   *  AIR (`urn:air:...`), not an upload — kawai cannot preprocess clips. */
+  const isControl = workflow === "vid2vid:control";
+  const hasAudioAttach = videoHasAudioAttach(ecoId, modelKey);
   const isImageWorkflow = workflow === "img2vid" || workflow === "img2vid:ref2vid";
   const isRef2Vid = workflow === "img2vid:ref2vid";
   const maxFrames = videoMaxFrames(ecoId, modelKey);
@@ -438,7 +446,8 @@ export function VideoGenerator() {
    *  (first required, last optional), ref2vid grows with an add-slot. */
   const frameSlots = isRef2Vid ? Math.max(1, frames.length) : maxFrames;
   const framesFilled = frames.filter(Boolean).length;
-  const videoReady = !isEdit || sourceVideo != null;
+  const needsSourceVideo = isEdit || isControl;
+  const videoReady = !needsSourceVideo || (sourceVideo != null && (!isControl || sourceVideo.startsWith("urn:air:")));
   const framesReady = !isImageWorkflow || framesFilled >= 1;
   const canAddFrameSlot = isImageWorkflow && frames.length < (isRef2Vid ? refMax : maxFrames);
 
@@ -449,13 +458,16 @@ export function VideoGenerator() {
       prompt: prompt.trim(),
       negativePrompt: hasNegative && negativePrompt.trim() ? negativePrompt.trim() : undefined,
       images: workflow === "img2vid" || workflow === "img2vid:ref2vid" ? frames.filter(Boolean) : [],
-      video: isEdit && sourceVideo ? sourceVideo : undefined,
+      video: (isEdit || isControl) && sourceVideo ? sourceVideo : undefined,
       model: modelKey || undefined,
       duration: durationHidden ? undefined : duration,
       resolution: resolutions.length > 0 ? resolution || resolutions[0] : undefined,
       aspectRatio: workflow === "txt2vid" ? aspect : undefined,
       generateAudio: hasAudio ? audio : undefined,
-      enablePromptEnhancer: promptEnhancer ? enhancer : undefined,
+      enablePromptEnhancer: promptEnhancer && ecoId !== "ltx" ? enhancer : undefined,
+      enhancePrompt: promptEnhancer && ecoId === "ltx" ? enhancer : undefined,
+      audioUrl: hasAudioAttach && audioUrl.trim() ? audioUrl.trim() : undefined,
+      audioSetting: hasAudioAttach && (audioUrl.trim() || isEdit) ? "auto" : undefined,
       cfgScale: eco.cfgRange && cfgScale.trim() ? Number(cfgScale) : undefined,
       steps: eco.stepsRange && steps.trim() ? Number(steps) : undefined,
       draft: eco.draft && draft ? true : undefined,
@@ -466,6 +478,7 @@ export function VideoGenerator() {
     };
   }, [
     audio,
+    audioUrl,
     aspect,
     cfgScale,
     draft,
@@ -476,7 +489,9 @@ export function VideoGenerator() {
     enhancer,
     frames,
     hasAudio,
+    hasAudioAttach,
     hasNegative,
+    isControl,
     isEdit,
     modelKey,
     movement,
@@ -626,6 +641,7 @@ export function VideoGenerator() {
     if (r.resolution && videoResolutions(nextEco, nextModel).includes(r.resolution)) setResolution(r.resolution);
     if (r.aspectRatio && videoAspects(nextEco, nextModel).includes(r.aspectRatio)) setAspect(r.aspectRatio);
     if (r.generateAudio != null) setAudio(r.generateAudio);
+    if (r.audioUrl != null) setAudioUrl(r.audioUrl);
     if (r.enablePromptEnhancer != null) setEnhancer(r.enablePromptEnhancer);
     if (r.draft != null) setDraft(r.draft);
     if (r.cfgScale != null) setCfgScale(String(r.cfgScale));
@@ -658,6 +674,9 @@ export function VideoGenerator() {
               ["img2vid:ref2vid", t("videoGenerator.ref2vid")],
               ...(videoHasEdit(ecoId, modelKey)
                 ? ([["vid2vid:edit", t("videoGenerator.edit2vid")]] as Array<[VideoWorkflowId, string]>)
+                : []),
+              ...(ecoId === "minimax-comfy"
+                ? ([["vid2vid:control", t("videoGenerator.control2vid")]] as Array<[VideoWorkflowId, string]>)
                 : []),
             ] as Array<[VideoWorkflowId, string]>
           )
@@ -724,8 +743,23 @@ export function VideoGenerator() {
         </div>
       )}
 
-      {/* Source video — edit lane. */}
-      {isEdit && (
+      {/* Source video — edit lane uploads a clip; the control lane takes a
+          preprocessed control-map AIR (kawai cannot preprocess raw video). */}
+      {isControl && (
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="video-control-air">
+            {t("videoGenerator.controlAir")}
+          </Label>
+          <Input
+            className="h-8 rounded-[8px] max-md:h-11"
+            id="video-control-air"
+            onChange={(e) => setSourceVideo(e.target.value || null)}
+            placeholder={t("videoGenerator.controlAirPlaceholder")}
+            value={sourceVideo ?? ""}
+          />
+        </div>
+      )}
+      {isEdit && !isControl && (
         <div className="flex flex-col gap-1.5">
           <Label className="text-muted-foreground text-[0.8125rem] font-medium">
             {t("videoGenerator.sourceVideo")}
@@ -868,6 +902,26 @@ export function VideoGenerator() {
 
       {/* Audio toggle (veo3/seedance/kling-v3). */}
       {hasAudio && <ToggleRow checked={audio} label={t("videoGenerator.audio")} onCheckedChange={setAudio} />}
+
+      {/* Wan v2.7 source-audio slot (optional URL; edit defaults to auto). */}
+      {hasAudioAttach && (
+        <div className="flex flex-col gap-1.5">
+          <Label
+            className="flex items-center gap-1 text-[0.8125rem] font-medium text-muted-foreground"
+            htmlFor="video-audio-url"
+          >
+            {t("videoGenerator.audioUrlTitle")}
+            <span className="text-xs text-muted-foreground/70">· {t("videoGenerator.negativePromptOptional")}</span>
+          </Label>
+          <Input
+            className="h-8 rounded-[8px] max-md:h-11"
+            id="video-audio-url"
+            onChange={(e) => setAudioUrl(e.target.value)}
+            placeholder={t("videoGenerator.audioUrlPlaceholder")}
+            value={audioUrl}
+          />
+        </div>
+      )}
 
       {/* Style + movement (vidu q1). */}
       {(eco.styles.length > 0 || eco.movements.length > 0) && modelKey !== "q3" && (
