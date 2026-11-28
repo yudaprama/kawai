@@ -167,7 +167,8 @@
       "closeProgress": "Tutup panel progres",
       "progressLabel": "Progres",
       "openProgress": "Buka panel progres",
-      "backToComposer": "Kembali ke komposer tujuan"
+      "backToComposer": "Kembali ke komposer tujuan",
+      "backBlocked": "Run sedang berjalan — hentikan dulu untuk memulai tujuan lain"
     },
     "deliverableViewer": {
       "title": "Deliverable",

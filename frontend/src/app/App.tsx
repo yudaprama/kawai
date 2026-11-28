@@ -8,6 +8,7 @@ import { overlayOwnsEscape } from "@/lib/esc";
 import { useKnowledgeActions } from "@/features/knowledge/hooks/use-knowledge-actions";
 import { useSupervisorChat } from "@/features/chat/hooks/use-supervisor-chat";
 import { WorkbenchPage } from "@/features/workbench/components/workbench-page";
+import type { WorkbenchBackResult } from "@/features/workbench/components/workbench-page";
 import { AssetChromeContext } from "@/features/assets/components/asset-chrome";
 import { type AgentInfo, call, codegraphIsAvailable, tauriOpenFile, errText } from "@/lib/api";
 import { logWarn } from "@/lib/logger";
@@ -30,6 +31,7 @@ import { type AppMode, isMediaMode } from "@/app/modes";
 import { SessionHistoryDialog } from "@/features/chat/components/session-history-dialog";
 import { ShortcutsDialog } from "@/components/shared/shortcuts-dialog";
 import { useI18n } from "@/hooks/use-i18n";
+import { toast } from "sonner";
 
 export default function App() {
   useUpdater();
@@ -63,10 +65,9 @@ export default function App() {
   // Cmd/Ctrl+N; the workbench keeps its runs/session/view state, so the chat
   // hook's newChat() alone is invisible on that surface).
   const workbenchNewRef = useRef<(() => void) | null>(null);
-  // Workbench publishes its rail-back handler here (App arbitrates the Android
-  // hardware back: when the workbench's mobile progress rail is open, back
-  // closes it and nothing else).
-  const workbenchRailBackRef = useRef<(() => boolean) | null>(null);
+  // Workbench publishes its back stack here (App arbitrates the Android
+  // hardware back: the rail drawer, then the run view → landing, then exit).
+  const workbenchBackRef = useRef<(() => WorkbenchBackResult) | null>(null);
   // Workbench publishes its attachFiles here (App owns the LinkDialog; a
   // successful YouTube import auto-attaches the transcript as a composer chip
   // — same UX as the file-import auto-attach).
@@ -220,10 +221,13 @@ export default function App() {
   // Mirrors the app's Esc semantics WITHOUT arming the two-step run stop:
   // overlay → close it (synthetic Esc — Radix owns dismissal; every window-level
   // Esc handler stands down while overlayOwnsEscape() is true), then asset
-  // page / media lane → Workbench, then the workbench's mobile progress rail
-  // (via its published ref), and only "exit" when nothing is left — the Kotlin
-  // side answers that by moveTaskToBack (recents keep the state; never
-  // finish()).
+  // page / media lane → Workbench, then the workbench's own back stack (mobile
+  // progress rail → run view → landing) via its published ref, and only "exit"
+  // when nothing is left — the Kotlin side answers that by moveTaskToBack
+  // (recents keep the state; never finish()). A press the workbench refuses
+  // because a run owns the screen is CONSUMED, never an exit: backgrounding
+  // the app on a back the UI itself disabled is the one answer a user cannot
+  // read as anything but a bug.
   useEffect(() => {
     (window as unknown as Record<string, unknown>).__kawaiHandleBackPress = (): string => {
       if (overlayOwnsEscape()) {
@@ -235,13 +239,17 @@ export default function App() {
         setView(null);
         return "consumed";
       }
-      if (workbenchRailBackRef.current?.() === true) return "consumed";
-      return "exit";
+      const back: WorkbenchBackResult = workbenchBackRef.current?.() ?? "none";
+      if (back === "busy") {
+        toast(t("workbench.progressRail.backBlocked"), { id: "back-blocked" });
+        return "consumed";
+      }
+      return back === "consumed" ? "consumed" : "exit";
     };
     return () => {
       delete (window as unknown as Record<string, unknown>).__kawaiHandleBackPress;
     };
-  }, [mode, view]);
+  }, [mode, view, t]);
 
   if (agentsError != null) {
     return (
@@ -361,7 +369,7 @@ export default function App() {
             sessionsOpen={sessionsOpen}
             sessionSelectorRef={workbenchSelectRef}
             newSessionRef={workbenchNewRef}
-            railBackRef={workbenchRailBackRef}
+            backRef={workbenchBackRef}
             attachFilesRef={workbenchAttachRef}
             onBusyChange={setWorkbenchBusy}
           />

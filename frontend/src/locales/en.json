@@ -167,7 +167,8 @@
       "closeProgress": "Close progress panel",
       "progressLabel": "Progress",
       "openProgress": "Open progress panel",
-      "backToComposer": "Back to goal composer"
+      "backToComposer": "Back to goal composer",
+      "backBlocked": "A run is in progress — stop it to start another goal"
     },
     "deliverableViewer": {
       "title": "Deliverable",

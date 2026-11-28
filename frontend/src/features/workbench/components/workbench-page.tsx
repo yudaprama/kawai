@@ -40,6 +40,12 @@ import { emitOpenTopup } from "@/features/topup/open-topup";
 import { TokenBalanceChip } from "@/features/topup/token-balance-chip";
 import { useI18n } from "@/hooks/use-i18n";
 
+/** What the workbench did with a back press, for App's hardware-back
+ *  arbitration. `none` = nothing left to close on this page (App may exit);
+ *  `busy` = a run owns the screen, so App must consume the press instead of
+ *  backgrounding the app on a back the UI itself refuses. */
+export type WorkbenchBackResult = "consumed" | "busy" | "none";
+
 // ── Sessions button ─────────────────────────────────────────────────────────
 
 /** Opens the shared SessionHistoryDialog (App owns the dialog state).
@@ -88,10 +94,11 @@ export interface WorkbenchPageProps {
    *  so the App-level "New" shortcut (Cmd/Ctrl+N) can reset the
    *  WORKBENCH — resetting the chat hook alone is invisible on this surface. */
   newSessionRef?: React.MutableRefObject<(() => void) | null>;
-  /** App-owned ref: while mounted the page publishes its rail-back handler
-   *  here — App's Android hardware-back arbitration calls it to close the
-   *  mobile progress rail; it reports whether a rail was actually open. */
-  railBackRef?: React.MutableRefObject<(() => boolean) | null>;
+  /** App-owned ref: while mounted the page publishes its back handler here —
+   *  App's Android hardware-back arbitration calls it. It walks the page's own
+   *  back stack (mobile progress rail → run view → landing) and answers what is
+   *  left for App to do (`WorkbenchBackResult`). */
+  backRef?: React.MutableRefObject<(() => WorkbenchBackResult) | null>;
   /** App-owned ref: on mount the page publishes its attachFiles here so the
    *  App-level LinkDialog can auto-attach a freshly imported YouTube
    *  transcript as a composer chip (same UX as the file-import auto-attach). */
@@ -119,7 +126,7 @@ export function WorkbenchPage({
   sessionsOpen = false,
   sessionSelectorRef,
   newSessionRef,
-  railBackRef,
+  backRef,
   attachFilesRef,
   onBusyChange,
 }: WorkbenchPageProps) {
@@ -627,19 +634,27 @@ export function WorkbenchPage({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [active, mobileRail, supervisor.status, supervisor.stop, t]);
 
-  // Publish the rail-back handler upward (App's Android hardware-back
-  // arbitration): close the mobile rail and report whether one was open.
+  // Publish the page's back stack upward (App's Android hardware-back
+  // arbitration), mirroring the on-screen back arrow: close the mobile rail,
+  // then leave the run view for the landing composer, and only then report that
+  // nothing is left. A run in flight owns the screen — `busy` keeps App from
+  // backgrounding the app on a press the disabled arrow already refuses.
   useEffect(() => {
-    if (railBackRef == null) return;
-    railBackRef.current = () => {
-      if (!mobileRail) return false;
-      setMobileRail(false);
-      return true;
+    if (backRef == null) return;
+    backRef.current = () => {
+      if (mobileRail) {
+        setMobileRail(false);
+        return "consumed";
+      }
+      if (home) return "none";
+      if (runBusy) return "busy";
+      goHome();
+      return "consumed";
     };
     return () => {
-      railBackRef.current = null;
+      backRef.current = null;
     };
-  }, [railBackRef, mobileRail]);
+  }, [backRef, mobileRail, home, runBusy, goHome]);
 
   // Below lg the sidebar is a drawer — force it open when the plan needs the
   // user (confirmation gates, review) so the run can't stall invisibly.
@@ -940,9 +955,11 @@ export function WorkbenchPage({
           {onOpenSessions && <SessionsButton iconOnly onOpen={onOpenSessions} />}
           <button
             type="button"
-            aria-label={t("workbench.progressRail.backToComposer")}
-            title={t("workbench.progressRail.newGoalButton")}
-            disabled={supervisor.planning != null || runInFlight || supervisor.status === "reviewing"}
+            // A run in flight refuses the press, so the label states WHY —
+            // "Another goal" on a disabled control reads as a broken button.
+            aria-label={runBusy ? t("workbench.progressRail.backBlocked") : t("workbench.progressRail.backToComposer")}
+            title={runBusy ? t("workbench.progressRail.backBlocked") : t("workbench.progressRail.newGoalButton")}
+            disabled={runBusy}
             onClick={goHome}
             className="text-muted-foreground hover:text-foreground hit-44 inline-flex items-center gap-1 rounded-lg px-2 py-1.5 transition-colors disabled:opacity-40"
           >
