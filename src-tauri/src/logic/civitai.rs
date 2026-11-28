@@ -593,11 +593,6 @@ pub async fn civitai_template_gallery() -> Result<Vec<TemplatePreset>, String> {
                 if family_tiles >= TEMPLATE_PER_FAMILY || presets.len() >= TEMPLATE_MAX {
                     break;
                 }
-                // SFW double-guard: `nsfw=None` on the wire plus this client-side
-                // level filter (the flag maps to a browsing level, not the enum).
-                if hit.nsfw_level.as_deref().unwrap_or("None") != "None" {
-                    continue;
-                }
                 // Authors who stripped their generation data are useless as
                 // templates.
                 let Some(meta) = hit.meta.clone() else { continue };
@@ -844,9 +839,6 @@ pub async fn civitai_video_template_gallery() -> Result<Vec<VideoTemplatePreset>
             if hit.r#type.as_deref() != Some("video") {
                 continue;
             }
-            if hit.nsfw_level.as_deref().unwrap_or("None") != "None" {
-                continue;
-            }
             let Some(meta) = hit.meta.clone() else { continue };
             // `workflow` marks a clip civitai's own orchestrator generated
             // (`engine` is ComfyUI-recipe-only these days) and must be
@@ -1085,9 +1077,6 @@ pub async fn civitai_music_template_gallery() -> Result<Vec<MusicTemplatePreset>
         for hit in hits {
             if presets.len() >= MUSIC_TEMPLATE_MAX {
                 break;
-            }
-            if hit.nsfw_level.as_deref().unwrap_or("None") != "None" {
-                continue;
             }
             let Some(meta) = hit.meta.clone() else { continue };
             // The form validates `length <= promptMax` per engine (2000 for
