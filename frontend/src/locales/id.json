@@ -127,7 +127,9 @@
       "escStopArmed": "Tekan Esc lagi untuk menghentikan jalankan",
       "freshSessionToast": "Sesi baru dimulai",
       "freshSessionToastHint": "Sesi sebelumnya beserta run-nya tetap tersimpan di Sessions.",
-      "reopenAction": "Buka lagi"
+      "reopenAction": "Buka lagi",
+      "newSessionPlaceholder": "Mulai tujuan baru… (sesi baru)",
+      "continuePlaceholder": "Lanjutkan sesi ini… (mis. kembangkan bagian 2, ubah nada)"
     },
     "progressRail": {
       "status": {
@@ -154,7 +156,7 @@
       "deliverableWriter": "Menulis deliverable…",
       "stopButton": "Hentikan",
       "resumeButton": "Lanjutkan",
-      "newGoalButton": "Tujuan lain",
+      "newSessionButton": "Sesi baru",
       "runButton": "Jalankan",
       "discardButton": "Buang",
       "messagesAndTools": "Pesan & Alat",
@@ -1197,6 +1199,30 @@
       "subtitle": "akun futures Anda, baca saja",
       "guide": "Tempel API key dan secret MEXC agar agent bisa menarik fill futures Anda ke pembukuan. MEXC di sini BACA SAJA — kawai mengimpor fill, PnL, dan biaya, dan tidak pernah memasang order di MEXC. Tidak punya akun MEXC? Lewati saja.",
       "guideDetail": "Buat di MEXC → Account → API, lalu batasi ke IP Anda. Yang dibutuhkan hanya kunci read-only: agent mengimpor riwayat deal futures Anda beberapa hari terakhir supaya review bisa menghitung PnL dan biaya. Tidak ada izin trading yang perlu dinyalakan — eksekusi MEXC belum ada, jadi biarkan izin trading mati."
+    },
+    "connectedAccountsSection": "Akun terhubung",
+    "git": {
+      "title": "GitHub / GitLab",
+      "subtitle": "personal access token, disimpan di perangkat ini",
+      "guide": "Hubungkan personal access token agar agent bisa mengerjakan repository, issue, dan pull request Anda. Token hanya dikirim ke provider yang Anda pilih.",
+      "guideDetail": "Buat fine-grained PAT dengan izin seminimal mungkin (read-only sudah cukup untuk membaca repo dan PR). Untuk GitLab self-hosted atau GitHub Enterprise, isi host-nya — setiap host adalah koneksi terpisah. Token disimpan di database lokal perangkat ini; tak ada op yang mengembalikannya, hanya tampilan tersamar.",
+      "revokeHint": "Cabut token di provider sebelum memutus koneksi — tombol putus hanya menghapus salinan lokal.",
+      "tokenLabel": "Personal access token",
+      "hostLabel": "Host (opsional)",
+      "hostPlaceholder": "api.github.com atau gitlab.com",
+      "accountLabel": "Label (opsional)",
+      "accountPlaceholder": "default",
+      "storedLocally": "Hanya disimpan di database lokal perangkat ini — tidak disinkronkan.",
+      "connect": "Hubungkan",
+      "connected": "Terhubung",
+      "disconnected": "Koneksi diputus",
+      "empty": "Belum ada akun Git yang terhubung.",
+      "remove": "Putuskan",
+      "confirmRemove": "Putuskan?",
+      "scopesLabel": "Izin",
+      "count": {
+        "other": "{{count}} akun terhubung"
+      }
     }
   },
   "topup": {

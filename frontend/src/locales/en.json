@@ -127,7 +127,9 @@
       "escStopArmed": "Press Esc again to stop the run",
       "freshSessionToast": "Fresh session started",
       "freshSessionToastHint": "The previous session and its runs stay saved in Sessions.",
-      "reopenAction": "Reopen"
+      "reopenAction": "Reopen",
+      "newSessionPlaceholder": "Start a new goal… (fresh session)",
+      "continuePlaceholder": "Continue this session… (e.g. expand section 2, change tone)"
     },
     "progressRail": {
       "status": {
@@ -154,7 +156,7 @@
       "deliverableWriter": "Writing deliverable…",
       "stopButton": "Stop",
       "resumeButton": "Resume",
-      "newGoalButton": "Another goal",
+      "newSessionButton": "New session",
       "runButton": "Run",
       "discardButton": "Discard",
       "messagesAndTools": "Messages & Tools",
@@ -1198,6 +1200,31 @@
       "subtitle": "your futures account, read-only",
       "guide": "Paste your MEXC API key and secret to let the agent read your futures fills into the books. MEXC is READ-ONLY here — kawai imports fills, PnL and fees, and never places an order on MEXC. No MEXC account? Skip this.",
       "guideDetail": "Create one in MEXC → Account → API, and restrict it to your IP. A read-only key is all this needs: the agent imports your futures deal history over the last few days so the review can compute PnL and fees. There is no trading permission to enable — no MEXC execution exists yet, so leave trade permissions off."
+    },
+    "connectedAccountsSection": "Connected accounts",
+    "git": {
+      "title": "GitHub / GitLab",
+      "subtitle": "personal access tokens, kept on this device",
+      "guide": "Connect a personal access token so the agent can work with your repositories, issues and pull requests. Nothing is sent anywhere except the provider you choose.",
+      "guideDetail": "Create a fine-grained PAT with the minimum scopes you need (read-only covers listing repos and PRs). For a self-hosted GitLab or GitHub Enterprise install, paste its host instead of the public one — each host is a separate connection. Tokens live in this device's local database; no op ever returns the token, only a masked preview.",
+      "revokeHint": "Revoke the token at the provider before disconnecting — disconnect only forgets the local copy.",
+      "tokenLabel": "Personal access token",
+      "hostLabel": "Host (optional)",
+      "hostPlaceholder": "api.github.com or gitlab.com",
+      "accountLabel": "Label (optional)",
+      "accountPlaceholder": "default",
+      "storedLocally": "Stored in the local database on this device only — never synced.",
+      "connect": "Connect",
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "empty": "No Git accounts connected yet.",
+      "remove": "Disconnect",
+      "confirmRemove": "Disconnect?",
+      "scopesLabel": "Scopes",
+      "count": {
+        "one": "{{count}} connected account",
+        "other": "{{count}} connected accounts"
+      }
     }
   },
   "topup": {

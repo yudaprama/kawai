@@ -1,6 +1,5 @@
 import { Icon } from "@/components/shared/icon";
 import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -448,18 +447,15 @@ export function ProgressRail({
   workbench,
   onOpenReport,
   onNewGoal,
-  onReopenSession,
   unseeded,
   discardArmed,
   setDiscardArmed,
 }: {
   workbench: ReturnType<typeof useWorkbench>;
   onOpenReport: (id: string) => void;
+  /** Starts a fresh session back at the landing composer. The page owns this
+   *  one action for the rail button, the back arrow and Cmd/Ctrl+N alike. */
   onNewGoal: () => void;
-  /** Reopen a detached session after "Fresh session" — the page owns the
-   *  navigation (leaves the landing hero), so it wires this; falls back to
-   *  plain session restore. */
-  onReopenSession?: (sessionId: number) => void;
   discardArmed: boolean;
   setDiscardArmed: (v: boolean) => void;
   /** True while a run is in flight but planStarted hasn't seeded the
@@ -514,13 +510,13 @@ export function ProgressRail({
     const t = setTimeout(() => reviewCardRef.current?.focus(), 50);
     return () => clearTimeout(t);
   }, [supervisor.status]);
-  // "Another goal" — the desktop's only path back to the landing hero once no
+  // "New session" — the desktop's only path back to the landing hero once no
   // run/review owns the rail (the run view's back arrow is mobile-only, so
   // idle/completed/failed used to be a dead end). Hidden while a run is in
   // flight or awaiting review; disabled through the planning window, where
-  // `goHome` deliberately no-ops (same rule as the mobile strip's back
-  // button — the run must keep showing progress).
-  const showAnotherGoal = !["running", "stopping", "awaitingConfirmation", "reviewing"].includes(supervisor.status);
+  // the page's fresh-start handler deliberately no-ops (same rule as the
+  // mobile strip's back button — the run must keep showing progress).
+  const showNewSession = !["running", "stopping", "awaitingConfirmation", "reviewing"].includes(supervisor.status);
   return (
     <div className="flex h-full flex-col">
       <div className="border-primary/30 mb-4 border-b pb-3">
@@ -727,62 +723,38 @@ export function ProgressRail({
               Resume
             </Button>
           )}
-          {/* The two "start over" actions: Another goal keeps this session
-              and its runs; Fresh session detaches it (still saved in
-              Sessions — the toast says so and offers Reopen). */}
+          {/* The failed card's single fresh-start action: the page's handler
+              detaches the session and offers Reopen. */}
           <p className="text-muted-foreground font-mono text-[0.625rem] tracking-wider uppercase">
             Runs stay saved in Sessions
           </p>
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              disabled={supervisor.planning != null}
-              title="Back to the landing composer — this session and its runs stay."
-              onClick={onNewGoal}
-              size="sm"
-              variant="outline"
-            >
-              <Icon name="plus" className="size-3" />
-              Another goal
-            </Button>
-            <Button
-              title="Starts a fresh session — the next run will not recall these runs."
-              onClick={() => {
-                const previous = workbench.startNewSession();
-                onNewGoal();
-                if (previous != null) {
-                  toast("Fresh session started", {
-                    id: "fresh-session",
-                    description: "The previous session and its runs stay saved in Sessions.",
-                    action: {
-                      label: "Reopen",
-                      onClick: () => (onReopenSession ?? workbench.selectSession)(previous),
-                    },
-                  });
-                }
-              }}
-              size="sm"
-              variant="outline"
-            >
-              <Icon name="rotate-ccw" className="size-3" />
-              Fresh session
-            </Button>
-          </div>
+          <Button
+            className="w-full"
+            disabled={supervisor.planning != null}
+            title="Starts a fresh session — the previous one stays in Sessions."
+            onClick={onNewGoal}
+            size="sm"
+            variant="outline"
+          >
+            <Icon name="plus" className="size-3" />
+            New session
+          </Button>
         </div>
       )}
       {/* Idle/completed: the same affordance at full width — before this the
           rail showed NOTHING once the run stopped needing the user, leaving
           desktop with no way back to the landing hero. */}
-      {showAnotherGoal && supervisor.status !== "failed" && (
+      {showNewSession && supervisor.status !== "failed" && (
         <Button
           className="mt-4 w-full"
           disabled={supervisor.planning != null}
-          title="Back to the landing composer — this session and its runs stay."
+          title="Starts a fresh session — the previous one stays in Sessions."
           onClick={onNewGoal}
           size="sm"
           variant="outline"
         >
           <Icon name="plus" className="size-3" />
-          Another goal
+          New session
         </Button>
       )}
     </div>

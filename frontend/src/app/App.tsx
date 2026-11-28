@@ -66,7 +66,8 @@ export default function App() {
   // hook's newChat() alone is invisible on that surface).
   const workbenchNewRef = useRef<(() => void) | null>(null);
   // Workbench publishes its back stack here (App arbitrates the Android
-  // hardware back: the rail drawer, then the run view → landing, then exit).
+  // hardware back: the rail drawer, then the run view → fresh session at the
+  // landing, then exit).
   const workbenchBackRef = useRef<(() => WorkbenchBackResult) | null>(null);
   // Workbench publishes its attachFiles here (App owns the LinkDialog; a
   // successful YouTube import auto-attaches the transcript as a composer chip
@@ -222,7 +223,7 @@ export default function App() {
   // overlay → close it (synthetic Esc — Radix owns dismissal; every window-level
   // Esc handler stands down while overlayOwnsEscape() is true), then asset
   // page / media lane → Workbench, then the workbench's own back stack (mobile
-  // progress rail → run view → landing) via its published ref, and only "exit"
+  // progress rail → run view → fresh session at the landing) via its published ref, and only "exit"
   // when nothing is left — the Kotlin side answers that by moveTaskToBack
   // (recents keep the state; never finish()). A press the workbench refuses
   // because a run owns the screen is CONSUMED, never an exit: backgrounding

@@ -5,6 +5,7 @@ import { AssetPageHeader } from "@/features/assets/components/asset/asset-page-h
 import { useI18n } from "@/hooks/use-i18n";
 
 import { CredentialCard } from "./credential-card";
+import { GitProviderCard } from "./git-provider-card";
 import { CREDENTIAL_PROVIDERS } from "./providers";
 
 /**
@@ -29,6 +30,16 @@ export function CredentialsPage() {
           {CREDENTIAL_PROVIDERS.map((provider) => (
             <CredentialCard key={provider.id} provider={provider} />
           ))}
+        </section>
+        {/* A connected account is not an API-key pair: it can be multiple rows
+            (host + label) and its delete op takes arguments, so it owns its
+            card instead of bending the CredentialProvider contract. */}
+        <section className="space-y-4">
+          <span className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium uppercase">
+            <Icon name="github" className="size-3" />
+            {t("credentials.connectedAccountsSection")}
+          </span>
+          <GitProviderCard />
         </section>
       </div>
     </AssetShell>

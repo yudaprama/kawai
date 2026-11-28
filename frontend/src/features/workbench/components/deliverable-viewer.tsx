@@ -949,7 +949,7 @@ export function DeliverableViewer({
   /** Switch the canvas document (deliverable ↔ step reports) — wired by the
    *  page to its canvas-view navigation; without it the reports grid hides. */
   onPickDoc?: (doc: string) => void;
-  /** Back to the landing composer ("Another goal") — offered on the failed-run
+  /** Fresh session back at the landing composer — offered on the failed-run
    *  card so recovery lives where the failure is read. */
   onNewGoal?: () => void;
   /** Phone composer signal: "down" while the reader scrolls deeper (the page
@@ -1172,7 +1172,7 @@ export function DeliverableViewer({
                 {onNewGoal != null && (
                   <Button onClick={onNewGoal} size="sm" variant="outline">
                     <Icon name="plus" className="size-3" />
-                    Another goal
+                    New session
                   </Button>
                 )}
               </div>

@@ -152,8 +152,8 @@ export function WorkbenchPage({
       attachFilesRef.current = null;
     };
   }, [attachFilesRef, workbench.attachFiles]);
-  // Home = the landing composer. Submitting a goal moves to the workbench;
-  // "Another goal" returns here.
+  // Home = the landing composer, which always starts a FRESH session (the
+  // run view's own composer is where you continue the current one).
   const [home, setHome] = useState(true);
   // Landing recents: refetch when a run lands its plan record (the edge
   // below) and when the sessions dialog closes (rename/delete underneath —
@@ -358,19 +358,6 @@ export function WorkbenchPage({
     if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) setMobileRail(true);
   }, []);
 
-  /** Back to the landing hero — keeps the session + runs ("Another goal"
-   *  semantics). Blocked while a plan is in flight or awaiting review: the
-   *  run view must keep showing progress (there is no way back mid-run). */
-  const goHome = useCallback(() => {
-    if (supervisor.planning != null || runInFlight || supervisor.status === "reviewing") return;
-    setView(null);
-    autoSwitchedRun.current = null;
-    setChipDraft(null);
-    setTemplate(null);
-    setMobileRail(false);
-    setHome(true);
-  }, [supervisor.planning, runInFlight, supervisor.status]);
-
   /** Submit a goal. Navigation to the run view happens INSIDE run()'s onStart
    *  (every gate passed). A rejection keeps the composer's draft — PromptInput
    *  clears only when the returned promise resolves — and the failure surfaces
@@ -544,10 +531,12 @@ export function WorkbenchPage({
     ? ("submitted" as const)
     : ("ready" as const);
 
-  /** App-level "New" (rail button + Cmd/Ctrl+N): fresh session back at the
-   *  landing hero. Blocked while a run/plan is in flight — same guard as the
-   *  chat hook's newChat — and a plan awaiting review is discarded first: it
-   *  owns the rail and would silently block the next submit. */
+  /** The ONE "fresh start" action: the back arrow, the rail button and
+   *  Cmd/Ctrl+N all land here, so those controls can never disagree about
+   *  which session the next goal belongs to. It detaches (never deletes) the
+   *  current session and offers Reopen. Blocked while a run/plan is in flight;
+   *  a plan awaiting review is discarded first — it owns the rail and would
+   *  silently block the next submit. */
   const newSession = useCallback(() => {
     if (supervisor.planning != null) {
       toast(t("workbench.composer.newSessionBlocked"), { id: "new-session-blocked" });
@@ -637,10 +626,10 @@ export function WorkbenchPage({
 
   // Publish the page's back stack upward (App's Android hardware-back
   // arbitration), mirroring the on-screen back arrow: close the mobile rail,
-  // then leave the run view for the landing composer, and only then report that
-  // nothing is left. The ORDER lives in `nextBackStep` so it is testable; a run
-  // in flight answers `busy`, which keeps App from backgrounding the app on a
-  // press the disabled arrow already refuses.
+  // then leave the run view for a FRESH session at the landing composer, and
+  // only then report that nothing is left. The ORDER lives in `nextBackStep`
+  // so it is testable; a run in flight answers `busy`, which keeps App from
+  // backgrounding the app on a press the disabled arrow already refuses.
   useEffect(() => {
     if (backRef == null) return;
     backRef.current = () => {
@@ -649,7 +638,7 @@ export function WorkbenchPage({
           setMobileRail(false);
           return "consumed";
         case "goHome":
-          goHome();
+          newSession();
           return "consumed";
         case "blocked":
           return "busy";
@@ -660,7 +649,7 @@ export function WorkbenchPage({
     return () => {
       backRef.current = null;
     };
-  }, [backRef, mobileRail, home, runBusy, goHome]);
+  }, [backRef, mobileRail, home, runBusy, newSession]);
 
   // Below lg the sidebar is a drawer — force it open when the plan needs the
   // user (confirmation gates, review) so the run can't stall invisibly.
@@ -720,7 +709,7 @@ export function WorkbenchPage({
                 onSubmit={(text, fileIds) => submit(text, fileIds)}
                 onStop={workbench.supervisor.stop}
                 status={composerStatus}
-                placeholder={placeholderForTemplate(template)}
+                placeholder={placeholderForTemplate(template) ?? t("workbench.composer.newSessionPlaceholder")}
                 attachedFiles={workbench.attachedFiles}
                 onRemoveAttachedFile={workbench.removeAttachedFile}
               />
@@ -842,11 +831,7 @@ export function WorkbenchPage({
         onAddLink={onAddLink}
         onImageToKnowledge={onImageToKnowledge}
         onSubmit={submit}
-        placeholder={
-          workbench.canFollowUp
-            ? "Follow up on the previous deliverable… (e.g. expand section 2, change tone)"
-            : undefined
-        }
+        placeholder={workbench.canFollowUp ? t("workbench.composer.continuePlaceholder") : undefined}
       />
     </>
   );
@@ -910,12 +895,7 @@ export function WorkbenchPage({
           <ProgressRail
             unseeded={planningUnseeded}
             workbench={workbench}
-            onNewGoal={goHome}
-            onReopenSession={(id) => {
-              setMobileRail(false);
-              setHome(false);
-              workbench.selectSession(id);
-            }}
+            onNewGoal={newSession}
             onOpenReport={openReport}
             discardArmed={discardArmed}
             setDiscardArmed={setDiscardArmed}
@@ -962,11 +942,11 @@ export function WorkbenchPage({
           <button
             type="button"
             // A run in flight refuses the press, so the label states WHY —
-            // "Another goal" on a disabled control reads as a broken button.
+            // "New session" on a disabled control reads as a broken button.
             aria-label={runBusy ? t("workbench.progressRail.backBlocked") : t("workbench.progressRail.backToComposer")}
-            title={runBusy ? t("workbench.progressRail.backBlocked") : t("workbench.progressRail.newGoalButton")}
+            title={runBusy ? t("workbench.progressRail.backBlocked") : t("workbench.progressRail.newSessionButton")}
             disabled={runBusy}
-            onClick={goHome}
+            onClick={newSession}
             className="text-muted-foreground hover:text-foreground hit-44 inline-flex items-center gap-1 rounded-lg px-2 py-1.5 transition-colors disabled:opacity-40"
           >
             <Icon name="arrow-left" className="size-4" />
@@ -1029,7 +1009,7 @@ export function WorkbenchPage({
                     onPickDoc={(doc) => {
                       if (activeRunId != null) userPick(activeRunId, doc);
                     }}
-                    onNewGoal={goHome}
+                    onNewGoal={newSession}
                     onScrollShift={(dir) => setComposerHidden(dir === "down")}
                     composerShown={!composerHidden}
                     discardArmed={discardArmed}

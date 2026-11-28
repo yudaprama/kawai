@@ -4,7 +4,7 @@
  * App forwards the Android hardware back here (and the on-screen back arrow
  * calls the same landing step). The layers are walked innermost first:
  *
- *   mobile progress rail → run view → landing
+ *   mobile progress rail → run view → landing (fresh session)
  *
  * Two orderings are load-bearing and easy to break by accident:
  * - the drawer overlays whatever is under it, so closing it always wins —
@@ -16,7 +16,7 @@
 export type BackStep =
   /** Close the mobile progress-rail drawer. */
   | "closeRail"
-  /** Leave the run view for the landing composer (session + runs stay). */
+  /** Leave the run view for a FRESH session at the landing composer. */
   | "goHome"
   /** A run owns the screen — consume the press and say why. */
   | "blocked"
