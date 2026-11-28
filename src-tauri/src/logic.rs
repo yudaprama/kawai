@@ -587,6 +587,12 @@ pub mod binance_credentials;
 // (stable surface for the always-registered commands); without the `mexc`
 // feature it serves guidance-error stubs.
 pub mod mexc_credentials;
+// Per-user Git provider access tokens (Settings → Git providers): GitHub /
+// GitLab PATs in the user's local DB (`git_provider_tokens`, migration 0040),
+// keyed by (provider, host, account) so a self-managed install is its own
+// connection. No provider SDK here, and no op returns the token — the status
+// op answers a masked preview only.
+pub mod git_provider;
 pub mod binance_trade;
 pub mod mexc_trade;
 // In-process futures risk guard (feature `binance`): 15-minute timer over

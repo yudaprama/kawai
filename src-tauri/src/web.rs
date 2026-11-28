@@ -2816,6 +2816,9 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/mexc_credentials_set", post(mexc_credentials_set_handler))
         .route("/api/mexc_credentials_status", post(mexc_credentials_status_handler))
         .route("/api/mexc_credentials_delete", post(mexc_credentials_delete_handler))
+        .route("/api/git_connect_pat", post(git_connect_pat_handler))
+        .route("/api/git_token_status", post(git_token_status_handler))
+        .route("/api/git_disconnect", post(git_disconnect_handler))
         .route("/api/binance_trading_status", post(binance_trading_status_handler))
         .route("/api/binance_trading_enable", post(binance_trading_enable_handler))
         .route("/api/binance_trading_disable", post(binance_trading_disable_handler))
@@ -3795,6 +3798,63 @@ async fn mexc_credentials_delete_handler(
         .await
         .map(Json)
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+}
+
+// ── Git provider tokens (Settings → Git providers) ─────────────────────────
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitConnectPatRequest {
+    provider: String,
+    host: Option<String>,
+    account: Option<String>,
+    token: String,
+    scopes: Option<String>,
+}
+async fn git_connect_pat_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<GitConnectPatRequest>,
+) -> Result<Json<logic::git_provider::GitTokenStatus>, (StatusCode, String)> {
+    logic::git_provider::git_connect_pat(
+        &user_id,
+        &req.provider,
+        req.host.as_deref(),
+        req.account.as_deref(),
+        &req.token,
+        req.scopes.as_deref(),
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+}
+async fn git_token_status_handler(
+    Extension(user_id): Extension<String>,
+) -> Result<Json<Vec<logic::git_provider::GitTokenStatus>>, (StatusCode, String)> {
+    logic::git_provider::git_token_status(&user_id)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GitDisconnectRequest {
+    provider: String,
+    host: Option<String>,
+    account: Option<String>,
+}
+async fn git_disconnect_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<GitDisconnectRequest>,
+) -> Result<Json<()>, (StatusCode, String)> {
+    logic::git_provider::git_disconnect(
+        &user_id,
+        &req.provider,
+        req.host.as_deref(),
+        req.account.as_deref(),
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
 }
 
 // ── Futures trading consent (Settings → Binance API) ───────────────────────

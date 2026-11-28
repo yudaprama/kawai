@@ -2888,6 +2888,57 @@ pub async fn mexc_credentials_delete(
     logic::mexc_credentials::mexc_credentials_delete(&user_id).await
 }
 
+// ── Git provider tokens (Settings → Git providers) ─────────────────────────
+
+/// Authenticated RPC: connect (or re-key) a Git provider with a PAT. The token
+/// is written to the per-user DB and never returned — the reply is the masked
+/// status row. `host` defaults to the provider's public API host, `account` to
+/// `"default"`.
+#[tauri::command]
+pub async fn git_connect_pat(
+    provider: String,
+    host: Option<String>,
+    account: Option<String>,
+    token: String,
+    scopes: Option<String>,
+    session: State<'_, Session>,
+) -> Result<logic::git_provider::GitTokenStatus, String> {
+    let user_id = session_user_id(&session)?;
+    logic::git_provider::git_connect_pat(
+        &user_id,
+        &provider,
+        host.as_deref(),
+        account.as_deref(),
+        &token,
+        scopes.as_deref(),
+    )
+    .await
+}
+
+/// Authenticated RPC: every stored connection, masked. Empty means nothing is
+/// connected yet — not an error.
+#[tauri::command]
+pub async fn git_token_status(
+    session: State<'_, Session>,
+) -> Result<Vec<logic::git_provider::GitTokenStatus>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::git_provider::git_token_status(&user_id).await
+}
+
+/// Authenticated RPC: forget one stored connection. Revoke at the provider
+/// first — this only deletes the local row.
+#[tauri::command]
+pub async fn git_disconnect(
+    provider: String,
+    host: Option<String>,
+    account: Option<String>,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    logic::git_provider::git_disconnect(&user_id, &provider, host.as_deref(), account.as_deref())
+        .await
+}
+
 // ── Futures trading consent (Settings → Binance API) ───────────────────────
 
 #[tauri::command]
