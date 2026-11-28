@@ -6,6 +6,7 @@ import type { RecentRun } from "@/lib/api";
 import { RecentRuns } from "@/features/workbench/components/recent-runs";
 import { isDeliverableStep, useWorkbench } from "@/features/workbench/hooks/use-workbench";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
+import { nextBackStep } from "@/features/workbench/lib/back";
 import type { ScreenerStructureFilter } from "@/features/chat/hooks/use-supervisor-plan";
 import { logInfo } from "@/lib/logger";
 import { overlayOwnsEscape } from "@/lib/esc";
@@ -637,19 +638,24 @@ export function WorkbenchPage({
   // Publish the page's back stack upward (App's Android hardware-back
   // arbitration), mirroring the on-screen back arrow: close the mobile rail,
   // then leave the run view for the landing composer, and only then report that
-  // nothing is left. A run in flight owns the screen — `busy` keeps App from
-  // backgrounding the app on a press the disabled arrow already refuses.
+  // nothing is left. The ORDER lives in `nextBackStep` so it is testable; a run
+  // in flight answers `busy`, which keeps App from backgrounding the app on a
+  // press the disabled arrow already refuses.
   useEffect(() => {
     if (backRef == null) return;
     backRef.current = () => {
-      if (mobileRail) {
-        setMobileRail(false);
-        return "consumed";
+      switch (nextBackStep({ mobileRail, home, runBusy })) {
+        case "closeRail":
+          setMobileRail(false);
+          return "consumed";
+        case "goHome":
+          goHome();
+          return "consumed";
+        case "blocked":
+          return "busy";
+        default:
+          return "none";
       }
-      if (home) return "none";
-      if (runBusy) return "busy";
-      goHome();
-      return "consumed";
     };
     return () => {
       backRef.current = null;
